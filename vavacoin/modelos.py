@@ -367,6 +367,10 @@ class RodadaMines(db.Model):
     reveladas = db.Column(db.String(120), nullable=False, default="")
 
     estado = db.Column(db.String(12), nullable=False, default=ATIVA, index=True)
+    #: A casa que estourou. Serve para a tela marcar a mina em que a pessoa
+    #: pisou, diferente das outras — e para responder "qual casa eu cliquei?"
+    #: se alguém contestar a rodada depois.
+    casa_estourada = db.Column(db.Integer, nullable=True)
     #: Multiplicador acumulado, sem teto. Dois decimais exatos, como dinheiro.
     multiplicador = db.Column(Dinheiro, nullable=False, default=ZERO)
     premio = db.Column(Dinheiro, nullable=False, default=ZERO)

@@ -355,6 +355,34 @@ def test_minas_nao_aparecem_enquanto_a_rodada_vive(app, bc, cassino, jogador):
     assert visao["reveladas"] == []
 
 
+def test_registra_qual_casa_estourou(app, bc, cassino, jogador):
+    """A tela marca a mina em que a pessoa pisou, diferente das outras.
+
+    Também responde "qual casa eu cliquei?" se alguém contestar a rodada.
+    """
+    rodada = criar_rodada(jogador, "10.00", 3)
+    db.session.commit()
+    pisada = rodada.casas_com_mina[1]
+
+    revelar_casa(jogador, pisada)
+    db.session.commit()
+
+    db.session.refresh(rodada)
+    assert rodada.casa_estourada == pisada
+    assert visao_da_rodada(rodada)["casa_estourada"] == pisada
+
+
+def test_rodada_retirada_nao_tem_casa_estourada(app, bc, cassino, jogador):
+    rodada = criar_rodada(jogador, "10.00", 3)
+    db.session.commit()
+    _abrir_seguras(rodada, jogador, 1)
+    retirar(jogador)
+    db.session.commit()
+
+    db.session.refresh(rodada)
+    assert rodada.casa_estourada is None
+
+
 def test_minas_aparecem_quando_encerra(app, bc, cassino, jogador):
     rodada = criar_rodada(jogador, "10.00", 3)
     db.session.commit()

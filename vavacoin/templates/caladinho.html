@@ -1,16 +1,22 @@
 {% extends "base.html" %}
 {% block titulo %}Caladinho — VavaCoin{% endblock %}
+{% block estilos %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='caladinho.css') }}">
+{% endblock %}
 {% block conteudo %}
-<h1>Caladinho</h1>
+<div class="caladinho">
+  <h1>Caladinho</h1>
 
-{% if caixa is not none %}
-<dl class="numeros">
-  <div class="numero"><dt>Caixa da casa</dt><dd>{{ caixa }} VVC</dd></div>
-</dl>
-{% endif %}
-
-<div class="card">
-  <div class="section-title"><i class="ti ti-dice" aria-hidden="true"></i>Jogos</div>
-  <a class="btn btn-gold btn-full" href="{{ url_for('caladinho.mines') }}">Mines</a>
+  <div class="cal-card">
+    {% if caixa is not none %}
+    <div class="cal-stats">
+      <div>Caixa da casa: <b>{{ caixa }}</b> VVC</div>
+    </div>
+    {% endif %}
+    <h2>Jogos</h2>
+    <div class="cal-jogos">
+      <a class="cal-btn cal-btn-verde" href="{{ url_for('caladinho.mines') }}">💣 Mines</a>
+    </div>
+  </div>
 </div>
 {% endblock %}

@@ -244,7 +244,7 @@ def revelar_casa(jogador, posicao, sessao=None):
         return rodada
 
     if posicao in rodada.casas_com_mina:
-        return _estourar(rodada, sessao)
+        return _estourar(rodada, posicao, sessao)
 
     reveladas.append(posicao)
     fator = multiplicador(rodada.minas_escolhidas, len(reveladas))
@@ -271,13 +271,14 @@ def revelar_casa(jogador, posicao, sessao=None):
     return rodada
 
 
-def _estourar(rodada, sessao):
+def _estourar(rodada, posicao, sessao):
     """Achou mina. A aposta já está com a casa; perder é fechar a rodada."""
     aplicado = sessao.execute(
         update(RodadaMines)
         .where(RodadaMines.id == rodada.id, RodadaMines.estado == RodadaMines.ATIVA)
         .values(
             estado=RodadaMines.ESTOURADA,
+            casa_estourada=posicao,
             premio=ZERO,
             encerrada_em=agora(),
         )
@@ -370,4 +371,5 @@ def visao_da_rodada(rodada):
         "premio_atual": quantizar_para_baixo(rodada.aposta * fator),
         "premio": rodada.premio,
         "minas": rodada.casas_com_mina if rodada.encerrada else None,
+        "casa_estourada": rodada.casa_estourada,
     }

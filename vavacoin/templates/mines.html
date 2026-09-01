@@ -1,120 +1,141 @@
 {% extends "base.html" %}
 {% block titulo %}Mines — VavaCoin{% endblock %}
+{% block estilos %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='caladinho.css') }}">
+{% endblock %}
 {% block conteudo %}
-<h1>Mines</h1>
+<div class="caladinho">
+<div class="cal-grid">
 
-{% if rodada %}
-  <dl class="numeros">
-    <div class="numero"><dt>Aposta</dt><dd>{{ rodada.aposta }}</dd></div>
-    <div class="numero">
-      <dt>Multiplicador</dt>
-      <dd class="text-gold">{{ rodada.multiplicador }}× / {{ teto }}×</dd>
-    </div>
-    <div class="numero"><dt>Minas</dt><dd>{{ rodada.minas_escolhidas }}</dd></div>
-    <div class="numero">
-      <dt>{% if rodada.encerrada %}Prêmio{% else %}Se retirar agora{% endif %}</dt>
-      <dd class="{{ 'text-green' if rodada.premio > 0 or not rodada.encerrada else 'text-red' }}">
-        {% if rodada.encerrada %}{{ rodada.premio }}{% else %}{{ rodada.premio_atual }}{% endif %}
-      </dd>
-    </div>
-  </dl>
+  {# ---------------- Coluna esquerda: controles ---------------- #}
+  <div class="cal-card">
+    <h1>💣 Mines</h1>
 
-  <div class="card">
-    <div class="tabuleiro">
-      {% for i in range(casas) %}
-        {% set aberta = i in rodada.reveladas %}
-        {% set mina = rodada.minas and i in rodada.minas %}
-        {% if rodada.encerrada or aberta %}
-          <div class="casa {{ 'casa-mina' if mina else 'casa-segura' }}">
-            {% if mina %}✖{% elif aberta %}◆{% endif %}
-          </div>
-        {% else %}
-          <form method="post" action="{{ url_for('caladinho.revelar') }}" class="casa-forma">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="casa" value="{{ i }}">
-            <button type="submit" class="casa casa-fechada"></button>
-          </form>
-        {% endif %}
-      {% endfor %}
-    </div>
+    {% if rodada %}
+      <div class="cal-stats">
+        <div>Aposta: <b>{{ rodada.aposta }}</b> VVC</div>
+        <div>Minas: <b>{{ rodada.minas_escolhidas }}</b></div>
+        <div>Multiplicador: <b>{{ rodada.multiplicador }}×</b>
+          <span class="cal-teto">/ {{ teto }}×</span></div>
+        <div>
+          {% if rodada.encerrada %}Prêmio{% else %}Prêmio atual{% endif %}:
+          <b>{% if rodada.encerrada %}{{ rodada.premio }}{% else %}{{ rodada.premio_atual }}{% endif %}</b> VVC
+        </div>
+      </div>
 
-    {% if rodada.encerrada %}
-      <a class="btn btn-gold btn-full" href="{{ url_for('caladinho.mines') }}">Jogar de novo</a>
+      {% if rodada.encerrada %}
+        <a class="cal-btn cal-btn-amarelo" href="{{ url_for('caladinho.mines') }}">Jogar de novo</a>
+      {% else %}
+        <form method="post" action="{{ url_for('caladinho.sacar') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="cal-btn cal-btn-verde"
+                  {% if not rodada.reveladas %}disabled{% endif %}>
+            Retirar {{ rodada.premio_atual }} VVC
+          </button>
+        </form>
+      {% endif %}
+
     {% else %}
-      <form method="post" action="{{ url_for('caladinho.sacar') }}">
+      <form method="post" action="{{ url_for('caladinho.comecar') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn-gold btn-full"
-                {% if not rodada.reveladas %}disabled{% endif %}>
-          Retirar {{ rodada.premio_atual }} VVC
-        </button>
+        <div class="cal-campo">
+          <label for="aposta">Aposta (VVC)</label>
+          <input class="cal-entrada" type="number" id="aposta" name="aposta"
+                 min="0.01" step="0.01" max="{{ aposta_max }}"
+                 placeholder="0.00" required>
+        </div>
+        <div class="cal-campo">
+          <label for="minas">Minas</label>
+          <select class="cal-entrada" id="minas" name="minas">
+            {% for n in range(min_minas, max_minas + 1) %}
+              <option value="{{ n }}" {% if n == minas %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="cal-info">
+          Teto: <b>{{ teto }}×</b> · Aposta máxima: <b>{{ aposta_max }}</b> VVC
+          {% if caixa is not none %} · Caixa: <b>{{ caixa }}</b> VVC{% endif %}
+        </div>
+
+        <button class="cal-btn cal-btn-verde" type="submit">Começar</button>
       </form>
     {% endif %}
   </div>
 
-{% else %}
-  <div class="card">
-    <form method="post" action="{{ url_for('caladinho.comecar') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="campo">
-        <label for="aposta">Aposta (máx. {{ aposta_max }})</label>
-        <input class="form-control" id="aposta" name="aposta" type="number"
-               min="0.01" step="0.01" max="{{ aposta_max }}" placeholder="0.00" required>
-      </div>
-      <div class="campo">
-        <label for="minas">Minas</label>
-        <input class="form-control" id="minas" name="minas" type="number"
-               min="{{ min_minas }}" max="{{ max_minas }}" value="{{ minas }}" required>
-      </div>
-      <button type="submit" class="btn btn-gold btn-full">Começar</button>
-    </form>
+  {# ---------------- Coluna direita: tabuleiro ---------------- #}
+  <div class="cal-card">
+    <h2>Tabuleiro</h2>
+    <div class="cal-board">
+      {% for i in range(casas) %}
+        {% set aberta = rodada and i in rodada.reveladas %}
+        {% set mina = rodada and rodada.minas and i in rodada.minas %}
+        {% if rodada and not rodada.encerrada and not aberta %}
+          <form method="post" action="{{ url_for('caladinho.revelar') }}" class="cal-casa-forma">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="casa" value="{{ i }}">
+            <button type="submit" class="cal-casa"></button>
+          </form>
+        {% else %}
+          <button type="button" disabled
+                  class="cal-casa
+                         {%- if aberta or mina %} cal-aberta{% endif %}
+                         {%- if mina %} cal-mina{% endif %}
+                         {%- if aberta and not mina %} cal-segura{% endif %}
+                         {%- if rodada and rodada.casa_estourada == i %} cal-estourou{% endif %}">
+            {%- if mina %}💣{% elif aberta %}💎{% endif -%}
+          </button>
+        {% endif %}
+      {% endfor %}
+    </div>
   </div>
 
-  {# <details> nativo: abre e fecha sem uma linha de JavaScript, então a CSP
-     do projeto não precisa de exceção nenhuma. #}
-  <details class="card revelavel">
-    <summary class="revelavel-botao">
-      <i class="ti ti-list-details" aria-hidden="true"></i>
+  {# ---------------- Tabela de multiplicadores ---------------- #}
+  {% if not rodada %}
+  <details class="cal-card cal-revelavel">
+    <summary class="cal-revelavel-botao">
       {{ minas }} minas · vantagem {{ vantagem }}%
     </summary>
-    <div class="rolagem">
-      <table class="tabela">
-        <thead><tr><th>Casas</th><th class="numerico">Multiplicador</th></tr></thead>
-        <tbody>
-          {% for k, valor in tabela %}
-          <tr><td>{{ k }}</td><td class="numerico">{{ valor }}×</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="cal-revelavel-corpo">
+      <div class="cal-rolagem">
+        <table class="cal-tabela">
+          <thead><tr><th>Casas</th><th class="cal-num">Multiplicador</th></tr></thead>
+          <tbody>
+            {% for k, valor in tabela %}
+            <tr><td>{{ k }}</td><td class="cal-num">{{ valor }}×</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <form method="get" action="{{ url_for('caladinho.mines') }}" class="cal-linha-form">
+        <input class="cal-entrada" name="minas" type="number"
+               min="{{ min_minas }}" max="{{ max_minas }}" value="{{ minas }}">
+        <button type="submit" class="cal-btn cal-btn-neutro">Ver tabela</button>
+      </form>
     </div>
-    <hr>
-    <form method="get" action="{{ url_for('caladinho.mines') }}" class="linha-form">
-      <input class="form-control" name="minas" type="number"
-             min="{{ min_minas }}" max="{{ max_minas }}" value="{{ minas }}">
-      <button type="submit" class="btn btn-outline btn-sm">Ver tabela</button>
-    </form>
   </details>
-{% endif %}
+  {% endif %}
 
-{% if caixa is not none %}
-<dl class="numeros">
-  <div class="numero"><dt>Caixa da casa</dt><dd>{{ caixa }} VVC</dd></div>
-</dl>
-{% endif %}
-
-{% if historico %}
-<div class="card">
-  <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Suas rodadas</div>
-  {% for r in historico %}
-  <div class="row {{ 'row-in' if r.premio > 0 else 'row-out' }}">
-    <div class="row-main">
-      <div>{{ r.minas_escolhidas }} minas · {{ r.casas_reveladas|length }} abertas</div>
-      <div class="ei-sub">{{ r.criada_em.strftime("%d/%m %H:%M") }} · aposta {{ r.aposta }}</div>
+  {# ---------------- Histórico ---------------- #}
+  {% if historico %}
+  <div class="cal-card">
+    <h2>Suas rodadas</h2>
+    {% for r in historico %}
+    <div class="cal-linha">
+      <div>
+        <div>{{ r.minas_escolhidas }} minas · {{ r.casas_reveladas|length }} abertas</div>
+        <div class="cal-linha-sub">
+          {{ r.criada_em.strftime("%d/%m %H:%M") }} · aposta {{ r.aposta }}
+        </div>
+      </div>
+      <div class="{{ 'cal-ganhou' if r.premio > 0 else 'cal-perdeu' }}">
+        {% if r.premio > 0 %}+{{ r.premio }}{% else %}-{{ r.aposta }}{% endif %}
+      </div>
     </div>
-    <div class="row-val {{ 'pos' if r.premio > 0 else 'neg' }}">
-      {% if r.premio > 0 %}+{{ r.premio }}{% else %}-{{ r.aposta }}{% endif %}
-    </div>
+    {% endfor %}
   </div>
-  {% endfor %}
+  {% endif %}
+
 </div>
-{% endif %}
+</div>
 {% endblock %}

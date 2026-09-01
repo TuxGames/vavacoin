@@ -1,0 +1,204 @@
+/* ─────────────────────────────────────────
+   Caladinho — o visual do cassino original
+
+   Trazido do `cassino_benbal` (static/style.css): a paleta escura azulada, o
+   tabuleiro 5x5, os estados das casas e o jeito como multiplicador e prêmio
+   aparecem. O cassino tendo cara própria é de propósito.
+
+   TUDO AQUI É PREFIXADO `cal-` E VIVE DENTRO DE `.caladinho`.
+
+   Não é preciosismo: o original e o `base.css` deste projeto têm `.casa`,
+   `.card`, `.btn`, `.tabela`, `.rodape` e `.sidebar` com significados
+   diferentes. `.casa`, em particular, é casa de tabuleiro num e casa
+   decimal... não — é casa do tabuleiro nos dois, mas com estilos
+   incompatíveis. Deixar um vencer o outro por ordem de carregamento funciona
+   hoje e quebra quando alguém reordenar os `<link>`.
+
+   A barra de cima, a navegação e o rodapé continuam sendo do `base.css`: o
+   jogo tem cara própria, mas a pessoa precisa saber voltar.
+   ───────────────────────────────────────── */
+
+.caladinho {
+    /* Paleta do original, escopada. Fora deste bloco nada muda. */
+    --cal-bg:      #0f1923;
+    --cal-bg-2:    #131e2a;
+    --cal-card:    #1a2632;
+    --cal-card-2:  #20303f;
+    --cal-borda:   #2a3a4a;
+    --cal-txt:     #e8eef4;
+    --cal-txt-mut: #8aa0b3;
+    --cal-verde:   #1fc77d;
+    --cal-verde-d: #169a60;
+    --cal-vermelho:#ff5b66;
+    --cal-amarelo: #ffb020;
+
+    font-family: "Segoe UI", system-ui, Roboto, Arial, sans-serif;
+    color: var(--cal-txt);
+}
+
+.caladinho h1 { margin: 0 0 8px; font-size: 22px; color: var(--cal-txt); }
+.caladinho h2 { margin: 0 0 10px; font-size: 17px; color: var(--cal-txt); }
+
+/* Duas colunas no desktop (controles e tabuleiro), uma no celular. */
+.cal-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    align-items: start;
+}
+@media (min-width: 760px) {
+    .cal-grid { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); }
+}
+
+.cal-card {
+    background: var(--cal-card);
+    border: 1px solid var(--cal-borda);
+    border-radius: 14px;
+    padding: 18px;
+}
+
+/* ── Números do jogo ──
+   No original o multiplicador e o prêmio são linhas de texto com o valor em
+   âmbar, não cartões. É mais compacto e cabe ao lado do tabuleiro. */
+.cal-stats { display: grid; gap: 6px; margin-top: 12px; font-size: 14px; }
+.cal-stats b { color: var(--cal-amarelo); font-weight: 700; }
+.cal-stats .cal-teto { color: var(--cal-txt-mut); font-weight: 400; }
+
+.cal-info {
+    margin: 10px 0; font-size: 13px; color: var(--cal-txt-mut);
+    background: var(--cal-bg-2); border: 1px solid var(--cal-borda);
+    border-radius: 8px; padding: 8px 10px;
+}
+.cal-info b { color: var(--cal-verde); }
+
+/* ── Tabuleiro ── */
+.cal-board {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+    max-width: 420px; margin-top: 8px;
+}
+/* Cada casa clicável é um <button> dentro do próprio <form> — sem
+   JavaScript. `display: contents` faz o form sumir e o botão cair direto na
+   grade. */
+.cal-casa-forma { display: contents; margin: 0; }
+.cal-casa {
+    aspect-ratio: 1 / 1;
+    width: 100%;
+    border: 1px solid var(--cal-borda);
+    border-radius: 10px;
+    background: var(--cal-card-2);
+    cursor: pointer;
+    font-size: 26px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .06s ease, background .12s ease;
+    color: var(--cal-txt);
+    padding: 0;
+}
+.cal-casa:hover:not(:disabled) { background: #2c4054; transform: translateY(-2px); }
+.cal-casa:disabled { cursor: default; }
+.cal-casa.cal-aberta { background: var(--cal-bg-2); }
+.cal-casa.cal-segura {
+    border-color: var(--cal-verde);
+    box-shadow: inset 0 0 0 1px var(--cal-verde);
+}
+.cal-casa.cal-mina { border-color: var(--cal-vermelho); }
+.cal-casa.cal-estourou {
+    background: rgba(255, 91, 102, .25);
+    border-color: var(--cal-vermelho);
+}
+
+@media (max-width: 759px) {
+    .cal-board { max-width: 100%; gap: 6px; }
+    .cal-casa { font-size: 20px; border-radius: 8px; }
+    .cal-card { padding: 16px; }
+}
+
+/* ── Formulário e botões ── */
+.cal-campo { display: block; margin: 0 0 12px; }
+.cal-campo label {
+    display: block; margin-bottom: 5px;
+    font-size: 13px; color: var(--cal-txt-mut);
+}
+.cal-entrada {
+    width: 100%;
+    background: var(--cal-bg-2);
+    border: 1px solid var(--cal-borda);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: var(--cal-txt);
+    font-size: 16px;   /* 16px+ evita o zoom do iOS ao focar */
+    min-height: 48px;
+}
+.cal-entrada:focus {
+    outline: none;
+    border-color: var(--cal-amarelo);
+    box-shadow: 0 0 0 2px rgba(255, 176, 32, .18);
+}
+
+.cal-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%;
+    border: none; border-radius: 10px;
+    padding: 12px 18px; min-height: 48px;
+    font: inherit; font-size: 15px; font-weight: 700;
+    cursor: pointer; text-decoration: none;
+    transition: filter .15s, transform .08s;
+}
+.cal-btn:hover { filter: brightness(1.08); text-decoration: none; }
+.cal-btn:active { transform: scale(.98); }
+.cal-btn:disabled { opacity: .5; cursor: default; }
+.cal-btn-verde { background: var(--cal-verde); color: #062b1c; }
+.cal-btn-verde:hover { background: var(--cal-verde-d); }
+.cal-btn-amarelo { background: var(--cal-amarelo); color: #2b1d02; }
+.cal-btn-neutro {
+    background: transparent; color: var(--cal-txt);
+    border: 1px solid var(--cal-borda);
+}
+
+/* ── Histórico ── */
+.cal-linha {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--cal-borda);
+    font-size: 14px;
+}
+.cal-linha:last-child { border-bottom: none; }
+.cal-linha-sub { color: var(--cal-txt-mut); font-size: 12px; margin-top: 2px; }
+.cal-ganhou { color: var(--cal-verde); font-weight: 700; }
+.cal-perdeu { color: var(--cal-vermelho); font-weight: 700; }
+.cal-vazio { color: var(--cal-txt-mut); font-size: 14px; }
+
+/* ── Bloco que abre e fecha (tabela de multiplicadores) ──
+   Mesmo <details> nativo do resto do site, na paleta do cassino. */
+.cal-revelavel { padding: 0; }
+.cal-revelavel-botao {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 16px;
+    font-size: 13.5px; font-weight: 600; color: var(--cal-txt-mut);
+    cursor: pointer; list-style: none; border-radius: 14px;
+}
+.cal-revelavel-botao::-webkit-details-marker { display: none; }
+.cal-revelavel-botao::after {
+    content: "+"; margin-left: auto;
+    font-size: 17px; line-height: 1; color: var(--cal-amarelo);
+}
+.cal-revelavel[open] > .cal-revelavel-botao::after { content: "\2212"; }
+.cal-revelavel[open] > .cal-revelavel-botao {
+    border-bottom: 1px solid var(--cal-borda);
+}
+.cal-revelavel-corpo { padding: 12px 16px 16px; }
+
+.cal-tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.cal-tabela th, .cal-tabela td {
+    padding: 8px 6px; border-bottom: 1px solid var(--cal-borda); text-align: left;
+}
+.cal-tabela th {
+    color: var(--cal-txt-mut); font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.cal-tabela .cal-num { text-align: right; white-space: nowrap; }
+.cal-rolagem { overflow-x: auto; }
+
+.cal-linha-form { display: flex; gap: 8px; align-items: center; }
+.cal-linha-form .cal-entrada { max-width: 8rem; }
+
+/* ── Lobby ── */
+.cal-jogos { display: grid; gap: 10px; }

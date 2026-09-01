@@ -138,6 +138,14 @@ O que é diferente aqui:
   e prêmio acima do que a casa cobriu na hora da aposta.
 - **Sem JavaScript.** Cada casa é um formulário; o servidor decide e a página
   recarrega. As minas só aparecem quando a rodada encerra.
+- **O visual é o do cassino original**, em `static/caladinho.css`: paleta
+  escura azulada, tabuleiro 5×5, 💎 e 💣, e a mina em que a pessoa pisou com
+  fundo vermelho, diferente das outras. Tudo prefixado `cal-` e escopado em
+  `.caladinho`, porque `.casa`, `.card`, `.btn`, `.tabela`, `.rodape` e
+  `.sidebar` existem nos dois CSS com significados diferentes — deixar um
+  vencer o outro por ordem de carregamento funciona até alguém reordenar os
+  `<link>`. A barra de cima continua sendo do `base.css`: o jogo tem cara
+  própria, mas a pessoa precisa saber voltar.
 
 A visibilidade do caixa para os jogadores é um **interruptor no painel do
 Banco Central**, guardado no banco — trocar de ideia não exige deploy.
@@ -221,6 +229,7 @@ administrador conserta algo é um alarme que se aprende a ignorar.
 | `vavacoin/limite.py` | os dois freios do login |
 | `vavacoin/static/base.css` | o visual, herdado do Benbals |
 | `vavacoin/static/menu.js` | o menu off-canvas do celular — o único JS do projeto |
+| `vavacoin/static/caladinho.css` | o visual do cassino, prefixado `cal-` |
 | `vavacoin/nomes.py` | normalização do nome de usuário (acento e caixa) |
 | `vavacoin/mines.py` | a matemática do mines, pura |
 | `vavacoin/caladinho.py` | o cassino onde ela encosta no ledger |
