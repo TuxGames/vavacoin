@@ -173,7 +173,7 @@ administrador conserta algo é um alarme que se aprende a ignorar.
 | `vavacoin/static/menu.js` | o menu off-canvas do celular — o único JS do projeto |
 | `vavacoin/nomes.py` | normalização do nome de usuário (acento e caixa) |
 | `vavacoin/modelos.py` | `Usuario`, `Convite`, `Transacao` (ledger) |
-| `vavacoin/constantes.py` | supply, saque inicial, capacidade |
+| `vavacoin/constantes.py` | supply inicial e os identificadores das contas de sistema |
 
 ## Regras que o código impõe
 
