@@ -1,5 +1,9 @@
 """Operações da economia, todas construídas em cima do ``mover()``.
 
+As operações privilegiadas (criar conta, emitir convite, resetar) exigem o
+Banco Central passado explicitamente — ver :mod:`vavacoin.autoridade`. As do
+jogador (resgatar o convite, transferir) não exigem nada além dele mesmo.
+
 Nenhuma função daqui escreve em saldo: elas compõem chamadas ao
 :func:`~vavacoin.moeda.mover`. Nenhuma faz ``commit`` — quem chama é dono da
 transação. As operações compostas rodam dentro de um ``SAVEPOINT``, para que
@@ -12,6 +16,7 @@ import secrets
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
+from .autoridade import exigir_banco_central
 from .constantes import SAQUE_INICIAL, SUPPLY_TOTAL
 from .dinheiro import ZERO, para_decimal
 from .erros import (
@@ -31,17 +36,20 @@ from .moeda import (
     mover,
     verificar_conservacao,
 )
-from .modelos import Convite, Transacao, Usuario, agora, banco_central
+from .modelos import Convite, Usuario, agora, banco_central
 
 
-def criar_usuario(nome_usuario, senha, nome_exibicao=None, sessao=None):
-    """Cria uma conta com saldo zero.
+def criar_usuario(
+    nome_usuario, senha, nome_exibicao=None, autoridade=None, sessao=None
+):
+    """Cria uma conta com saldo zero. Poder do Banco Central.
 
     Cadastro é manual e por vontade da pessoa — nada de importar lista. A
     conta nasce com zero: entrar no site não é receber dinheiro, o dinheiro
     só chega pelo resgate do convite, saindo do Banco Central.
     """
     sessao = sessao or db.session
+    exigir_banco_central(autoridade, sessao)
     usuario = Usuario(
         nome_usuario=nome_usuario,
         nome_exibicao=nome_exibicao or nome_usuario,
@@ -53,13 +61,14 @@ def criar_usuario(nome_usuario, senha, nome_exibicao=None, sessao=None):
     return usuario
 
 
-def criar_convite(codigo=None, destinatario=None, sessao=None):
+def criar_convite(codigo=None, destinatario=None, autoridade=None, sessao=None):
     """Cria um convite — o direito de uma pessoa sacar os 50 iniciais.
 
-    Um convite por aluno. Quantos convites existem é o que controla quantas
-    pessoas entram; o supply não cresce com eles.
+    Poder do Banco Central. Um convite por aluno; quantos convites existem é
+    o que controla quantas pessoas entram, e o supply não cresce com eles.
     """
     sessao = sessao or db.session
+    exigir_banco_central(autoridade, sessao)
     convite = Convite(
         codigo=codigo or secrets.token_urlsafe(8),
         destinatario=destinatario,
@@ -147,8 +156,14 @@ def transferir(origem, destino, valor, motivo=None, sessao=None):
     )
 
 
-def resetar_economia(sessao=None, saque=SAQUE_INICIAL, motivo="reset da economia"):
+def resetar_economia(
+    autoridade=None, sessao=None, saque=SAQUE_INICIAL, motivo="reset da economia"
+):
     """Recolhe tudo ao Banco Central e redistribui os 50 por pessoa.
+
+    Poder do Banco Central. Recolhe de **todo mundo, sem exceção — inclusive
+    o dono do cassino**: sem temporada, o reset é o único mecanismo contra a
+    concentração, e uma conta isenta o esvaziaria de sentido.
 
     Existe como operação de verdade, com ledger e conservação verificada nas
     duas pontas, porque a alternativa é UPDATE na unha no dia do reset — que
@@ -161,6 +176,7 @@ def resetar_economia(sessao=None, saque=SAQUE_INICIAL, motivo="reset da economia
     estado inicial, ou nada muda.
     """
     sessao = sessao or db.session
+    exigir_banco_central(autoridade, sessao)
     saque = para_decimal(saque)
     bc = banco_central(sessao)
     if bc is None:
@@ -212,20 +228,3 @@ def resetar_economia(sessao=None, saque=SAQUE_INICIAL, motivo="reset da economia
 
     verificar_conservacao(sessao)
     return len(participantes)
-
-
-def extrato(usuario, limite=50, sessao=None):
-    """Últimas transações que tocaram a conta, mais recentes primeiro."""
-    sessao = sessao or db.session
-    usuario_id = usuario.id if isinstance(usuario, Usuario) else usuario
-    return list(
-        sessao.execute(
-            select(Transacao)
-            .where(
-                (Transacao.origem_id == usuario_id)
-                | (Transacao.destino_id == usuario_id)
-            )
-            .order_by(Transacao.id.desc())
-            .limit(limite)
-        ).scalars()
-    )

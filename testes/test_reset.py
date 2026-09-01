@@ -19,7 +19,7 @@ def test_reset_devolve_tudo_e_redistribui(app, bc, nova_pessoa):
     assert (ana.saldo, bia.saldo) == (Decimal("10.00"), Decimal("90.00"))
     conservacao()
 
-    quantos = resetar_economia()
+    quantos = resetar_economia(autoridade=bc)
     db.session.commit()
 
     assert quantos == 2
@@ -35,7 +35,7 @@ def test_reset_passa_pelo_ledger(app, bc, nova_pessoa):
     conservacao()
     linhas_antes = db.session.query(Transacao).count()
 
-    resetar_economia()
+    resetar_economia(autoridade=bc)
     db.session.commit()
 
     tipos = [
@@ -54,7 +54,7 @@ def test_reset_nao_da_saque_a_quem_nunca_resgatou(app, bc, nova_pessoa):
     curioso = nova_pessoa(com_convite=False)
     conservacao()
 
-    quantos = resetar_economia()
+    quantos = resetar_economia(autoridade=bc)
     db.session.commit()
 
     assert quantos == 1
@@ -67,12 +67,12 @@ def test_reset_e_idempotente_em_efeito(app, bc, nova_pessoa):
     """Resetar duas vezes seguidas deixa a economia no mesmo lugar."""
     nova_pessoa(com_convite=True)
     nova_pessoa(com_convite=True)
-    resetar_economia()
+    resetar_economia(autoridade=bc)
     db.session.commit()
     conservacao()
     primeiro = {u.id: u.saldo for u in db.session.query(type(bc)).all()}
 
-    resetar_economia()
+    resetar_economia(autoridade=bc)
     db.session.commit()
 
     assert {u.id: u.saldo for u in db.session.query(type(bc)).all()} == primeiro
@@ -81,7 +81,7 @@ def test_reset_e_idempotente_em_efeito(app, bc, nova_pessoa):
 
 def test_reset_sem_ninguem_nao_quebra(app, bc):
     conservacao()
-    assert resetar_economia() == 0
+    assert resetar_economia(autoridade=bc) == 0
     db.session.commit()
     assert bc.saldo == SUPPLY_TOTAL
     conservacao()

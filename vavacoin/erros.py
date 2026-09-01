@@ -57,3 +57,24 @@ class SupplyInsuficiente(ErroMonetario):
     primeira pessoa. A decisão registrada no CLAUDE.md é reduzir o saque
     inicial, nunca cunhar.
     """
+
+
+class SemAutoridade(ErroMonetario):
+    """A operação exige o Banco Central e não recebeu o Banco Central.
+
+    O BC é a autoridade do jogo (emite convite, cria conta, roda gênese,
+    executa reset) e é também uma conta com dinheiro. Quem entra nele é dono
+    de tudo — por isso os poderes precisam ser pedidos explicitamente, e não
+    ficar implícitos em "quem conseguiu chamar a função".
+    """
+
+
+class BancoCentralNaoAutentica(ErroMonetario):
+    """Tentou-se abrir sessão na conta do Banco Central.
+
+    No Benbals as contas de sistema autenticam com senha em texto puro e dá
+    para entrar na conta de uma empresa e esvaziar o caixa. Aqui a porta não
+    existe: o BC não tem senha, não é ``is_active``, o ``user_loader`` o
+    recusa e o ``get_id()`` estoura. Os poderes dele são por CLI, que exige
+    acesso ao servidor.
+    """

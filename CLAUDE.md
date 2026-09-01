@@ -38,9 +38,14 @@ quebrou no cassino, quem virou o rico da sala.
   reduzir o saque inicial, não emitir mais moeda.
 - **Os 50 são da pessoa, não da conta.** Amarrados ao código de convite, um por
   aluno. Sem isso, dez contas viram 500 VVC.
-- **Todo movimento de dinheiro passa por um único caminho** (`mover()` no
-  Benbals): trava a linha, conserva massa, crédito igual a débito. Nenhum
-  caminho paralelo.
+- **Todo movimento de dinheiro passa por um único caminho** (`mover()`): trava a
+  linha, conserva massa, crédito igual a débito. Nenhum caminho paralelo.
+- **Exceção única: a gênese.** Alguém precisa fazer os 5.000 existirem, e antes
+  disso não há de onde mover. `criar_genese()` é a única função que escreve
+  saldo sem origem. Ela é blindada — só roda se o Banco Central ainda não
+  existe, com ledger vazio e saldo zero — e a operação fica registrada no
+  ledger como uma linha `genese` sem origem. **Isso não é bug**; está escrito
+  aqui para o próximo leitor não "consertar".
 - **Conservação de massa é verificável**: a soma de todos os saldos, incluindo
   o do banco central, é sempre **5.000,00**, antes e depois de qualquer
   operação. É o teste que roda em cima de qualquer feature que mexa em dinheiro.
@@ -146,6 +151,26 @@ central e redistribui os 50 —, não como SQL improvisado no dia. Alterar saldo
 por fora é exatamente como o Benbals ganhou o bug que faz saldo sumir. Se é
 para poder resetar, o reset é uma feature, com teste de conservação de massa
 antes e depois.
+
+**Tudo volta ao Banco Central, sem exceção — inclusive o dono do cassino.**
+Isso faz do reset o mecanismo real contra a concentração, no lugar da temporada
+que foi descartada: o dinheiro acumula até alguém decidir que já chega.
+
+**Os 50 são redistribuídos a quem tem convite resgatado**, não a quem tem conta.
+Se fosse por conta, criar conta depois do reset viraria jeito de sacar de novo,
+e o reset viraria faucet.
+
+## Governança
+
+O **Banco Central** é a autoridade do jogo: emite convite, cria conta, roda a
+gênese e executa o reset. Não existe outro papel de administrador.
+
+Cuidado que vem de erro já cometido no Benbals: o BC é ao mesmo tempo uma conta
+de dinheiro e o poder administrativo. **Quem entrar nele é dono de tudo.** Lá,
+contas de sistema autenticam com senha em texto puro e dá para esvaziar o caixa
+de uma empresa entrando na conta dela. Aqui: senha com hash como qualquer conta,
+e vale considerar que o BC simplesmente **não autentique pela tela** — os
+poderes dele existem por CLI, que exige acesso ao servidor.
 
 **Projeto novo, sem fork do Benbals.** Reaproveita os conceitos e a disciplina
 do núcleo monetário, não os arquivos.

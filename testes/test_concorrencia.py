@@ -73,9 +73,9 @@ def test_dois_gastos_simultaneos_nao_estouram_o_saldo(app, bc, nova_pessoa):
 
 def test_mesmo_convite_resgatado_por_duas_contas_ao_mesmo_tempo(app, bc):
     """Só uma das contas saca; o supply não emite 100 por um código."""
-    ana = criar_usuario("ana", "senha-boa-123")
-    bia = criar_usuario("bia", "senha-boa-123")
-    convite = criar_convite(destinatario="Ana")
+    ana = criar_usuario("ana", "senha-boa-123", autoridade=bc)
+    bia = criar_usuario("bia", "senha-boa-123", autoridade=bc)
+    convite = criar_convite(destinatario="Ana", autoridade=bc)
     db.session.commit()
     codigo = convite.codigo
     ids = [ana.id, bia.id]

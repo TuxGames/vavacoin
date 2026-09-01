@@ -21,8 +21,8 @@ from vavacoin.operacoes import criar_convite, criar_usuario, resgatar_convite
 def test_saque_sai_do_banco_central(app, bc):
     """Os 50 não são criados: o Banco Central fica com 50 a menos."""
     conservacao()
-    ana = criar_usuario("ana", "senha-boa-123")
-    convite = criar_convite(destinatario="Ana")
+    ana = criar_usuario("ana", "senha-boa-123", autoridade=bc)
+    convite = criar_convite(destinatario="Ana", autoridade=bc)
     db.session.commit()
 
     transacao = resgatar_convite(ana, convite.codigo)
@@ -38,14 +38,14 @@ def test_saque_sai_do_banco_central(app, bc):
 def test_mesmo_codigo_duas_vezes_nao_saca_duas_vezes(app, bc):
     """A segunda execução do resgate do mesmo código não move nada."""
     conservacao()
-    ana = criar_usuario("ana", "senha-boa-123")
-    convite = criar_convite(destinatario="Ana")
+    ana = criar_usuario("ana", "senha-boa-123", autoridade=bc)
+    convite = criar_convite(destinatario="Ana", autoridade=bc)
     db.session.commit()
     resgatar_convite(ana, convite.codigo)
     db.session.commit()
     conservacao()
 
-    bia = criar_usuario("bia", "senha-boa-123")
+    bia = criar_usuario("bia", "senha-boa-123", autoridade=bc)
     db.session.commit()
     with pytest.raises(ConviteJaResgatado):
         resgatar_convite(bia, convite.codigo)
@@ -59,8 +59,8 @@ def test_mesmo_codigo_duas_vezes_nao_saca_duas_vezes(app, bc):
 def test_dez_contas_da_mesma_pessoa_nao_viram_500(app, bc):
     """Os 50 são da pessoa: sem um convite novo, nenhuma conta saca."""
     conservacao()
-    convite = criar_convite(destinatario="Ana")
-    contas = [criar_usuario(f"ana{i}", "senha-boa-123") for i in range(10)]
+    convite = criar_convite(destinatario="Ana", autoridade=bc)
+    contas = [criar_usuario(f"ana{i}", "senha-boa-123", autoridade=bc) for i in range(10)]
     db.session.commit()
 
     resgatar_convite(contas[0], convite.codigo)
@@ -78,9 +78,9 @@ def test_dez_contas_da_mesma_pessoa_nao_viram_500(app, bc):
 
 def test_uma_conta_nao_resgata_dois_codigos(app, bc):
     conservacao()
-    ana = criar_usuario("ana", "senha-boa-123")
-    primeiro = criar_convite(destinatario="Ana")
-    segundo = criar_convite(destinatario="Ana de novo")
+    ana = criar_usuario("ana", "senha-boa-123", autoridade=bc)
+    primeiro = criar_convite(destinatario="Ana", autoridade=bc)
+    segundo = criar_convite(destinatario="Ana de novo", autoridade=bc)
     db.session.commit()
 
     resgatar_convite(ana, primeiro.codigo)
@@ -96,7 +96,7 @@ def test_uma_conta_nao_resgata_dois_codigos(app, bc):
 
 def test_codigo_inexistente(app, bc):
     conservacao()
-    ana = criar_usuario("ana", "senha-boa-123")
+    ana = criar_usuario("ana", "senha-boa-123", autoridade=bc)
     db.session.commit()
 
     with pytest.raises(ConviteInvalido):
@@ -115,8 +115,8 @@ def test_supply_comporta_exatamente_cem_pessoas(app, bc, nova_pessoa):
     conservacao()
     assert bc.saldo == Decimal("0.00")
 
-    excedente = criar_usuario("aluno101", "senha-boa-123")
-    convite = criar_convite(destinatario="o 101")
+    excedente = criar_usuario("aluno101", "senha-boa-123", autoridade=bc)
+    convite = criar_convite(destinatario="o 101", autoridade=bc)
     db.session.commit()
     with pytest.raises(SupplyInsuficiente):
         resgatar_convite(excedente, convite.codigo)
@@ -132,8 +132,8 @@ def test_resgate_falho_nao_queima_o_convite(app, bc, nova_pessoa):
     for _ in range(CAPACIDADE):
         nova_pessoa(com_convite=True)
 
-    tarde = criar_usuario("atrasado", "senha-boa-123")
-    convite = criar_convite(destinatario="Atrasado")
+    tarde = criar_usuario("atrasado", "senha-boa-123", autoridade=bc)
+    convite = criar_convite(destinatario="Atrasado", autoridade=bc)
     db.session.commit()
     with pytest.raises(SupplyInsuficiente):
         resgatar_convite(tarde, convite.codigo)
@@ -147,7 +147,7 @@ def test_resgate_falho_nao_queima_o_convite(app, bc, nova_pessoa):
 
 def test_senha_e_guardada_com_hash(app, bc):
     """Senha em texto puro é o que deixou o Benbals vulnerável."""
-    ana = criar_usuario("ana", "senha-boa-123")
+    ana = criar_usuario("ana", "senha-boa-123", autoridade=bc)
     db.session.commit()
 
     assert ana.senha_hash != "senha-boa-123"

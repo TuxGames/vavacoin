@@ -13,6 +13,7 @@ from flask_login import UserMixin
 from sqlalchemy import CheckConstraint
 
 from .constantes import USUARIO_BANCO_CENTRAL
+from .erros import BancoCentralNaoAutentica
 from .dinheiro import ZERO, Dinheiro
 from .extensoes import db
 
@@ -87,6 +88,19 @@ class Usuario(db.Model, UserMixin):
     def is_active(self):
         """Flask-Login: o Banco Central não é uma sessão que alguém abre."""
         return not self.eh_banco_central
+
+    def get_id(self):
+        """Flask-Login: identidade de sessão. O Banco Central não tem uma.
+
+        Estourar aqui é de propósito e é a trava mais interna: ``is_active``
+        já barra o ``login_user()`` normal, mas ``login_user(bc, force=True)``
+        passaria por cima dela. Nenhuma sessão do BC chega a ser criada.
+        """
+        if self.eh_banco_central:
+            raise BancoCentralNaoAutentica(
+                "o Banco Central não abre sessão; seus poderes são por CLI"
+            )
+        return str(self.id)
 
     def __repr__(self):
         return f"<Usuario {self.nome_usuario} saldo={self.saldo}>"

@@ -42,19 +42,23 @@ def bc(app):
 
 
 @pytest.fixture
-def nova_pessoa(app):
-    """Fábrica: cria conta e, se pedido, resgata o convite dela."""
+def nova_pessoa(app, bc):
+    """Fábrica: cria conta e, se pedido, resgata o convite dela.
+
+    Depende do ``bc`` porque criar conta e emitir convite são poderes do
+    Banco Central — a fixture exerce a autoridade explicitamente, como a CLI.
+    """
     contador = {"n": 0}
 
     def criar(nome=None, senha="senha-boa-123", com_convite=False):
         contador["n"] += 1
         nome = nome or f"aluno{contador['n']}"
-        usuario = criar_usuario(nome, senha)
+        usuario = criar_usuario(nome, senha, autoridade=bc)
         db.session.commit()
         if com_convite:
             from vavacoin.operacoes import resgatar_convite
 
-            convite = criar_convite(destinatario=nome)
+            convite = criar_convite(destinatario=nome, autoridade=bc)
             db.session.commit()
             resgatar_convite(usuario, convite.codigo)
             db.session.commit()
