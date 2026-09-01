@@ -147,6 +147,81 @@ def test_nome_de_usuario_repetido_e_recusado(app, bc, cliente):
     conservacao()
 
 
+def test_senha_curta_e_aceita_no_cadastro(app, bc, cliente):
+    """Não há tamanho mínimo — decisão do dono do projeto, registrada.
+
+    Uma letra basta, e ela funciona de verdade: cadastra, entra e sai.
+    """
+    conservacao()
+    codigo = criar_convite(destinatario="Ana", autoridade=bc).codigo
+    db.session.commit()
+
+    resposta = cliente.post(
+        "/cadastro",
+        data={
+            "codigo": codigo,
+            "nome_usuario": "ana",
+            "nome_exibicao": "Ana",
+            "senha": "a",
+            "confirmacao": "a",
+        },
+        follow_redirects=True,
+    )
+
+    assert resposta.status_code == 200
+    ana = db.session.execute(
+        db.select(Usuario).where(Usuario.nome_usuario == "ana")
+    ).scalar_one()
+    assert ana.saldo == SAQUE_INICIAL
+    assert ana.verificar_senha("a")
+    conservacao()
+
+    cliente.post("/sair", follow_redirects=True)
+    assert _entrar(cliente, "ana", "a").status_code == 200
+
+
+@pytest.mark.parametrize("vazia", ["", "   "])
+def test_senha_vazia_nao_cadastra(app, bc, cliente, vazia):
+    """Sem mínimo é escolha; sem senha é conta destrancada."""
+    conservacao()
+    codigo = criar_convite(destinatario="Ana", autoridade=bc).codigo
+    db.session.commit()
+
+    cliente.post(
+        "/cadastro",
+        data={
+            "codigo": codigo,
+            "nome_usuario": "ana",
+            "nome_exibicao": "Ana",
+            "senha": vazia,
+            "confirmacao": vazia,
+        },
+    )
+
+    assert db.session.query(Usuario).count() == 1  # só o Banco Central
+    conservacao()
+
+
+def test_mensagem_de_senha_vazia_explica_a_regra_que_sobrou(app, bc, cliente):
+    """A única regra de senha que existe merece ser dita em português."""
+    codigo = criar_convite(destinatario="Ana", autoridade=bc).codigo
+    db.session.commit()
+
+    corpo = cliente.post(
+        "/cadastro",
+        data={
+            "codigo": codigo,
+            "nome_usuario": "ana",
+            "nome_exibicao": "Ana",
+            "senha": "",
+            "confirmacao": "",
+        },
+    ).get_data(as_text=True)
+
+    assert "Pode ser curta, mas não pode ser vazia." in corpo
+    conservacao()
+
+
 def test_senhas_diferentes_nao_cadastram(app, bc, cliente):
     conservacao()
     codigo = criar_convite(destinatario="Ana", autoridade=bc).codigo

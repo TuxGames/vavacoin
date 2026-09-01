@@ -19,6 +19,16 @@ NOME_USUARIO = Regexp(
     message="Use só letras minúsculas, números, ponto, hífen ou sublinhado.",
 )
 
+#: Senha: sem tamanho mínimo, por decisão do dono do projeto — repetida e
+#: registrada. O ``DataRequired`` continua: vazia (ou só espaços) é recusada,
+#: e a diferença não é detalhe. Sem mínimo é escolha de quem usa; sem senha é
+#: conta destrancada. O teto existe só para não deixar entrar um texto enorme
+#: no bcrypt.
+SENHA = [
+    DataRequired(message="Escolha uma senha. Pode ser curta, mas não pode ser vazia."),
+    Length(max=200),
+]
+
 
 class FormularioLogin(FlaskForm):
     nome_usuario = StringField("Usuário", validators=[DataRequired()])
@@ -37,7 +47,7 @@ class FormularioCadastro(FlaskForm):
     nome_exibicao = StringField(
         "Nome que aparece", validators=[DataRequired(), Length(min=2, max=80)]
     )
-    senha = PasswordField("Senha", validators=[DataRequired(), Length(min=8, max=200)])
+    senha = PasswordField("Senha", validators=SENHA)
     confirmacao = PasswordField(
         "Repita a senha",
         validators=[DataRequired(), EqualTo("senha", message="As senhas não batem.")],
@@ -91,7 +101,7 @@ class FormularioCriarConta(FlaskForm):
     nome_exibicao = StringField(
         "Nome que aparece", validators=[DataRequired(), Length(min=2, max=80)]
     )
-    senha = PasswordField("Senha", validators=[DataRequired(), Length(min=8, max=200)])
+    senha = PasswordField("Senha", validators=SENHA)
     enviar = SubmitField("Criar conta")
 
 

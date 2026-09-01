@@ -212,6 +212,38 @@ def test_criar_conta_pelo_painel(app, bc, painel):
     conservacao()
 
 
+def test_criar_conta_pelo_painel_aceita_senha_curta(app, bc, painel):
+    """Mesma regra do cadastro público: sem mínimo."""
+    resposta = painel.post(
+        "/painel/conta",
+        data={"nome_usuario": "curto", "nome_exibicao": "Curto", "senha": "a"},
+        follow_redirects=True,
+    )
+
+    assert resposta.status_code == 200
+    conta = db.session.execute(
+        db.select(Usuario).where(Usuario.nome_usuario == "curto")
+    ).scalar_one()
+    assert conta.verificar_senha("a")
+    conservacao()
+
+
+def test_criar_conta_pelo_painel_recusa_senha_vazia(app, bc, painel):
+    resposta = painel.post(
+        "/painel/conta",
+        data={"nome_usuario": "vazio", "nome_exibicao": "Vazio", "senha": ""},
+    )
+
+    assert resposta.status_code == 400
+    assert (
+        db.session.execute(
+            db.select(Usuario).where(Usuario.nome_usuario == "vazio")
+        ).scalar_one_or_none()
+        is None
+    )
+    conservacao()
+
+
 def test_extrato_de_qualquer_um(app, bc, painel):
     _cadastrar(app, bc, "ana")
     resposta = painel.get("/painel/extrato/ana")
