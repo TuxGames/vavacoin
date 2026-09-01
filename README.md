@@ -120,7 +120,7 @@ como no ITA-IME. **Nenhum passo abaixo foi executado** — quem sobe é o autor.
 1. **Console Bash** na conta `vavacoin`:
 
    ```bash
-   git clone <url-do-repositorio> vavacoin
+   git clone https://github.com/TuxGames/vavacoin.git vavacoin
    cd vavacoin
    python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt
@@ -132,10 +132,14 @@ como no ITA-IME. **Nenhum passo abaixo foi executado** — quem sobe é o autor.
    python3 -c "import secrets; print(secrets.token_hex(32))"
    ```
 
-   No painel *Web → Environment variables* (ou no arquivo WSGI, antes do
-   import): `VAVACOIN_SECRET_KEY=<a chave>` e `VAVACOIN_ENV=producao`. Sem a
-   chave a aplicação **se recusa a subir** — a padrão é pública, está aqui no
-   repositório.
+   Guarde-a onde ela não volte para o git. O caminho confiável no
+   PythonAnywhere é definir as duas variáveis **no arquivo WSGI do painel,
+   antes do import** (ver passo 4); o campo *Environment variables* da aba
+   Web não alcança os consoles, então repita o `export` no Bash quando for
+   rodar comandos.
+
+   Sem `VAVACOIN_SECRET_KEY`, com `VAVACOIN_ENV=producao`, a aplicação
+   **se recusa a subir** — a chave padrão é pública, está aqui no repositório.
 
 3. **Banco:**
 
@@ -152,10 +156,18 @@ como no ITA-IME. **Nenhum passo abaixo foi executado** — quem sobe é o autor.
    - No arquivo WSGI do painel, apontar para este projeto:
 
      ```python
+     import os
      import sys
+
      sys.path.insert(0, "/home/vavacoin/vavacoin")
-     from wsgi import application  # noqa: F401
+     os.environ["VAVACOIN_ENV"] = "producao"
+     os.environ["VAVACOIN_SECRET_KEY"] = "<a chave gerada no passo 2>"
+
+     from wsgi import application  # noqa: E402,F401
      ```
+
+     O arquivo WSGI do painel fica fora do repositório, então a chave não
+     corre risco de ser commitada.
 
    - *Static files*: URL `/static/` → `/home/vavacoin/vavacoin/vavacoin/static`
 
@@ -163,5 +175,8 @@ como no ITA-IME. **Nenhum passo abaixo foi executado** — quem sobe é o autor.
 
 6. **Depois de subir:** `flask auditoria` deve sair com código 0. Vale deixar
    rodando periodicamente — é o que acusa saldo escrito fora do `mover()`.
+
+O banco fica em `/home/vavacoin/vavacoin/vavacoin.sqlite3`, dentro do clone
+mas ignorado pelo git — `git pull` não encosta nele.
 
 Atualizar: `git pull && .venv/bin/flask db upgrade` e *Reload* no painel.

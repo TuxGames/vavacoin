@@ -1,5 +1,23 @@
+# Ambiente
 .venv/
+venv/
+.env
+.env.*
+
+# Banco local — nunca sobe: tem conta, hash de senha e saldo de gente
+*.sqlite3
+*.sqlite
+*.db
+instance/
+
+# Python
 __pycache__/
 *.pyc
-*.sqlite3
+*.pyo
 .pytest_cache/
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
