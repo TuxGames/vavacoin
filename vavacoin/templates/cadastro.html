@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_campos.html" import campo %}
+{% block titulo %}Cadastro — VaVáCoin{% endblock %}
+{% block conteudo %}
+<h1>Criar conta</h1>
+<p class="chamada">
+  O convite é seu, não da conta: ele vale uma vez só. Ao usá-lo você saca
+  50 VVC do que já existe.
+</p>
+<form method="post" class="formulario">
+  {{ formulario.hidden_tag() }}
+  {{ campo(formulario.codigo) }}
+  {{ campo(formulario.nome_usuario) }}
+  {{ campo(formulario.nome_exibicao) }}
+  {{ campo(formulario.senha) }}
+  {{ campo(formulario.confirmacao) }}
+  {{ formulario.enviar(class="botao") }}
+</form>
+{% endblock %}

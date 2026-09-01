@@ -1,15 +1,17 @@
 """VaVáCoin — fábrica da aplicação.
 
-Esta fatia é só o núcleo monetário: não há rotas, telas nem cassino. As
-extensões já ficam ligadas para que a próxima fatia não precise mexer aqui.
+Web mínima: entrar por convite, ver o próprio saldo e extrato, transferir, e
+a economia inteira pública. Cassino, ranking e administração por tela estão
+fora — administração continua só na CLI.
 """
 
-from flask import Flask
+from flask import Flask, render_template
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
-from .config import Config
+from .config import CHAVE_DE_DESENVOLVIMENTO, Config
 from .extensoes import csrf, db, login_manager, migrate
+from .seguranca import aplicar_cabecalhos
 
 
 @event.listens_for(Engine, "connect")
@@ -50,6 +52,19 @@ def criar_app(config=Config):
     app = Flask(__name__)
     app.config.from_object(config)
 
+    # Com a chave padrão qualquer um forja o cookie de sessão de qualquer
+    # conta. Localmente isso é só um aviso; publicando, é impedimento — daí a
+    # checagem ser ligada pela config de produção, e não adivinhada.
+    if app.config["SECRET_KEY"] == CHAVE_DE_DESENVOLVIMENTO:
+        if app.config.get("EXIGE_SEGREDO_PROPRIO"):
+            raise RuntimeError(
+                "defina VAVACOIN_SECRET_KEY antes de publicar "
+                "(a chave padrão é pública, está no repositório)"
+            )
+        app.logger.warning(
+            "usando a chave de desenvolvimento; não publique assim"
+        )
+
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
@@ -57,8 +72,37 @@ def criar_app(config=Config):
 
     from . import modelos  # noqa: F401  (registra as tabelas no metadata)
     from .cli import registrar_comandos
+    from .rotas import registrar_rotas
 
     registrar_comandos(app)
+    registrar_rotas(app)
+
+    login_manager.login_view = "auth.login"
+    login_manager.login_message = "Entre para ver sua carteira."
+
+    # CSP e companhia em toda resposta, inclusive nas de erro.
+    app.after_request(aplicar_cabecalhos)
+
+    @app.errorhandler(404)
+    def nao_encontrado(_erro):
+        return render_template(
+            "erro.html", codigo=404, mensagem="Essa página não existe."
+        ), 404
+
+    @app.errorhandler(403)
+    def proibido(_erro):
+        return render_template(
+            "erro.html", codigo=403, mensagem="Isso não é para você."
+        ), 403
+
+    @app.errorhandler(500)
+    def erro_interno(_erro):
+        # A sessão pode ter ficado num estado sujo; devolvê-la limpa evita
+        # que a próxima requisição herde uma transação abortada.
+        db.session.rollback()
+        return render_template(
+            "erro.html", codigo=500, mensagem="Deu errado aqui dentro."
+        ), 500
 
     @login_manager.user_loader
     def carregar_usuario(id_usuario):

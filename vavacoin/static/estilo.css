@@ -1,0 +1,165 @@
+/* Todo o estilo mora aqui.
+   Não é preferência: a CSP do projeto não permite <style> nem style="" na
+   página, então não existe "só um estilinho inline". Tirar isso depois seria
+   retrabalho; nascer sem isso é de graça. */
+
+:root {
+  --fundo: #11131a;
+  --papel: #191c26;
+  --borda: #2b3040;
+  --texto: #e6e8ef;
+  --apagado: #9aa1b5;
+  --destaque: #ffcf4a;
+  --entrou: #6fd08c;
+  --saiu: #ef7a7a;
+  --erro: #ff8f8f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.55;
+}
+
+.topo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--borda);
+}
+
+.marca {
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--destaque);
+  text-decoration: none;
+}
+
+.navegacao {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+
+.navegacao a { color: var(--texto); text-decoration: none; }
+.navegacao a:hover { text-decoration: underline; }
+
+.forma-sair { margin: 0; }
+
+.botao-texto {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--texto);
+  font: inherit;
+  cursor: pointer;
+}
+.botao-texto:hover { text-decoration: underline; }
+
+.conteudo {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+h1 { font-size: 1.6rem; margin-top: 0; }
+h2 { font-size: 1.2rem; margin-top: 2rem; }
+
+.chamada { color: var(--apagado); }
+.nota { color: var(--apagado); font-size: .92rem; }
+
+.lista-simples { padding-left: 1.1rem; }
+.lista-simples li { margin: .35rem 0; }
+
+/* Avisos */
+.avisos { list-style: none; padding: 0; margin: 0 0 1.25rem; }
+.aviso {
+  padding: .6rem .8rem;
+  border: 1px solid var(--borda);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: var(--papel);
+  margin-bottom: .5rem;
+}
+.aviso-erro { border-left-color: var(--erro); }
+.aviso-ok { border-left-color: var(--entrou); }
+
+/* Formulários */
+.formulario { max-width: 26rem; }
+.campo { display: flex; flex-direction: column; gap: .3rem; margin: 0 0 1rem; }
+.campo label { font-size: .9rem; color: var(--apagado); }
+
+.entrada {
+  padding: .55rem .7rem;
+  border: 1px solid var(--borda);
+  border-radius: 4px;
+  background: var(--papel);
+  color: var(--texto);
+  font: inherit;
+}
+.entrada:focus { outline: 2px solid var(--destaque); outline-offset: 1px; }
+
+.erro-campo { color: var(--erro); font-size: .85rem; }
+
+.botao {
+  display: inline-block;
+  padding: .55rem 1rem;
+  border: 1px solid var(--destaque);
+  border-radius: 4px;
+  background: var(--destaque);
+  color: #1a1200;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.botao:hover { filter: brightness(1.08); }
+
+/* Números */
+.saldo { font-size: 2.4rem; font-weight: 700; margin: .2rem 0; }
+.unidade { font-size: 1rem; color: var(--apagado); font-weight: 400; }
+
+.numeros, .confirmacao {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: .75rem;
+  margin: 1.25rem 0;
+}
+.numero {
+  padding: .8rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  background: var(--papel);
+}
+.numero dt { font-size: .82rem; color: var(--apagado); }
+.numero dd { margin: .2rem 0 0; font-size: 1.25rem; font-weight: 600; }
+.usuario { font-size: .85rem; color: var(--apagado); font-weight: 400; }
+
+/* Extrato */
+.extrato { width: 100%; border-collapse: collapse; font-size: .93rem; }
+.extrato th, .extrato td {
+  padding: .5rem .4rem;
+  border-bottom: 1px solid var(--borda);
+  text-align: left;
+  vertical-align: top;
+}
+.extrato th { color: var(--apagado); font-weight: 600; }
+.numerico { text-align: right; white-space: nowrap; }
+.entrou { color: var(--entrou); }
+.saiu { color: var(--saiu); }
+.motivo { color: var(--apagado); }
+
+.rodape {
+  border-top: 1px solid var(--borda);
+  padding: 1rem 1.25rem;
+  color: var(--apagado);
+  font-size: .85rem;
+}

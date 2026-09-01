@@ -7,12 +7,31 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+from flask import g  # noqa: E402
+
 from vavacoin import criar_app  # noqa: E402
 from vavacoin.config import ConfigTeste  # noqa: E402
 from vavacoin.constantes import SUPPLY_TOTAL  # noqa: E402
 from vavacoin.extensoes import db  # noqa: E402
 from vavacoin.moeda import criar_genese, soma_saldos  # noqa: E402
 from vavacoin.operacoes import criar_convite, criar_usuario  # noqa: E402
+
+
+def isolar_login_por_requisicao(aplicacao):
+    """Impede que o usuário logado vaze de uma requisição para a outra.
+
+    Artefato de teste, não do app: os testes rodam dentro de um app context
+    já empilhado (para poder consultar o banco nas asserções), e o Flask
+    reaproveita esse contexto nas requisições em vez de criar um novo. Como o
+    Flask-Login guarda o usuário em ``g._login_user``, dois ``test_client``
+    diferentes acabariam compartilhando quem está logado.
+
+    Em produção cada requisição ganha o próprio contexto e isso não acontece.
+    """
+
+    @aplicacao.before_request
+    def _limpar_cache_do_login():
+        g.pop("_login_user", None)
 
 
 @pytest.fixture
@@ -26,6 +45,7 @@ def app(tmp_path):
     banco = tmp_path / "teste.sqlite3"
     ConfigTeste.SQLALCHEMY_DATABASE_URI = f"sqlite:///{banco}"
     aplicacao = criar_app(ConfigTeste)
+    isolar_login_por_requisicao(aplicacao)
     with aplicacao.app_context():
         db.create_all()
         yield aplicacao

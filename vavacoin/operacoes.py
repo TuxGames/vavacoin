@@ -144,6 +144,45 @@ def resgatar_convite(usuario, codigo, sessao=None, saque=SAQUE_INICIAL):
     return transacao
 
 
+def cadastrar_por_convite(
+    nome_usuario, senha, codigo, nome_exibicao=None, sessao=None
+):
+    """Cria a conta e saca os 50, num passo só. É a única porta de entrada.
+
+    Aqui a autoridade do Banco Central chega **delegada pelo convite**: foi o
+    BC que emitiu aquele código, e um código vale exatamente uma conta. Por
+    isso esta é a única função que exerce o poder de criar conta sem receber
+    o BC de quem chamou — e ela só o faz depois de ver um convite existente e
+    ainda não resgatado.
+
+    Roda inteira num ``SAVEPOINT``: convite inválido não deixa conta órfã, e
+    conta que falha não queima convite.
+    """
+    sessao = sessao or db.session
+    bc = banco_central(sessao)
+    if bc is None:
+        raise ConviteInvalido("gênese ainda não rodou; não há Banco Central")
+
+    with sessao.begin_nested():
+        # Conferido antes de criar qualquer coisa: sem convite bom, não há
+        # cadastro, e nada chega a ser escrito.
+        convite = sessao.execute(
+            select(Convite).where(Convite.codigo == codigo).with_for_update()
+        ).scalar_one_or_none()
+        if convite is None:
+            raise ConviteInvalido(f"código inexistente: {codigo!r}")
+        if convite.resgatado:
+            raise ConviteJaResgatado(f"código {codigo!r} já foi resgatado")
+
+        usuario = criar_usuario(
+            nome_usuario, senha, nome_exibicao=nome_exibicao, autoridade=bc,
+            sessao=sessao,
+        )
+        resgatar_convite(usuario, codigo, sessao=sessao)
+
+    return usuario
+
+
 def transferir(origem, destino, valor, motivo=None, sessao=None):
     """Transferência entre duas pessoas — o uso normal da moeda.
 

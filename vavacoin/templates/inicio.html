@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1>VaVáCoin</h1>
+<p class="chamada">
+  A economia da turma. Cinco mil VVC existem desde o dia zero e nunca vão virar
+  cinco mil e um.
+</p>
+<ul class="lista-simples">
+  <li>Quem entra <strong>saca 50</strong> do que já existe — não é dinheiro novo.</li>
+  <li>Entra quem tem <strong>convite</strong>. Um por pessoa.</li>
+  <li>A moeda paga coisa da vida real; o site só registra a transferência.</li>
+  <li>A <a href="{{ url_for('publico.economia') }}">economia inteira é pública</a>.</li>
+</ul>
+{% if not current_user.is_authenticated %}
+  <p><a class="botao" href="{{ url_for('auth.cadastro') }}">Tenho um convite</a></p>
+{% endif %}
+{% endblock %}

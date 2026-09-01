@@ -1,0 +1,12 @@
+{# Macro unica para campo de formulario: rotulo, entrada e erros.
+   Existe para que nenhum template escreva <input> na mao — e, com isso,
+   nenhum esqueca o token CSRF que vem do hidden_tag(). #}
+{% macro campo(f, tipo_extra="") %}
+<p class="campo">
+  {{ f.label }}
+  {{ f(class="entrada " ~ tipo_extra) }}
+  {% if f.errors %}
+    <span class="erro-campo">{{ f.errors|join(" ") }}</span>
+  {% endif %}
+</p>
+{% endmacro %}

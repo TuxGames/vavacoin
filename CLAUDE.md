@@ -50,6 +50,25 @@ quebrou no cassino, quem virou o rico da sala.
   o do banco central, é sempre **5.000,00**, antes e depois de qualquer
   operação. É o teste que roda em cima de qualquer feature que mexa em dinheiro.
 
+### Conservação de massa não é o mesmo que auditoria
+
+Descoberto ao construir o núcleo, e vale registrar porque é contraintuitivo:
+**a soma continuar 5.000,00 não prova que ninguém mexeu.** Quem tira 10 de uma
+conta e põe 10 em outra por fora do `mover()` conserva a massa perfeitamente.
+A verificação de soma passa; a fraude fica.
+
+Por isso existem duas checagens diferentes, e as duas precisam existir:
+
+- **Conservação** (`verificar_conservacao`): a soma é 5.000,00. Barata, roda em
+  cima de toda operação.
+- **Auditoria** (`conferir_ledger`): reconstrói cada saldo a partir do zero
+  somando o ledger, e compara com o saldo gravado. É o que acusa a troca
+  disfarçada, porque nenhuma linha explica a mudança.
+
+O teste que prova isso é `test_auditoria_acusa_troca_disfarcada_que_conserva_a_massa`.
+Se alguém um dia achar a auditoria redundante com a conservação, é este
+parágrafo e este teste que respondem.
+
 ### Por que manter supply fixo mesmo sem lastro
 
 No Benbals a regra existe por causa do lastro em reais. Aqui o lastro não

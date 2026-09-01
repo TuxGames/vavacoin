@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}VaVáCoin{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='estilo.css') }}">
+</head>
+<body>
+  <header class="topo">
+    <a class="marca" href="{{ url_for('publico.inicio') }}">VaVáCoin</a>
+    <nav class="navegacao">
+      <a href="{{ url_for('publico.economia') }}">Economia</a>
+      {% if current_user.is_authenticated %}
+        <a href="{{ url_for('carteira.minha_carteira') }}">Carteira</a>
+        <a href="{{ url_for('carteira.transferir_passo1') }}">Transferir</a>
+        <form method="post" action="{{ url_for('auth.logout') }}" class="forma-sair">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="botao-texto">Sair</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('auth.login') }}">Entrar</a>
+        <a href="{{ url_for('auth.cadastro') }}">Cadastro</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main class="conteudo">
+    {% with mensagens = get_flashed_messages(with_categories=true) %}
+      {% if mensagens %}
+        <ul class="avisos">
+          {% for categoria, texto in mensagens %}
+            <li class="aviso aviso-{{ categoria }}">{{ texto }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    {% block conteudo %}{% endblock %}
+  </main>
+
+  <footer class="rodape">
+    <p>Supply fixo de 5.000 VVC. Ninguém cunha, nem o Banco Central.</p>
+  </footer>
+</body>
+</html>

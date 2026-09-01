@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block titulo %}Carteira — VaVáCoin{% endblock %}
+{% block conteudo %}
+<h1>Sua carteira</h1>
+<p class="saldo">{{ saldo }} <span class="unidade">VVC</span></p>
+<p><a class="botao" href="{{ url_for('carteira.transferir_passo1') }}">Transferir</a></p>
+
+<h2>Extrato</h2>
+{% if linhas %}
+<table class="extrato">
+  <thead>
+    <tr>
+      <th>Quando</th><th>Com quem</th><th>O quê</th>
+      <th class="numerico">Valor</th><th class="numerico">Saldo depois</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for linha in linhas %}
+    <tr>
+      <td>{{ linha.quando.strftime("%d/%m/%Y %H:%M") }}</td>
+      <td>{{ linha.contraparte }}</td>
+      <td>
+        {{ linha.tipo }}
+        {% if linha.motivo %}<span class="motivo">— {{ linha.motivo }}</span>{% endif %}
+      </td>
+      <td class="numerico {{ "saiu" if linha.valor_com_sinal < 0 else "entrou" }}">
+        {{ linha.valor_com_sinal }}
+      </td>
+      <td class="numerico">{{ linha.saldo_depois }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="nota">Nada ainda.</p>
+{% endif %}
+{% endblock %}
