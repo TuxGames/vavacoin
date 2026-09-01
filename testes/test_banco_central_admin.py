@@ -170,12 +170,35 @@ def test_banco_central_nao_resgata_convite(app, bc):
     conservacao()
 
 
-def test_nao_da_para_ajustar_o_saldo_do_banco_central(app, bc):
-    """O saldo do BC é consequência do resto; mexer nele seria mentir."""
+def test_ajustar_o_saldo_do_banco_central_emite_ou_queima(app, bc):
+    """Este teste afirmava que o saldo do BC não era ajustável.
+
+    A decisão mudou: ele é o único lado do mundo, então subir o saldo dele
+    **emite** e baixar **queima**. Não há de onde tirar nem para onde mandar
+    sem mentir sobre o que está em circulação.
+    """
+    from vavacoin.moeda import TIPO_EMISSAO, TIPO_QUEIMA, supply_emitido
+
     conservacao()
-    with pytest.raises(ValorInvalido):
-        ajustar_saldo(bc, "9999.00", "quero", autoridade=bc)
-    db.session.rollback()
+
+    ajustar_saldo(bc, "6000.00", "mais moeda", autoridade=bc)
+    db.session.commit()
+    assert bc.saldo == Decimal("6000.00")
+    assert supply_emitido() == Decimal("6000.00")
+    assert (
+        db.session.query(Transacao).order_by(Transacao.id.desc()).first().tipo
+        == TIPO_EMISSAO
+    )
+    conservacao()
+
+    ajustar_saldo(bc, "4500.00", "tirando de circulação", autoridade=bc)
+    db.session.commit()
+    assert bc.saldo == Decimal("4500.00")
+    assert supply_emitido() == Decimal("4500.00")
+    assert (
+        db.session.query(Transacao).order_by(Transacao.id.desc()).first().tipo
+        == TIPO_QUEIMA
+    )
     conservacao()
 
 

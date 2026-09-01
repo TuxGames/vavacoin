@@ -36,6 +36,7 @@ from .modelos import Transacao, Usuario
 
 TIPO_GENESE = "genese"
 TIPO_EMISSAO = "emissao"
+TIPO_QUEIMA = "queima"
 #: Histórico. O saque inicial acabou, mas as linhas antigas continuam no
 #: ledger e precisam de nome para serem lidas.
 TIPO_SAQUE_INICIAL = "saque_inicial"
@@ -48,6 +49,11 @@ TIPO_RESET_REDISTRIBUICAO = "reset_redistribuicao"
 #: que criam dinheiro. Está aqui em cima, e no CHECK da tabela, porque é a
 #: lista mais importante do projeto: tudo que não está nela conserva massa.
 TIPOS_SEM_ORIGEM = (TIPO_GENESE, TIPO_EMISSAO)
+
+#: E os únicos que podem entrar sem destino: os que destroem dinheiro. Mesma
+#: disciplina, do outro lado. Só o Banco Central queima, baixando o próprio
+#: saldo — e é o que permite o supply descer, em vez de o teto virar catraca.
+TIPOS_SEM_DESTINO = (TIPO_QUEIMA,)
 
 
 def _id_de(usuario):
@@ -76,12 +82,13 @@ def soma_saldos(sessao=None):
 
 
 def supply_emitido(sessao=None):
-    """Quanto dinheiro existe hoje, segundo o ledger.
+    """Quanto dinheiro existe hoje, segundo o ledger: entradas menos saídas.
 
-    É a soma dos lançamentos **sem origem**: a gênese mais toda emissão feita
-    depois por ajuste do administrador. Dinheiro só entra no mundo por uma
-    linha assim, então esta soma é a definição de supply — não um número
-    escrito no código, que poderia divergir da realidade sem ninguém notar.
+    **Entradas** são os lançamentos sem origem — a gênese e toda emissão. As
+    **saídas** são os sem destino, isto é, as queimas. Dinheiro só entra e só
+    sai do mundo por uma linha dessas, então esta conta é a definição de
+    supply — não um número escrito no código, que poderia divergir da
+    realidade sem ninguém notar.
     """
     sessao = sessao or db.session
     total = ZERO
@@ -89,11 +96,19 @@ def supply_emitido(sessao=None):
         select(Transacao.valor).where(Transacao.origem_id.is_(None))
     ).scalars():
         total += valor
+    for valor in sessao.execute(
+        select(Transacao.valor).where(Transacao.destino_id.is_(None))
+    ).scalars():
+        total -= valor
     return total
 
 
 def total_cunhado_depois_da_genese(sessao=None):
-    """O quanto já se cunhou além dos 5.000 do dia zero."""
+    """Quanto o supply andou desde o dia zero: cunhado menos queimado.
+
+    **Pode ser negativo**, e é informação, não erro: significa que se queimou
+    mais do que se cunhou, e o supply está abaixo dos 5.000 iniciais.
+    """
     return supply_emitido(sessao) - SUPPLY_INICIAL
 
 
@@ -151,6 +166,10 @@ def mover(
     Central como ``ator`` — cunhar é poder do administrador, e fica escrito
     no ledger quem cunhou e por quê. Fora disso, nenhuma chamada cria moeda.
 
+    ``destino=None`` é **queima**: dinheiro saindo do mundo. Mesma disciplina
+    do outro lado (:data:`TIPOS_SEM_DESTINO`), e só do saldo do próprio Banco
+    Central. É o que faz o supply poder descer.
+
     ``ator`` é quem mandou fazer, quando não é o próprio dono da origem: o
     administrador ajustando o saldo de alguém, por exemplo. É o que permite
     responder "por que meu saldo mudou?" seis meses depois.
@@ -169,13 +188,20 @@ def mover(
     if valor <= ZERO:
         raise ValorInvalido(f"valor precisa ser positivo, recebido {valor}")
 
-    destino_id = _id_de(destino)
+    destino_id = _id_de(destino) if destino is not None else None
     ator_id = _id_de(ator) if ator is not None else None
+
+    if origem is None and destino is None:
+        raise ValorInvalido("movimento sem origem e sem destino não é movimento")
 
     if origem is None:
         return _emitir(sessao, destino_id, valor, tipo, motivo, ator_id)
 
     origem_id = _id_de(origem)
+
+    if destino is None:
+        return _queimar(sessao, origem_id, valor, tipo, motivo, ator_id)
+
     if origem_id == destino_id:
         raise MesmaConta("origem e destino são a mesma conta")
 
@@ -294,6 +320,60 @@ def _emitir(sessao, destino_id, valor, tipo, motivo, ator_id):
         ator_id=ator_id,
         saldo_origem_depois=None,
         saldo_destino_depois=conta_destino.saldo,
+    )
+    sessao.add(transacao)
+    sessao.flush()
+    return transacao
+
+
+def _queimar(sessao, origem_id, valor, tipo, motivo, ator_id):
+    """Ramo de queima do ``mover()``: dinheiro saindo do mundo, sem destino.
+
+    Fica dentro do ``mover()`` pelo mesmo motivo da emissão: só um lugar
+    escreve saldo, e destruir moeda não pode virar a exceção que fura a regra.
+    """
+    if tipo not in TIPOS_SEM_DESTINO:
+        raise ValorInvalido(
+            f"movimento sem destino só existe para {TIPOS_SEM_DESTINO}, "
+            f"não para {tipo!r}"
+        )
+    if not (motivo or "").strip():
+        raise ValorInvalido("queima exige motivo escrito: ela destrói moeda")
+
+    ator = sessao.get(Usuario, ator_id) if ator_id is not None else None
+    if ator is None or not ator.eh_banco_central:
+        raise SemAutoridade("só o Banco Central queima moeda")
+    if origem_id != ator.id:
+        raise SemAutoridade("a queima sai do saldo do próprio Banco Central")
+
+    conta_origem = sessao.execute(
+        select(Usuario).where(Usuario.id == origem_id).with_for_update()
+    ).scalar_one_or_none()
+    if conta_origem is None:
+        raise ValorInvalido(f"conta de origem inexistente: {origem_id}")
+    if conta_origem.saldo < valor:
+        raise SaldoInsuficiente(
+            f"o Banco Central tem {conta_origem.saldo}, queimaria {valor}"
+        )
+
+    debito = sessao.execute(
+        update(Usuario)
+        .where(Usuario.id == origem_id, Usuario.saldo >= valor)
+        .values(saldo=Usuario.saldo - valor)
+    )
+    if debito.rowcount != 1:
+        raise SaldoInsuficiente("o saldo do Banco Central mudou durante a queima")
+    sessao.expire(conta_origem, ["saldo"])
+
+    transacao = Transacao(
+        origem_id=origem_id,
+        destino_id=None,
+        valor=valor,
+        tipo=tipo,
+        motivo=motivo,
+        ator_id=ator_id,
+        saldo_origem_depois=conta_origem.saldo,
+        saldo_destino_depois=None,
     )
     sessao.add(transacao)
     sessao.flush()

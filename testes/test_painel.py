@@ -121,7 +121,7 @@ def test_painel_mostra_supply_inicial_e_atual(app, bc, painel):
     corpo = painel.get("/painel/").get_data(as_text=True)
     assert "Supply inicial" in corpo
     assert "Supply atual" in corpo
-    assert "Cunhado depois" in corpo
+    assert "Cunhado − queimado" in corpo
     assert str(SUPPLY_INICIAL) in corpo
 
 

@@ -31,6 +31,7 @@ from .extensoes import db
 from .moeda import (
     TIPO_AJUSTE,
     TIPO_EMISSAO,
+    TIPO_QUEIMA,
     TIPO_RESET_RECOLHIMENTO,
     TIPO_RESET_REDISTRIBUICAO,
     TIPO_TRANSFERENCIA,
@@ -278,6 +279,10 @@ def ajustar_saldo(alvo, novo_saldo, motivo, autoridade=None, sessao=None):
       exatamente como no dia zero. Quem quiser ver o total cunhado tem
       ``moeda.total_cunhado_depois_da_genese()``.
 
+    **No próprio Banco Central é diferente**: ele é o único lado do mundo, e
+    não há de onde tirar nem para onde mandar. Subir emite, baixar **queima**
+    — e é assim que o supply desce.
+
     Passando pelo ledger, a auditoria continua fechando depois de um ajuste.
     Esse é o ponto: um alarme que dispara toda vez que o administrador
     conserta algo é um alarme que se aprende a ignorar.
@@ -295,10 +300,7 @@ def ajustar_saldo(alvo, novo_saldo, motivo, autoridade=None, sessao=None):
         alvo = sessao.get(Usuario, alvo)
     if alvo is None:
         raise ValorInvalido("conta inexistente")
-    if alvo.eh_banco_central:
-        raise ValorInvalido(
-            "o saldo do Banco Central é consequência do resto; ajuste as contas"
-        )
+
 
     novo_saldo = para_decimal(novo_saldo)
     if novo_saldo < ZERO:
@@ -319,7 +321,21 @@ def ajustar_saldo(alvo, novo_saldo, motivo, autoridade=None, sessao=None):
         return None
 
     with sessao.begin_nested():
-        if diferenca > ZERO:
+        if alvo.eh_banco_central:
+            # O Banco Central é o único lado do mundo: subir o saldo dele é
+            # emitir, baixar é queimar. Não há de onde tirar nem para onde
+            # mandar sem mentir sobre o que está em circulação.
+            if diferenca > ZERO:
+                transacao = mover(
+                    None, bc, diferenca, tipo=TIPO_EMISSAO,
+                    motivo=motivo, ator=bc, sessao=sessao,
+                )
+            else:
+                transacao = mover(
+                    bc, None, -diferenca, tipo=TIPO_QUEIMA,
+                    motivo=motivo, ator=bc, sessao=sessao,
+                )
+        elif diferenca > ZERO:
             faltante = diferenca - bc.saldo
             if faltante > ZERO:
                 # Cunhagem: o supply cresce exatamente aqui, e a linha diz

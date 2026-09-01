@@ -181,7 +181,7 @@ def comando_auditoria():
     click.echo(f"supply atual       {economia['supply_atual']} VVC")
     click.echo(f"supply máximo      {economia['supply_maximo']} VVC")
     click.echo(f"ainda cabe emitir  {economia['cabe_emitir']} VVC")
-    click.echo(f"cunhado depois     {economia['cunhado_depois']} VVC")
+    click.echo(f"cunhado − queimado {economia['cunhado_depois']} VVC")
     click.echo(f"soma dos saldos    {economia['soma_dos_saldos']} VVC")
     click.echo(f"diferença          {economia['diferenca']} VVC")
     click.echo(f"não emitido (BC)   {economia['nao_emitido']} VVC")

@@ -234,19 +234,24 @@ def test_o_cassino_nao_e_renomeado_nem_ganha_senha(app, bc, painel):
     assert conta.senha_hash is None, "a casa não entra pelo site"
 
 
-def test_a_tela_nao_oferece_edicao_para_contas_de_sistema(app, bc, painel):
+def test_contas_de_sistema_editam_saldo_mas_nao_senha_nem_nome(app, bc, painel):
+    """O saldo das duas é editável; senha e nome, não.
+
+    Este teste dizia que o Banco Central não tinha campo de saldo. A decisão
+    mudou: ele tem, e é por ali que se emite e se queima.
+    """
     from vavacoin.caladinho import criar_casa
 
     criar_casa(autoridade=bc)
     db.session.commit()
     corpo = painel.get("/painel/").get_data(as_text=True)
 
-    # A linha do Banco Central não tem campo de senha nem de saldo.
-    assert f'aria-label="Nova senha de banco_central"' not in corpo
-    assert f'aria-label="Saldo de banco_central"' not in corpo
-    # A da casa tem saldo, mas não senha.
+    assert 'aria-label="Saldo de banco_central"' in corpo
     assert 'aria-label="Saldo de caladinho"' in corpo
+    assert 'aria-label="Nova senha de banco_central"' not in corpo
     assert 'aria-label="Nova senha de caladinho"' not in corpo
+    assert 'aria-label="Usuário de banco_central"' not in corpo
+    assert 'aria-label="Usuário de caladinho"' not in corpo
 
 
 def test_contas_de_sistema_aparecem_para_consulta(app, bc, painel):
@@ -261,13 +266,50 @@ def test_contas_de_sistema_aparecem_para_consulta(app, bc, painel):
     assert "caladinho" in corpo
 
 
-def test_o_saldo_do_banco_central_nao_e_editavel(app, bc, painel):
-    """Ele é consequência do resto; mexer nele seria mentir."""
-    antes = bc.saldo
-    _salvar(painel, bc, saldo="1.00")
+def test_baixar_o_saldo_do_bc_na_linha_queima(app, bc, painel):
+    """Pela linha da tabela: baixar o BC destrói moeda, e o supply desce."""
+    from vavacoin.moeda import TIPO_QUEIMA, supply_emitido
+
+    conservacao()
+    _salvar(painel, bc, saldo="4000.00", motivo="tirando de circulação")
 
     db.session.expire_all()
-    assert db.session.get(Usuario, bc.id).saldo == antes
+    assert db.session.get(Usuario, bc.id).saldo == Decimal("4000.00")
+    assert supply_emitido() == Decimal("4000.00")
+    assert (
+        db.session.query(Transacao).order_by(Transacao.id.desc()).first().tipo
+        == TIPO_QUEIMA
+    )
+    conservacao()
+
+
+def test_subir_o_saldo_do_bc_na_linha_emite(app, bc, painel):
+    from vavacoin.moeda import TIPO_EMISSAO, supply_emitido
+
+    conservacao()
+    _salvar(painel, bc, saldo="7000.00", motivo="mais moeda")
+
+    db.session.expire_all()
+    assert db.session.get(Usuario, bc.id).saldo == Decimal("7000.00")
+    assert supply_emitido() == Decimal("7000.00")
+    assert (
+        db.session.query(Transacao).order_by(Transacao.id.desc()).first().tipo
+        == TIPO_EMISSAO
+    )
+    conservacao()
+
+
+def test_o_painel_mostra_o_supply_mudando_depois_de_queimar(app, bc, painel):
+    """Se o número não se mexe na tela, alguém queima duas vezes achando que
+    não pegou."""
+    antes = painel.get("/painel/").get_data(as_text=True)
+    assert "5000.00" in antes
+
+    _salvar(painel, bc, saldo="3000.00", motivo="queimando")
+
+    depois = painel.get("/painel/").get_data(as_text=True)
+    assert "3000.00" in depois
+    assert "7000.00" in depois, "e o espaço sob o teto volta a aparecer"
     conservacao()
 
 

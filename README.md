@@ -175,6 +175,27 @@ cassino. Não há excluir conta — é justamente o bug que existe no Benbals.
 tabela e os campos apontam para ele pelo atributo `form=`. Padrão, e sem
 JavaScript.
 
+## Dinheiro entra e sai do mundo pelo ledger
+
+**Entra** por um lançamento sem origem (`genese`, `emissao`). **Sai** por um
+sem destino (`queima`). O supply é a diferença: `supply_emitido()` = entradas
+− saídas, contado do ledger e nunca de um número guardado à parte.
+
+A queima existe porque o Banco Central é o único lado do mundo: baixar o saldo
+dele não tem para onde mandar o dinheiro. Mandar para outra conta não reduz o
+supply, só muda onde ele está — seria mentir sobre o que está em circulação.
+
+E porque, com o teto de 10.000, sem queima o teto seria **catraca de uma via**:
+chegando lá, nunca mais daria para emitir.
+
+Duas listas curtas guardam a regra, e cada uma é repetida no `CHECK` da
+tabela: `TIPOS_SEM_ORIGEM` e `TIPOS_SEM_DESTINO`. Só o Banco Central emite e
+só ele queima, sempre do próprio saldo, sempre com motivo.
+
+No painel: subir o saldo do BC **emite**, baixar **queima**, e o supply na tela
+muda na hora — se o número não se mexesse, alguém queimaria duas vezes achando
+que não pegou.
+
 ## O supply para em 10.000
 
 `SUPPLY_MAXIMO` é teto de verdade: emissão que passaria dele é **recusada**,

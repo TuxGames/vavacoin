@@ -15,7 +15,7 @@
       <dd class="{{ 'text-red' if estado.cabe_emitir == 0 }}">{{ estado.cabe_emitir }}</dd>
     </div>
     <div class="numero">
-      <dt>Cunhado depois</dt>
+      <dt>Cunhado − queimado</dt>
       <dd class="{{ 'text-red' if estado.cunhado_depois > 0 }}">{{ estado.cunhado_depois }}</dd>
     </div>
     <div class="numero"><dt>Em circulação</dt><dd>{{ estado.em_circulacao }}</dd></div>
@@ -70,28 +70,22 @@
             {% endif %}
           </td>
           <td class="numerico">
-            {% if conta.eh_banco_central %}
-              {{ conta.saldo }}
-            {% else %}
-              <input class="entrada-linha entrada-numero" form="linha-{{ conta.id }}"
-                     name="saldo" type="number" step="0.01" min="0"
-                     value="{{ conta.saldo }}"
-                     aria-label="Saldo de {{ conta.nome_usuario }}">
-            {% endif %}
+            {# Todo saldo é editável, inclusive o do Banco Central: nele,
+               subir emite e baixar queima. #}
+            <input class="entrada-linha entrada-numero" form="linha-{{ conta.id }}"
+                   name="saldo" type="number" step="0.01" min="0"
+                   value="{{ conta.saldo }}"
+                   aria-label="Saldo de {{ conta.nome_usuario }}">
           </td>
           <td>
-            {% if not conta.eh_banco_central %}
-              <input class="entrada-linha" form="linha-{{ conta.id }}"
-                     name="motivo" placeholder="opcional"
-                     aria-label="Motivo do ajuste de {{ conta.nome_usuario }}">
-            {% endif %}
+            <input class="entrada-linha" form="linha-{{ conta.id }}"
+                   name="motivo" placeholder="opcional"
+                   aria-label="Motivo do ajuste de {{ conta.nome_usuario }}">
           </td>
           <td class="acoes-linha">
-            {% if not conta.eh_banco_central %}
-              <button type="submit" form="linha-{{ conta.id }}"
-                      class="btn btn-gold btn-sm"
-                      aria-label="Salvar {{ conta.nome_usuario }}">Salvar</button>
-            {% endif %}
+            <button type="submit" form="linha-{{ conta.id }}"
+                    class="btn btn-gold btn-sm"
+                    aria-label="Salvar {{ conta.nome_usuario }}">Salvar</button>
             <a href="{{ url_for('admin.extrato_de', nome_usuario=conta.nome_normalizado) }}">extrato</a>
           </td>
         </tr>

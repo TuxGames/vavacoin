@@ -61,7 +61,8 @@ def linhas_extrato(usuario, limite=50, sessao=None):
     for transacao in extrato(usuario_id, limite=limite, sessao=sessao):
         saiu = transacao.origem_id == usuario_id
         # Quem está do outro lado: se saiu, é o destino; se entrou, a origem.
-        # Na gênese não há outro lado — o dinheiro não veio de ninguém.
+        # Na gênese e na emissão o dinheiro não veio de ninguém; na queima não
+        # foi para ninguém. Nos dois casos não há contraparte.
         contraparte_id = transacao.destino_id if saiu else transacao.origem_id
         linhas.append(
             {
@@ -181,18 +182,21 @@ def conferir_ledger(sessao=None):
                         "reconstruido": reconstruido[transacao.origem_id],
                     }
                 )
-        reconstruido[transacao.destino_id] = (
-            reconstruido.get(transacao.destino_id, ZERO) + transacao.valor
-        )
-        if transacao.saldo_destino_depois != reconstruido[transacao.destino_id]:
-            linhas_inconsistentes.append(
-                {
-                    "transacao": transacao.id,
-                    "lado": "destino",
-                    "gravado": transacao.saldo_destino_depois,
-                    "reconstruido": reconstruido[transacao.destino_id],
-                }
+        # Sem destino é queima: o dinheiro saiu do mundo e não entra em
+        # saldo nenhum.
+        if transacao.destino_id is not None:
+            reconstruido[transacao.destino_id] = (
+                reconstruido.get(transacao.destino_id, ZERO) + transacao.valor
             )
+            if transacao.saldo_destino_depois != reconstruido[transacao.destino_id]:
+                linhas_inconsistentes.append(
+                    {
+                        "transacao": transacao.id,
+                        "lado": "destino",
+                        "gravado": transacao.saldo_destino_depois,
+                        "reconstruido": reconstruido[transacao.destino_id],
+                    }
+                )
 
     saldos_divergentes = []
     for usuario in sessao.execute(select(Usuario)).scalars():

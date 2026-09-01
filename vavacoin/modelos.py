@@ -189,7 +189,10 @@ class Transacao(db.Model):
     #: pelo administrador ao ajustar saldo para cima. Somar estas linhas dá o
     #: supply — ver ``moeda.supply_emitido()``.
     origem_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=True, index=True)
-    destino_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True)
+    #: NULL quando o dinheiro saiu do mundo: uma queima, feita pelo Banco
+    #: Central ao baixar o próprio saldo. É o simétrico da emissão, e é o que
+    #: permite o supply descer — sem ela o teto seria catraca de uma via.
+    destino_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=True, index=True)
     valor = db.Column(Dinheiro, nullable=False)
     tipo = db.Column(db.String(30), nullable=False, index=True)
     motivo = db.Column(db.String(200), nullable=True)
@@ -198,14 +201,19 @@ class Transacao(db.Model):
     #: mudou?" seis meses depois.
     ator_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=True, index=True)
     saldo_origem_depois = db.Column(Dinheiro, nullable=True)
-    saldo_destino_depois = db.Column(Dinheiro, nullable=False)
+    saldo_destino_depois = db.Column(Dinheiro, nullable=True)
     criado_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora, index=True)
 
     __table_args__ = (
         CheckConstraint("valor > 0", name="ck_transacao_valor_positivo"),
         CheckConstraint(
-            "origem_id IS NULL OR origem_id <> destino_id",
+            "origem_id IS NULL OR destino_id IS NULL OR origem_id <> destino_id",
             name="ck_transacao_origem_diferente_destino",
+        ),
+        # Uma linha sem os dois lados não seria movimento nenhum.
+        CheckConstraint(
+            "origem_id IS NOT NULL OR destino_id IS NOT NULL",
+            name="ck_transacao_tem_algum_lado",
         ),
         # Origem ausente é criação de dinheiro. A lista de tipos que podem
         # fazer isso é curta e mora também no banco: qualquer outro tipo sem
@@ -213,6 +221,12 @@ class Transacao(db.Model):
         CheckConstraint(
             "(origem_id IS NOT NULL) OR tipo IN ('genese', 'emissao')",
             name="ck_transacao_sem_origem_so_emite",
+        ),
+        # Destino ausente é destruição de dinheiro. Mesma disciplina, do
+        # outro lado: só a queima pode sumir com moeda.
+        CheckConstraint(
+            "(destino_id IS NOT NULL) OR tipo = 'queima'",
+            name="ck_transacao_sem_destino_so_queima",
         ),
     )
 
