@@ -12,7 +12,6 @@ import pytest
 from conftest import conservacao
 from sqlalchemy.exc import IntegrityError
 
-from vavacoin.constantes import SAQUE_INICIAL
 from vavacoin.extensoes import db
 from vavacoin.limite import limpar_tudo
 from vavacoin.modelos import Usuario, buscar_usuario
@@ -162,7 +161,7 @@ def test_cadastro_pela_web_aceita_maiuscula_e_acento(app, bc):
     joao = buscar_usuario("joao")
     assert joao is not None
     assert joao.nome_usuario == "João"
-    assert joao.saldo == SAQUE_INICIAL
+    assert joao.saldo == Decimal("0.00")
     conservacao()
 
 
@@ -219,6 +218,9 @@ def test_transferir_para_quem_tem_acento_no_nome(app, bc):
     from vavacoin.operacoes import resgatar_convite
 
     resgatar_convite(ana, codigo)
+    from vavacoin.operacoes import ajustar_saldo
+
+    ajustar_saldo(ana, "50.00", "saldo para o teste", autoridade=bc)
     db.session.commit()
     conservacao()
 

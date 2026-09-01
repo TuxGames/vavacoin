@@ -89,6 +89,36 @@ def test_senha_bc_antes_da_genese(app):
     assert "genese" in resultado.output or "gênese" in resultado.output
 
 
+# --- convite ----------------------------------------------------------------
+
+
+def test_convite_sem_destinatario_pela_cli(app, bc):
+    """`flask convite`, sem nenhuma opção, imprime um código."""
+    from vavacoin.modelos import Convite
+
+    resultado = _rodar(app, "convite")
+
+    assert resultado.exit_code == 0, resultado.output
+    codigo = resultado.output.strip()
+    assert codigo
+    convite = db.session.execute(
+        db.select(Convite).where(Convite.codigo == codigo)
+    ).scalar_one()
+    assert convite.destinatario is None
+
+
+def test_convite_com_destinatario_pela_cli(app, bc):
+    from vavacoin.modelos import Convite
+
+    resultado = _rodar(app, "convite", "--destinatario", "Fulano")
+
+    assert resultado.exit_code == 0
+    convite = db.session.execute(
+        db.select(Convite).where(Convite.codigo == resultado.output.strip())
+    ).scalar_one()
+    assert convite.destinatario == "Fulano"
+
+
 # --- os outros comandos -----------------------------------------------------
 
 

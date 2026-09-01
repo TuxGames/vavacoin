@@ -17,7 +17,7 @@ from vavacoin.auditoria import (
     estado_da_economia,
     linhas_extrato,
 )
-from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_INICIAL
+from vavacoin.constantes import SUPPLY_INICIAL
 from vavacoin.erros import MassaViolada
 from vavacoin.extensoes import db
 from vavacoin.moeda import mover
@@ -26,8 +26,8 @@ from vavacoin.modelos import Transacao, Usuario
 
 def test_estado_da_economia_separa_emitido_de_circulante(app, bc, nova_pessoa):
     conservacao()
-    nova_pessoa(com_convite=True)
-    nova_pessoa(com_convite=True)
+    nova_pessoa(com_convite=True, saldo="50.00")
+    nova_pessoa(com_convite=True, saldo="50.00")
     curioso = nova_pessoa(com_convite=False)  # noqa: F841
     db.session.commit()
 
@@ -36,16 +36,16 @@ def test_estado_da_economia_separa_emitido_de_circulante(app, bc, nova_pessoa):
     assert estado["conservado"] is True
     assert estado["soma_dos_saldos"] == SUPPLY_INICIAL
     assert estado["diferenca"] == Decimal("0.00")
-    assert estado["em_circulacao"] == 2 * SAQUE_INICIAL
-    assert estado["nao_emitido"] == SUPPLY_INICIAL - 2 * SAQUE_INICIAL
+    assert estado["em_circulacao"] == Decimal("100.00")
+    assert estado["nao_emitido"] == SUPPLY_INICIAL - Decimal("100.00")
     assert estado["contas"] == 3
     assert estado["participantes"] == 2
     conservacao()
 
 
 def test_auditoria_passa_numa_economia_movimentada(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     for _ in range(20):
         mover(ana, bia, "0.07")
         mover(bia, ana, "0.03")
@@ -62,7 +62,7 @@ def test_auditoria_passa_numa_economia_movimentada(app, bc, nova_pessoa):
 
 def test_auditoria_acusa_saldo_escrito_por_fora(app, bc, nova_pessoa):
     """UPDATE na mão: a massa até muda, e o ledger deixa de explicar o saldo."""
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     db.session.commit()
     conservacao()
 
@@ -76,7 +76,7 @@ def test_auditoria_acusa_saldo_escrito_por_fora(app, bc, nova_pessoa):
     assert relatorio["ok"] is False
     divergencias = relatorio["ledger"]["saldos_divergentes"]
     assert [d["usuario"] for d in divergencias] == ["aluno1"]
-    assert divergencias[0]["pelo_ledger"] == SAQUE_INICIAL
+    assert divergencias[0]["pelo_ledger"] == Decimal("50.00")
     assert divergencias[0]["diferenca"] == Decimal("949.00")
 
     with pytest.raises(MassaViolada):
@@ -89,8 +89,8 @@ def test_auditoria_acusa_troca_disfarcada_que_conserva_a_massa(app, bc, nova_pes
     É o caso perverso: só somar saldos não veria nada. A reconstrução pelo
     ledger vê, porque nenhuma linha explica a mudança.
     """
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     db.session.commit()
     conservacao()
 
@@ -111,8 +111,8 @@ def test_auditoria_acusa_troca_disfarcada_que_conserva_a_massa(app, bc, nova_pes
 
 def test_auditoria_acusa_linha_do_ledger_adulterada(app, bc, nova_pessoa):
     """Mexer no valor de uma transação antiga quebra a cadeia de saldos."""
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     transacao = mover(ana, bia, "10.00")
     db.session.commit()
     conservacao()
@@ -130,8 +130,8 @@ def test_auditoria_acusa_linha_do_ledger_adulterada(app, bc, nova_pessoa):
 
 
 def test_extrato_traz_sinal_contraparte_e_saldo(app, bc, nova_pessoa):
-    ana = nova_pessoa(nome="ana", com_convite=True)
-    bia = nova_pessoa(nome="bia", com_convite=True)
+    ana = nova_pessoa(nome="ana", com_convite=True, saldo="50.00")
+    bia = nova_pessoa(nome="bia", com_convite=True, saldo="50.00")
     mover(ana, bia, "12.00", motivo="explicou a questão 3")
     db.session.commit()
     conservacao()
@@ -144,9 +144,9 @@ def test_extrato_traz_sinal_contraparte_e_saldo(app, bc, nova_pessoa):
     assert saida["contraparte"] == "bia"
     assert saida["saldo_depois"] == Decimal("38.00")
     assert saida["motivo"] == "explicou a questão 3"
-    assert saque["valor_com_sinal"] == SAQUE_INICIAL
+    assert saque["valor_com_sinal"] == Decimal("50.00")
     assert saque["contraparte"] == "banco_central"
-    assert saque["saldo_depois"] == SAQUE_INICIAL
+    assert saque["saldo_depois"] == Decimal("50.00")
 
 
 def test_extrato_do_banco_central_mostra_a_genese(app, bc):
@@ -160,8 +160,8 @@ def test_extrato_do_banco_central_mostra_a_genese(app, bc):
 
 
 def test_extrato_respeita_o_limite(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     for _ in range(10):
         mover(ana, bia, "1.00")
     db.session.commit()

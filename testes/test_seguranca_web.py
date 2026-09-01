@@ -90,6 +90,12 @@ def test_transferencia_com_token_valido_funciona(app_com_csrf):
             cliente.post(
                 "/sair", data={"csrf_token": _csrf(pagina)}, follow_redirects=True
             )
+    from vavacoin.modelos import buscar_usuario
+    from vavacoin.operacoes import ajustar_saldo
+
+    ajustar_saldo(buscar_usuario("bia"), "50.00", "saldo para o teste", autoridade=bc)
+    ajustar_saldo(buscar_usuario("ana"), "50.00", "saldo para o teste", autoridade=bc)
+    db.session.commit()
     conservacao()
 
     pagina = cliente.get("/transferir").get_data(as_text=True)

@@ -35,6 +35,8 @@ from .modelos import Transacao, Usuario
 
 TIPO_GENESE = "genese"
 TIPO_EMISSAO = "emissao"
+#: Histórico. O saque inicial acabou, mas as linhas antigas continuam no
+#: ledger e precisam de nome para serem lidas.
 TIPO_SAQUE_INICIAL = "saque_inicial"
 TIPO_TRANSFERENCIA = "transferencia"
 TIPO_AJUSTE = "ajuste"

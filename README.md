@@ -25,8 +25,12 @@ flask convite --destinatario "Fulano"   # imprime o código; entregue à pessoa
 flask run
 ```
 
-A pessoa entra em `/cadastro` com o código, escolhe usuário e senha, e sai de
-lá com os 50 VVC sacados do Banco Central.
+A pessoa entra em `/cadastro` com o código, escolhe usuário e senha, e a conta
+nasce com **saldo zero**. O dinheiro chega depois: por transferência de outra
+pessoa, ou por ajuste do Banco Central no painel.
+
+`--destinatario` é opcional — serve de rótulo para quem emite em série e ainda
+não sabe quem vai receber cada código.
 
 Os números da economia não são públicos: aparecem no painel do Banco Central
 e por `flask auditoria`, na CLI.
@@ -109,6 +113,16 @@ de um `<style>` no `dashboard.html`, e usa `style=` e `onclick=` à vontade.
 Aqui isso desceu para `base.css` e o `menu.js` (que já era `addEventListener`,
 então veio quase intacto). O teste `test_nenhum_template_tem_estilo_inline_ou_handler`
 é o juiz: falha se algum voltar.
+
+## Não há saque inicial
+
+O convite dá **entrada na economia, não valor**. Quem resgata começa com zero;
+o dinheiro chega por transferência ou por ajuste do Banco Central.
+
+Duas consequências: o reset passou a **só recolher** por padrão (sem saque
+inicial não há valor óbvio para devolver a cada um — o parâmetro `saque`
+continua existindo para quando o BC quiser redistribuir algo), e sumiu o caso
+de "não dá para entrar porque o saldo não emitido acabou".
 
 ## Nome de usuário: escreve como quiser, compara normalizado
 

@@ -52,8 +52,8 @@ def _rodar_em_paralelo(app, tarefa, quantidade=2):
 
 def test_dois_gastos_simultaneos_nao_estouram_o_saldo(app, bc, nova_pessoa):
     """Com 50 na conta, dois pedidos de 50 ao mesmo tempo: um só passa."""
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     ana_id, bia_id = ana.id, bia.id
     conservacao()
     db.session.remove()
@@ -101,16 +101,20 @@ def test_mesmo_convite_resgatado_por_duas_contas_ao_mesmo_tempo(app, bc):
         if estado == "erro":
             assert isinstance(erro, (ConviteJaResgatado, ErroMonetario)), erro
 
+    # O convite não move dinheiro; o que ele dá é a entrada na economia.
+    # Uma conta ficou com ele, a outra não.
     db.session.expire_all()
-    saldos = [db.session.get(Usuario, i).saldo for i in ids]
-    assert sorted(saldos) == [Decimal("0.00"), Decimal("50.00")]
+    from vavacoin.modelos import Convite
+
+    resgatados = db.session.query(Convite).filter(Convite.usuario_id.isnot(None)).count()
+    assert resgatados == 1
     conservacao()
 
 
 def test_movimentos_cruzados_nao_travam(app, bc, nova_pessoa):
     """A e B mandando um para o outro ao mesmo tempo: ordem de lock fixa."""
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     ana_id, bia_id = ana.id, bia.id
     conservacao()
     db.session.remove()

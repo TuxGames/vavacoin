@@ -24,7 +24,6 @@ from ..dinheiro import para_decimal
 from ..erros import ErroMonetario
 from ..extensoes import db
 from ..formularios import FormularioConfirmacao, FormularioTransferencia
-from ..constantes import SAQUE_INICIAL
 from ..modelos import Convite, buscar_usuario
 from ..operacoes import transferir
 
@@ -66,7 +65,6 @@ def perfil():
         usuario=current_user,
         resumo=resumo_da_conta(current_user),
         convite=convite,
-        saque_inicial=SAQUE_INICIAL,
     )
 
 

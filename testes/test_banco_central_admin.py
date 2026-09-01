@@ -22,7 +22,7 @@ from conftest import conservacao
 from flask_login import login_user
 
 from vavacoin.autoridade import exigir_banco_central
-from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_INICIAL
+from vavacoin.constantes import SUPPLY_INICIAL
 from vavacoin.erros import MotivoObrigatorio, SemAutoridade, ValorInvalido
 from vavacoin.extensoes import db
 from vavacoin.moeda import (
@@ -108,14 +108,14 @@ def test_saldo_negativo_continua_barrado_pelo_banco(app, bc):
 
 
 def test_jogador_comum_nao_e_admin(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     assert ana.eh_admin is False
     assert bc.eh_admin is True
 
 
 def test_jogador_nao_exerce_poder_do_banco_central(app, bc, nova_pessoa):
     """Continua valendo: poder se pede, e só o BC tem."""
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     for chamada in (
@@ -128,12 +128,12 @@ def test_jogador_nao_exerce_poder_do_banco_central(app, bc, nova_pessoa):
             chamada()
         db.session.rollback()
 
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("50.00")
     conservacao()
 
 
 def test_operacoes_privilegiadas_recusam_ausencia_de_autoridade(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
     for chamada in (
         lambda: criar_usuario("ninguem", "senha-boa-123"),
@@ -181,8 +181,8 @@ def test_nao_da_para_ajustar_o_saldo_do_banco_central(app, bc):
 
 def test_reset_recolhe_do_dono_do_cassino_tambem(app, bc, nova_pessoa):
     """Sem exceção: o reset é o que desfaz a concentração."""
-    dono = nova_pessoa(com_convite=True)
-    otario = nova_pessoa(com_convite=True)
+    dono = nova_pessoa(com_convite=True, saldo="50.00")
+    otario = nova_pessoa(com_convite=True, saldo="50.00")
     mover(otario, dono, "50.00", motivo="mines do Caladinho")
     db.session.commit()
     assert dono.saldo == Decimal("100.00")
@@ -191,8 +191,11 @@ def test_reset_recolhe_do_dono_do_cassino_tambem(app, bc, nova_pessoa):
     resetar_economia(autoridade=bc)
     db.session.commit()
 
-    assert dono.saldo == SAQUE_INICIAL
-    assert otario.saldo == SAQUE_INICIAL
+    # Sem saque inicial, o reset passou a só recolher: todo mundo zera e o
+    # dinheiro volta inteiro para o Banco Central.
+    assert dono.saldo == Decimal("0.00")
+    assert otario.saldo == Decimal("0.00")
+    assert bc.saldo == SUPPLY_INICIAL
     conservacao()
 
 
@@ -201,7 +204,7 @@ def test_reset_recolhe_do_dono_do_cassino_tambem(app, bc, nova_pessoa):
 
 def test_ajuste_para_cima_usa_o_nao_emitido_antes_de_cunhar(app, bc, nova_pessoa):
     """Dinheiro parado no Banco Central é gasto antes de criar dinheiro novo."""
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
     supply_antes = supply_emitido()
 
@@ -216,7 +219,7 @@ def test_ajuste_para_cima_usa_o_nao_emitido_antes_de_cunhar(app, bc, nova_pessoa
 
 def test_ajuste_cunha_so_o_que_falta(app, bc, nova_pessoa):
     """Com o BC vazio, o ajuste emite exatamente a diferença que faltava."""
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     # Esvazia o Banco Central: tudo vai para a ana.
     mover(bc, ana, bc.saldo, motivo="esvaziando para o teste")
     db.session.commit()
@@ -234,7 +237,7 @@ def test_ajuste_cunha_so_o_que_falta(app, bc, nova_pessoa):
 
 
 def test_cunhagem_aparece_como_linha_de_emissao(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     mover(bc, ana, bc.saldo, motivo="esvaziando")
     db.session.commit()
 
@@ -253,7 +256,7 @@ def test_cunhagem_aparece_como_linha_de_emissao(app, bc, nova_pessoa):
 
 def test_ajuste_para_baixo_devolve_ao_banco_central(app, bc, nova_pessoa):
     """Não queima: volta a ser não emitido, como no dia zero."""
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
     bc_antes = bc.saldo
 
@@ -274,7 +277,7 @@ def test_auditoria_fecha_depois_de_um_ajuste(app, bc, nova_pessoa):
     """
     from vavacoin.auditoria import auditar
 
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     mover(bc, ana, bc.saldo, motivo="esvaziando")
     db.session.commit()
 
@@ -290,7 +293,7 @@ def test_auditoria_fecha_depois_de_um_ajuste(app, bc, nova_pessoa):
 
 
 def test_ajuste_registra_ator_e_motivo_no_ledger(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     ajustar_saldo(ana, "77.00", "pagou o lanche por mim", autoridade=bc)
     db.session.commit()
 
@@ -306,31 +309,31 @@ def test_ajuste_registra_ator_e_motivo_no_ledger(app, bc, nova_pessoa):
 
 
 def test_ajuste_sem_motivo_e_recusado(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
     for motivo in (None, "", "   "):
         with pytest.raises(MotivoObrigatorio):
             ajustar_saldo(ana, "80.00", motivo, autoridade=bc)
         db.session.rollback()
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("50.00")
     conservacao()
 
 
 def test_ajuste_para_saldo_negativo_e_recusado(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
     with pytest.raises(ValorInvalido):
         ajustar_saldo(ana, "-1.00", "vingança", autoridade=bc)
     db.session.rollback()
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("50.00")
     conservacao()
 
 
 def test_ajuste_sem_mudanca_nao_gera_transacao(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     linhas_antes = db.session.query(Transacao).count()
 
-    assert ajustar_saldo(ana, SAQUE_INICIAL, "conferindo", autoridade=bc) is None
+    assert ajustar_saldo(ana, "50.00", "conferindo", autoridade=bc) is None
     db.session.commit()
 
     assert db.session.query(Transacao).count() == linhas_antes
@@ -339,7 +342,7 @@ def test_ajuste_sem_mudanca_nao_gera_transacao(app, bc, nova_pessoa):
 
 def test_emissao_exige_o_banco_central_como_ator(app, bc, nova_pessoa):
     """Nem chamando o mover() na mão dá para cunhar sem ser o BC."""
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     with pytest.raises(SemAutoridade):
@@ -354,7 +357,7 @@ def test_emissao_exige_o_banco_central_como_ator(app, bc, nova_pessoa):
 
 def test_movimento_sem_origem_so_vale_para_emissao(app, bc, nova_pessoa):
     """Uma transferência sem origem seria moeda aparecendo do nada."""
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     with pytest.raises(ValorInvalido):
@@ -375,7 +378,7 @@ def test_emissao_exige_motivo(app, bc):
 
 
 def test_diario_registra_ajuste_com_valores_e_motivo(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     ajustar_saldo(ana, "80.00", "corrigindo aposta", autoridade=bc)
     db.session.commit()
 

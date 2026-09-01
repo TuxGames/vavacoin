@@ -14,7 +14,11 @@ from vavacoin.config import ConfigTeste  # noqa: E402
 from vavacoin.constantes import SUPPLY_INICIAL  # noqa: E402
 from vavacoin.extensoes import db  # noqa: E402
 from vavacoin.moeda import criar_genese, soma_saldos, supply_emitido  # noqa: E402
-from vavacoin.operacoes import criar_convite, criar_usuario  # noqa: E402
+from vavacoin.operacoes import (  # noqa: E402
+    ajustar_saldo,
+    criar_convite,
+    criar_usuario,
+)
 
 
 def isolar_login_por_requisicao(aplicacao):
@@ -70,7 +74,12 @@ def nova_pessoa(app, bc):
     """
     contador = {"n": 0}
 
-    def criar(nome=None, senha="senha-boa-123", com_convite=False):
+    def criar(nome=None, senha="senha-boa-123", com_convite=False, saldo=None):
+        """Cria a conta. Ela nasce com zero — o saque inicial acabou.
+
+        ``saldo`` funda a conta pelo caminho real de hoje: ajuste do Banco
+        Central. Quem só quer uma conta existindo não passa nada.
+        """
         contador["n"] += 1
         nome = nome or f"aluno{contador['n']}"
         usuario = criar_usuario(nome, senha, autoridade=bc)
@@ -81,6 +90,9 @@ def nova_pessoa(app, bc):
             convite = criar_convite(destinatario=nome, autoridade=bc)
             db.session.commit()
             resgatar_convite(usuario, convite.codigo)
+            db.session.commit()
+        if saldo is not None:
+            ajustar_saldo(usuario, saldo, "saldo para o teste", autoridade=bc)
             db.session.commit()
         return usuario
 

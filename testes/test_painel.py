@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from conftest import conservacao
 
-from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_INICIAL
+from vavacoin.constantes import SUPPLY_INICIAL
 from vavacoin.extensoes import db
 from vavacoin.limite import limpar_tudo
 from vavacoin.moeda import mover, supply_emitido
@@ -37,7 +37,12 @@ def painel(app, bc):
     return cliente
 
 
-def _cadastrar(app, bc, usuario):
+def _cadastrar(app, bc, usuario, saldo="50.00"):
+    """Cadastra e funda a conta.
+
+    A conta nasce com zero desde o fim do saque inicial; o dinheiro chega por
+    ajuste do Banco Central, que é o caminho real hoje.
+    """
     codigo = criar_convite(destinatario=usuario, autoridade=bc).codigo
     db.session.commit()
     cliente = app.test_client()
@@ -52,6 +57,12 @@ def _cadastrar(app, bc, usuario):
         },
         follow_redirects=True,
     )
+    if saldo is not None:
+        from vavacoin.modelos import buscar_usuario
+        from vavacoin.operacoes import ajustar_saldo
+
+        ajustar_saldo(buscar_usuario(usuario), saldo, "saldo para o teste", autoridade=bc)
+        db.session.commit()
     return cliente
 
 
@@ -172,7 +183,7 @@ def test_ajuste_pela_web_sem_motivo_nao_passa(app, bc, painel):
     ana = db.session.execute(
         db.select(Usuario).where(Usuario.nome_usuario == "ana")
     ).scalar_one()
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("50.00")
     conservacao()
 
 
@@ -195,6 +206,18 @@ def test_emitir_convite_pelo_painel(app, bc, painel):
     )
     assert resposta.status_code == 200
     assert db.session.query(Convite).count() == 1
+    assert "Convite emitido" in resposta.get_data(as_text=True)
+
+
+def test_emitir_convite_sem_destinatario_pelo_painel(app, bc, painel):
+    """O campo do nome é opcional também na tela."""
+    resposta = painel.post(
+        "/painel/convite", data={"destinatario": ""}, follow_redirects=True
+    )
+
+    assert resposta.status_code == 200
+    convite = db.session.query(Convite).one()
+    assert convite.destinatario is None
     assert "Convite emitido" in resposta.get_data(as_text=True)
 
 
@@ -250,7 +273,7 @@ def test_extrato_de_qualquer_um(app, bc, painel):
     corpo = resposta.get_data(as_text=True)
 
     assert resposta.status_code == 200
-    assert "saque inicial" in corpo
+    assert "saldo para o teste" in corpo
     assert "50.00" in corpo
 
 
@@ -292,7 +315,7 @@ def test_reset_pelo_painel_exige_a_palavra(app, bc, painel):
     )
     assert com_palavra.status_code == 200
     db.session.expire_all()
-    assert db.session.get(Usuario, ana.id).saldo == SAQUE_INICIAL
+    assert db.session.get(Usuario, ana.id).saldo == Decimal("0.00")
     conservacao()
     assert ana_cliente is not None
 

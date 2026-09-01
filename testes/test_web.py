@@ -9,11 +9,12 @@ from decimal import Decimal
 import pytest
 from conftest import conservacao
 
-from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_INICIAL
+from vavacoin.constantes import SUPPLY_INICIAL
 from vavacoin.extensoes import db
 from vavacoin.limite import FALHAS_ATE_TRAVAR, LIMITE_DE_TAXA, limpar_tudo
 from vavacoin.modelos import Usuario
-from vavacoin.operacoes import criar_convite
+from vavacoin.modelos import buscar_usuario
+from vavacoin.operacoes import ajustar_saldo, criar_convite
 
 SENHA = "senha-boa-123"
 
@@ -31,12 +32,17 @@ def cliente(app):
     return app.test_client()
 
 
-def _cadastrar(cliente, bc, usuario="ana", senha=SENHA, codigo=None):
-    """Faz o caminho real de entrada: convite emitido, cadastro preenchido."""
+def _cadastrar(cliente, bc, usuario="ana", senha=SENHA, codigo=None, saldo="50.00"):
+    """Faz o caminho real de entrada: convite emitido, cadastro preenchido.
+
+    A conta nasce com zero — o saque inicial acabou. ``saldo`` funda a conta
+    logo depois, por ajuste do Banco Central, que é como o dinheiro chega
+    agora; passe ``saldo=None`` para testar a conta recém-criada.
+    """
     if codigo is None:
         codigo = criar_convite(destinatario=usuario, autoridade=bc).codigo
         db.session.commit()
-    return cliente.post(
+    resposta = cliente.post(
         "/cadastro",
         data={
             "codigo": codigo,
@@ -47,6 +53,12 @@ def _cadastrar(cliente, bc, usuario="ana", senha=SENHA, codigo=None):
         },
         follow_redirects=True,
     )
+    if saldo is not None:
+        conta = buscar_usuario(usuario)
+        if conta is not None:
+            ajustar_saldo(conta, saldo, "saldo para o teste", autoridade=bc)
+            db.session.commit()
+    return resposta
 
 
 def _entrar(cliente, usuario="ana", senha=SENHA):
@@ -66,7 +78,7 @@ def test_inicio_e_publico(app, cliente):
 
 def test_economia_saiu_do_ar(app, bc, nova_pessoa, cliente):
     """Rota fechada, não escondida: não existe mais URL que responda."""
-    nova_pessoa(com_convite=True)
+    nova_pessoa(com_convite=True, saldo="50.00")
     db.session.commit()
     conservacao()
 
@@ -76,7 +88,7 @@ def test_economia_saiu_do_ar(app, bc, nova_pessoa, cliente):
 
 def test_nenhuma_rota_expoe_agregado_da_economia(app, bc, nova_pessoa, cliente):
     """O saldo do Banco Central não aparece em nenhuma página pública."""
-    nova_pessoa(com_convite=True)
+    nova_pessoa(com_convite=True, saldo="50.00")
     db.session.commit()
     conservacao()
 
@@ -89,16 +101,21 @@ def test_nenhuma_rota_expoe_agregado_da_economia(app, bc, nova_pessoa, cliente):
 # --- cadastro por convite ---------------------------------------------------
 
 
-def test_cadastro_por_convite_cria_conta_e_saca_50(app, bc, cliente):
+def test_cadastro_por_convite_cria_conta_com_zero(app, bc, cliente):
+    """O convite dá entrada na economia, não dinheiro.
+
+    Era um saque de 50 do Banco Central; virou saldo zero. O dinheiro chega
+    depois, por transferência ou por ajuste do BC.
+    """
     conservacao()
-    resposta = _cadastrar(cliente, bc)
+    resposta = _cadastrar(cliente, bc, saldo=None)
 
     assert resposta.status_code == 200
     ana = db.session.execute(
         db.select(Usuario).where(Usuario.nome_usuario == "ana")
     ).scalar_one()
-    assert ana.saldo == SAQUE_INICIAL
-    assert bc.saldo == SUPPLY_INICIAL - SAQUE_INICIAL
+    assert ana.saldo == Decimal("0.00")
+    assert bc.saldo == SUPPLY_INICIAL, "o Banco Central não pagou nada"
     conservacao()
 
     # Já entra logado.
@@ -172,7 +189,7 @@ def test_senha_curta_e_aceita_no_cadastro(app, bc, cliente):
     ana = db.session.execute(
         db.select(Usuario).where(Usuario.nome_usuario == "ana")
     ).scalar_one()
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("0.00")
     assert ana.verificar_senha("a")
     conservacao()
 
@@ -388,8 +405,9 @@ def test_carteira_mostra_saldo_e_extrato_proprios(app, bc, cliente):
 
     assert "50.00" in corpo
     # O extrato mostra o motivo escrito, não o tipo cru da transação: quem lê
-    # é a pessoa, não o banco de dados.
-    assert "saque inicial" in corpo
+    # é a pessoa, não o banco de dados. O dinheiro chegou por ajuste do Banco
+    # Central, que é como ele chega desde o fim do saque inicial.
+    assert "saldo para o teste" in corpo
     assert "banco_central" in corpo
     conservacao()
 
@@ -436,7 +454,7 @@ def test_transferencia_so_efetiva_depois_de_confirmar(app, bc, cliente):
     ana = db.session.execute(
         db.select(Usuario).where(Usuario.nome_usuario == "ana")
     ).scalar_one()
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("50.00")
     conservacao()
 
     ana_cliente.post("/transferir/confirmar", data={"token": _token(corpo)})
@@ -483,7 +501,7 @@ def test_token_trocado_nao_efetiva(app, bc, cliente):
     ana = db.session.execute(
         db.select(Usuario).where(Usuario.nome_usuario == "ana")
     ).scalar_one()
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("50.00")
     conservacao()
 
 
@@ -508,7 +526,7 @@ def test_confirmacao_expirada_nao_efetiva(app, bc, cliente, monkeypatch):
     ana = db.session.execute(
         db.select(Usuario).where(Usuario.nome_usuario == "ana")
     ).scalar_one()
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("50.00")
     conservacao()
 
 
@@ -529,7 +547,7 @@ def test_valores_recusados_nao_chegam_na_confirmacao(app, bc, cliente, valor, es
     ana = db.session.execute(
         db.select(Usuario).where(Usuario.nome_usuario == "ana")
     ).scalar_one()
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("50.00")
     conservacao()
 
 

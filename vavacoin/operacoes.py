@@ -17,7 +17,6 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from .autoridade import exigir_banco_central
-from .constantes import SAQUE_INICIAL
 from .dinheiro import ZERO, para_decimal
 from .erros import (
     ConviteInvalido,
@@ -34,7 +33,6 @@ from .moeda import (
     TIPO_EMISSAO,
     TIPO_RESET_RECOLHIMENTO,
     TIPO_RESET_REDISTRIBUICAO,
-    TIPO_SAQUE_INICIAL,
     TIPO_TRANSFERENCIA,
     mover,
     supply_emitido,
@@ -83,26 +81,21 @@ def criar_convite(codigo=None, destinatario=None, autoridade=None, sessao=None):
     return convite
 
 
-def resgatar_convite(usuario, codigo, sessao=None, saque=SAQUE_INICIAL):
-    """Saca os 50 iniciais do Banco Central em nome de ``usuario``.
+def resgatar_convite(usuario, codigo, sessao=None):
+    """Queima o convite em nome de ``usuario``. **Não move dinheiro.**
 
-    O dinheiro **sai do Banco Central** por ``mover()``: não é criado. Se o
-    Banco Central não tiver saldo não emitido suficiente, a operação falha —
-    a resposta registrada para "a turma passou de 100" é reduzir o saque, não
-    cunhar moeda.
+    Havia aqui um saque de 50 VVC do Banco Central. Não há mais: quem entra
+    começa com saldo zero, e o dinheiro chega depois — por transferência de
+    outra pessoa ou por ajuste do Banco Central. O convite continua sendo a
+    única porta de entrada e continua valendo uma vez só; o que ele dá agora
+    é o direito de existir na economia, não um valor.
 
-    A queima do convite é um ``UPDATE ... WHERE usuario_id IS NULL``: se duas
+    A queima é um ``UPDATE ... WHERE usuario_id IS NULL``: se duas
     requisições chegarem juntas com o mesmo código, só uma afeta linha. E a
     coluna ``usuario_id`` é UNIQUE, o que impede pelo banco que a mesma conta
     resgate dois códigos diferentes.
     """
     sessao = sessao or db.session
-    saque = para_decimal(saque)
-    bc = banco_central(sessao)
-    if bc is None:
-        raise ConviteInvalido("gênese ainda não rodou; não há Banco Central")
-
-    verificar_conservacao(sessao)
 
     with sessao.begin_nested():
         convite = sessao.execute(
@@ -131,42 +124,22 @@ def resgatar_convite(usuario, codigo, sessao=None, saque=SAQUE_INICIAL):
             raise ConviteJaResgatado(f"código {codigo!r} já foi resgatado")
         sessao.expire(convite)
 
-        try:
-            transacao = mover(
-                bc,
-                usuario,
-                saque,
-                tipo=TIPO_SAQUE_INICIAL,
-                motivo=f"saque inicial pelo convite {codigo}",
-                sessao=sessao,
-            )
-        except SaldoInsuficiente as erro:
-            raise SupplyInsuficiente(
-                f"o Banco Central não tem {saque} não emitidos: {erro}"
-            ) from erro
-
-    verificar_conservacao(sessao)
-    return transacao
+    return convite
 
 
 def cadastrar_por_convite(
     nome_usuario, senha, codigo, nome_exibicao=None, sessao=None
 ):
-    """Cria a conta e saca os 50, num passo só. É a única porta de entrada.
+    """Cria a conta e queima o convite. É a única porta de entrada.
 
-    Aqui a autoridade do Banco Central chega **delegada pelo convite**: foi o
-    BC que emitiu aquele código, e um código vale exatamente uma conta. Por
-    isso esta é a única função que exerce o poder de criar conta sem receber
-    o BC de quem chamou — e ela só o faz depois de ver um convite existente e
-    ainda não resgatado.
+    A conta nasce com **saldo zero**. Entrar na economia e ter dinheiro
+    viraram duas coisas separadas: o convite dá a entrada, o dinheiro chega
+    depois por transferência de alguém ou por ajuste do Banco Central.
 
     Roda inteira num ``SAVEPOINT``: convite inválido não deixa conta órfã, e
     conta que falha não queima convite.
     """
     sessao = sessao or db.session
-    bc = banco_central(sessao)
-    if bc is None:
-        raise ConviteInvalido("gênese ainda não rodou; não há Banco Central")
 
     with sessao.begin_nested():
         # Conferido antes de criar qualquer coisa: sem convite bom, não há
@@ -202,7 +175,7 @@ def transferir(origem, destino, valor, motivo=None, sessao=None):
 
 
 def resetar_economia(
-    autoridade=None, sessao=None, saque=SAQUE_INICIAL, motivo="reset da economia"
+    autoridade=None, sessao=None, saque=ZERO, motivo="reset da economia"
 ):
     """Recolhe tudo ao Banco Central e redistribui os 50 por pessoa.
 
@@ -214,8 +187,10 @@ def resetar_economia(
     duas pontas, porque a alternativa é UPDATE na unha no dia do reset — que
     é exatamente como o Benbals ganhou o bug de saldo sumindo.
 
-    Redistribui para quem tem convite resgatado: o direito aos 50 é da
-    pessoa, e o reset não muda quem está na economia.
+    Com o fim do saque inicial, o padrão passou a ser **só recolher**: não há
+    mais um valor óbvio para devolver a cada um. ``saque`` continua existindo
+    para quando o Banco Central quiser redistribuir alguma coisa — aí vai
+    para quem tem convite resgatado, que é quem está na economia.
 
     Roda inteiro dentro de um ``SAVEPOINT``: ou a economia inteira volta ao
     estado inicial, ou nada muda.
@@ -262,15 +237,16 @@ def resetar_economia(
                     sessao=sessao,
                 )
 
-        for conta in participantes:
-            mover(
-                bc,
-                conta,
-                saque,
-                tipo=TIPO_RESET_REDISTRIBUICAO,
-                motivo=motivo,
-                sessao=sessao,
-            )
+        if saque > ZERO:
+            for conta in participantes:
+                mover(
+                    bc,
+                    conta,
+                    saque,
+                    tipo=TIPO_RESET_REDISTRIBUICAO,
+                    motivo=motivo,
+                    sessao=sessao,
+                )
 
     verificar_conservacao(sessao)
     registrar_acao(

@@ -4,16 +4,16 @@ from decimal import Decimal
 
 from conftest import conservacao
 
-from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_INICIAL
+from vavacoin.constantes import SUPPLY_INICIAL
 from vavacoin.extensoes import db
-from vavacoin.moeda import TIPO_RESET_RECOLHIMENTO, TIPO_RESET_REDISTRIBUICAO, mover
+from vavacoin.moeda import TIPO_RESET_RECOLHIMENTO, mover
 from vavacoin.modelos import Transacao
 from vavacoin.operacoes import resetar_economia
 
 
 def test_reset_devolve_tudo_e_redistribui(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     mover(ana, bia, "40.00", motivo="quebrou no mines")
     db.session.commit()
     assert (ana.saldo, bia.saldo) == (Decimal("10.00"), Decimal("90.00"))
@@ -23,15 +23,15 @@ def test_reset_devolve_tudo_e_redistribui(app, bc, nova_pessoa):
     db.session.commit()
 
     assert quantos == 2
-    assert ana.saldo == SAQUE_INICIAL
-    assert bia.saldo == SAQUE_INICIAL
-    assert bc.saldo == SUPPLY_INICIAL - 2 * SAQUE_INICIAL
+    assert ana.saldo == Decimal("0.00")
+    assert bia.saldo == Decimal("0.00")
+    assert bc.saldo == SUPPLY_INICIAL
     conservacao()
 
 
 def test_reset_passa_pelo_ledger(app, bc, nova_pessoa):
     """Nenhum saldo muda sem uma linha explicando."""
-    nova_pessoa(com_convite=True)
+    nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
     linhas_antes = db.session.query(Transacao).count()
 
@@ -44,13 +44,14 @@ def test_reset_passa_pelo_ledger(app, bc, nova_pessoa):
         .order_by(Transacao.id)
         .offset(linhas_antes)
     ]
-    assert tipos == [TIPO_RESET_RECOLHIMENTO, TIPO_RESET_REDISTRIBUICAO]
+    # Só recolhimento: sem saque inicial não há valor óbvio a redistribuir.
+    assert tipos == [TIPO_RESET_RECOLHIMENTO]
     conservacao()
 
 
 def test_reset_nao_da_saque_a_quem_nunca_resgatou(app, bc, nova_pessoa):
     """O direito aos 50 é de quem tem convite resgatado, não de quem tem conta."""
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     curioso = nova_pessoa(com_convite=False)
     conservacao()
 
@@ -58,15 +59,15 @@ def test_reset_nao_da_saque_a_quem_nunca_resgatou(app, bc, nova_pessoa):
     db.session.commit()
 
     assert quantos == 1
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("0.00")
     assert curioso.saldo == Decimal("0.00")
     conservacao()
 
 
 def test_reset_e_idempotente_em_efeito(app, bc, nova_pessoa):
     """Resetar duas vezes seguidas deixa a economia no mesmo lugar."""
-    nova_pessoa(com_convite=True)
-    nova_pessoa(com_convite=True)
+    nova_pessoa(com_convite=True, saldo="50.00")
+    nova_pessoa(com_convite=True, saldo="50.00")
     resetar_economia(autoridade=bc)
     db.session.commit()
     conservacao()

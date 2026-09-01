@@ -12,8 +12,8 @@ from vavacoin.modelos import Transacao
 
 
 def test_mover_debita_e_credita_o_mesmo_valor(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     mover(ana, bia, "10.00", motivo="explicou a questão 3")
@@ -25,8 +25,8 @@ def test_mover_debita_e_credita_o_mesmo_valor(app, bc, nova_pessoa):
 
 
 def test_mover_grava_a_linha_do_ledger(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     transacao = mover(ana, bia, "10.00", motivo="fila do bandejão")
@@ -45,8 +45,8 @@ def test_mover_grava_a_linha_do_ledger(app, bc, nova_pessoa):
 
 def test_saldo_insuficiente_nao_move_nada(app, bc, nova_pessoa):
     """Nem parcialmente: 50 não viram 49 na tentativa de mandar 60."""
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
     antes = (ana.saldo, bia.saldo)
     linhas_antes = db.session.query(Transacao).count()
@@ -61,7 +61,7 @@ def test_saldo_insuficiente_nao_move_nada(app, bc, nova_pessoa):
 
 
 def test_transferencia_para_si_mesmo_e_recusada(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     with pytest.raises(MesmaConta):
@@ -74,8 +74,8 @@ def test_transferencia_para_si_mesmo_e_recusada(app, bc, nova_pessoa):
 
 @pytest.mark.parametrize("valor", ["0.00", "-1.00", "-0.01"])
 def test_valor_zero_ou_negativo_e_recusado(app, bc, nova_pessoa, valor):
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     with pytest.raises(ValorInvalido):
@@ -88,8 +88,8 @@ def test_valor_zero_ou_negativo_e_recusado(app, bc, nova_pessoa, valor):
 
 
 def test_valor_float_e_recusado(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     with pytest.raises(ValorInvalido):
@@ -99,8 +99,8 @@ def test_valor_float_e_recusado(app, bc, nova_pessoa):
 
 
 def test_valor_abaixo_do_centavo_e_recusado(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     with pytest.raises(ValorInvalido):
@@ -110,7 +110,7 @@ def test_valor_abaixo_do_centavo_e_recusado(app, bc, nova_pessoa):
 
 
 def test_conta_inexistente_e_recusada(app, bc, nova_pessoa):
-    ana = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     with pytest.raises(ValorInvalido):
@@ -121,8 +121,8 @@ def test_conta_inexistente_e_recusada(app, bc, nova_pessoa):
 
 def test_gastar_o_saldo_inteiro_e_permitido(app, bc, nova_pessoa):
     """O limite é o saldo, não menos que ele."""
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     mover(ana, bia, "50.00")
@@ -135,8 +135,8 @@ def test_gastar_o_saldo_inteiro_e_permitido(app, bc, nova_pessoa):
 
 def test_muitos_movimentos_de_um_centavo_conservam_massa(app, bc, nova_pessoa):
     """Onde o float quebraria: 300 movimentos de 0,01 e volta ao mesmo lugar."""
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     conservacao()
 
     for _ in range(300):

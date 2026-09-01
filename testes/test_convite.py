@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from conftest import conservacao
 
-from vavacoin.constantes import CAPACIDADE, SAQUE_INICIAL, SUPPLY_INICIAL
+from vavacoin.constantes import SUPPLY_INICIAL
 from vavacoin.erros import (
     ConviteInvalido,
     ConviteJaResgatado,
@@ -13,25 +13,61 @@ from vavacoin.erros import (
     UsuarioJaResgatou,
 )
 from vavacoin.extensoes import db
-from vavacoin.moeda import TIPO_SAQUE_INICIAL
 from vavacoin.modelos import Transacao
 from vavacoin.operacoes import criar_convite, criar_usuario, resgatar_convite
 
 
-def test_saque_sai_do_banco_central(app, bc):
-    """Os 50 não são criados: o Banco Central fica com 50 a menos."""
+def test_convite_sem_destinatario(app, bc):
+    """O nome é rótulo, não requisito: dá para emitir código sem nome.
+
+    Quem emite em série, para entregar depois, não sabe de antemão quem vai
+    receber cada código.
+    """
+    conservacao()
+    convite = criar_convite(autoridade=bc)
+    db.session.commit()
+
+    assert convite.codigo
+    assert convite.destinatario is None
+    assert convite.resgatado is False
+
+    ana = criar_usuario("ana", "senha-boa-123", autoridade=bc)
+    db.session.commit()
+    resgatar_convite(ana, convite.codigo)
+    db.session.commit()
+
+    db.session.refresh(convite)
+    assert convite.resgatado is True
+    conservacao()
+
+
+def test_convite_com_destinatario_guarda_o_rotulo(app, bc):
+    convite = criar_convite(destinatario="Fulano", autoridade=bc)
+    db.session.commit()
+    assert convite.destinatario == "Fulano"
+
+
+def test_resgate_nao_move_dinheiro(app, bc):
+    """O convite dá entrada na economia, não valor.
+
+    Este teste afirmava o contrário: que o resgate sacava 50 do Banco
+    Central. O saque inicial acabou, e o teste passou a afirmar o novo
+    comportamento com a mesma dureza — nada se move.
+    """
     conservacao()
     ana = criar_usuario("ana", "senha-boa-123", autoridade=bc)
     convite = criar_convite(destinatario="Ana", autoridade=bc)
     db.session.commit()
+    linhas_antes = db.session.query(Transacao).count()
 
-    transacao = resgatar_convite(ana, convite.codigo)
+    resgatar_convite(ana, convite.codigo)
     db.session.commit()
 
-    assert ana.saldo == SAQUE_INICIAL
-    assert bc.saldo == SUPPLY_INICIAL - SAQUE_INICIAL
-    assert transacao.tipo == TIPO_SAQUE_INICIAL
-    assert transacao.origem_id == bc.id
+    assert ana.saldo == Decimal("0.00")
+    assert bc.saldo == SUPPLY_INICIAL
+    assert db.session.query(Transacao).count() == linhas_antes
+    db.session.refresh(convite)
+    assert convite.resgatado is True
     conservacao()
 
 
@@ -51,7 +87,7 @@ def test_mesmo_codigo_duas_vezes_nao_saca_duas_vezes(app, bc):
         resgatar_convite(bia, convite.codigo)
     db.session.rollback()
 
-    assert ana.saldo == SAQUE_INICIAL
+    assert ana.saldo == Decimal("0.00")
     assert bia.saldo == Decimal("0.00")
     conservacao()
 
@@ -71,8 +107,8 @@ def test_dez_contas_da_mesma_pessoa_nao_viram_500(app, bc):
             resgatar_convite(conta, convite.codigo)
         db.session.rollback()
 
-    emitido = sum((c.saldo for c in contas), Decimal("0.00"))
-    assert emitido == SAQUE_INICIAL
+    resgatados = [c for c in contas if c.convite]
+    assert len(resgatados) == 1, "um código, uma conta"
     conservacao()
 
 
@@ -90,7 +126,6 @@ def test_uma_conta_nao_resgata_dois_codigos(app, bc):
         resgatar_convite(ana, segundo.codigo)
     db.session.rollback()
 
-    assert ana.saldo == SAQUE_INICIAL
     conservacao()
 
 
@@ -107,41 +142,29 @@ def test_codigo_inexistente(app, bc):
     conservacao()
 
 
-def test_supply_comporta_exatamente_cem_pessoas(app, bc, nova_pessoa):
-    """A centésima entra; a centésima primeira não, e nada é cunhado."""
-    conservacao()
-    for _ in range(CAPACIDADE):
-        nova_pessoa(com_convite=True)
-    conservacao()
-    assert bc.saldo == Decimal("0.00")
+def test_conta_repetida_nao_queima_o_convite(app, bc):
+    """Se o cadastro falha, o código continua valendo — o savepoint garante.
 
-    excedente = criar_usuario("aluno101", "senha-boa-123", autoridade=bc)
-    convite = criar_convite(destinatario="o 101", autoridade=bc)
+    Era o teste do 101º aluno, que falhava por falta de saldo não emitido.
+    Esse caso deixou de existir com o fim do saque inicial; a falha que
+    sobrou, e que importa, é o nome de usuário já ocupado.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from vavacoin.operacoes import cadastrar_por_convite
+
+    conservacao()
+    criar_usuario("ana", "senha-boa-123", autoridade=bc)
+    convite = criar_convite(destinatario="Ana", autoridade=bc)
     db.session.commit()
-    with pytest.raises(SupplyInsuficiente):
-        resgatar_convite(excedente, convite.codigo)
+
+    with pytest.raises(IntegrityError):
+        cadastrar_por_convite("ana", "senha-boa-123", convite.codigo)
+        db.session.commit()
     db.session.rollback()
 
-    assert excedente.saldo == Decimal("0.00")
-    conservacao()
-
-
-def test_resgate_falho_nao_queima_o_convite(app, bc, nova_pessoa):
-    """Se o saque falha, o código continua valendo — o savepoint garante."""
-    conservacao()
-    for _ in range(CAPACIDADE):
-        nova_pessoa(com_convite=True)
-
-    tarde = criar_usuario("atrasado", "senha-boa-123", autoridade=bc)
-    convite = criar_convite(destinatario="Atrasado", autoridade=bc)
-    db.session.commit()
-    with pytest.raises(SupplyInsuficiente):
-        resgatar_convite(tarde, convite.codigo)
-    db.session.commit()  # quem chamou nem deu rollback
-
-    db.session.expire_all()
+    db.session.refresh(convite)
     assert convite.resgatado is False
-    assert tarde.saldo == Decimal("0.00")
     conservacao()
 
 
@@ -159,8 +182,8 @@ def test_senha_e_guardada_com_hash(app, bc):
 
 def test_ledger_explica_cada_centavo(app, bc, nova_pessoa):
     """Somando o ledger dá para reconstruir todo saldo a partir do zero."""
-    ana = nova_pessoa(com_convite=True)
-    bia = nova_pessoa(com_convite=True)
+    ana = nova_pessoa(com_convite=True, saldo="50.00")
+    bia = nova_pessoa(com_convite=True, saldo="50.00")
     from vavacoin.moeda import mover
 
     mover(ana, bia, "13.37")
