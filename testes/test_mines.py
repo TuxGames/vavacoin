@@ -429,6 +429,50 @@ def test_conta_de_sistema_nao_joga(app, bc, cassino):
     conservacao()
 
 
+def test_banco_central_poe_dinheiro_no_caixa_pelo_ajuste(app, bc):
+    """A casa é uma conta como outra qualquer: o ajuste de saldo funciona nela.
+
+    Não precisou de caminho novo — só o `caladinho` não ser recusado como o
+    Banco Central é.
+    """
+    from vavacoin.operacoes import ajustar_saldo
+
+    conta = criar_casa(autoridade=bc)
+    db.session.commit()
+    conservacao()
+
+    ajustar_saldo(conta, "2500.00", "caixa do Caladinho", autoridade=bc)
+    db.session.commit()
+
+    assert conta.saldo == Decimal("2500.00")
+    assert limite_de_aposta() == Decimal("50.00")  # 2500 / 50
+    conservacao()
+
+    # E dá para tirar de volta.
+    ajustar_saldo(conta, "100.00", "recolhendo o excesso", autoridade=bc)
+    db.session.commit()
+    assert conta.saldo == Decimal("100.00")
+    conservacao()
+
+
+def test_o_cassino_aparece_na_lista_de_contas_do_painel(app, bc):
+    """O atalho do painel precisa que a conta esteja lá."""
+    criar_casa(autoridade=bc)
+    bc.definir_senha("senha-do-banco-central-123")
+    db.session.commit()
+
+    cliente = app.test_client()
+    cliente.post(
+        "/entrar",
+        data={"nome_usuario": "banco_central", "senha": "senha-do-banco-central-123"},
+        follow_redirects=True,
+    )
+    corpo = cliente.get("/painel/").get_data(as_text=True)
+
+    assert "caladinho" in corpo
+    assert "Pôr dinheiro no caixa" in corpo
+
+
 def test_casa_do_cassino_e_idempotente(app, bc):
     primeira = criar_casa(autoridade=bc)
     db.session.commit()

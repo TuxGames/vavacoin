@@ -69,10 +69,13 @@
     </form>
   </div>
 
-  <div class="card">
-    <div class="section-title">
-      <i class="ti ti-list-details" aria-hidden="true"></i>{{ minas }} minas · vantagem {{ vantagem }}%
-    </div>
+  {# <details> nativo: abre e fecha sem uma linha de JavaScript, então a CSP
+     do projeto não precisa de exceção nenhuma. #}
+  <details class="card revelavel">
+    <summary class="revelavel-botao">
+      <i class="ti ti-list-details" aria-hidden="true"></i>
+      {{ minas }} minas · vantagem {{ vantagem }}%
+    </summary>
     <div class="rolagem">
       <table class="tabela">
         <thead><tr><th>Casas</th><th class="numerico">Multiplicador</th></tr></thead>
@@ -89,7 +92,7 @@
              min="{{ min_minas }}" max="{{ max_minas }}" value="{{ minas }}">
       <button type="submit" class="btn btn-outline btn-sm">Ver tabela</button>
     </form>
-  </div>
+  </details>
 {% endif %}
 
 {% if caixa is not none %}

@@ -13,7 +13,8 @@ from flask.cli import with_appcontext
 
 from .auditoria import auditar, linhas_extrato
 from .autoridade import exigir_banco_central
-from .constantes import SUPPLY_INICIAL
+from .constantes import SUPPLY_INICIAL, SUPPLY_MAXIMO
+from .erros import ErroMonetario
 from .extensoes import db
 from .moeda import criar_genese, soma_saldos, verificar_conservacao
 from .modelos import banco_central, buscar_usuario, registrar_acao
@@ -113,6 +114,33 @@ def comando_senha_bc(senha):
     click.echo("Senha do Banco Central definida.")
 
 
+@click.command("emitir")
+@click.argument("valor")
+@click.option("--motivo", required=True, help="Por quê. Fica no ledger.")
+@with_appcontext
+def comando_emitir(valor, motivo):
+    """Cunha VVC novo no Banco Central, até o teto do supply.
+
+    Mesmo caminho de emissão do ajuste de saldo: uma linha sem origem no
+    ledger, com ator e motivo. Não existe um segundo tipo de gênese.
+    """
+    from .moeda import TIPO_EMISSAO, cabe_emitir, mover, supply_emitido
+
+    bc = _autoridade()
+    try:
+        transacao = mover(
+            None, bc, valor, tipo=TIPO_EMISSAO, motivo=motivo, ator=bc
+        )
+    except ErroMonetario as erro:
+        raise click.ClickException(str(erro)) from erro
+    db.session.commit()
+    click.echo(
+        f"Emitidos {transacao.valor} VVC. "
+        f"Supply agora {supply_emitido()} de {SUPPLY_MAXIMO} "
+        f"(ainda cabem {cabe_emitir()})."
+    )
+
+
 @click.command("criar-cassino")
 @with_appcontext
 def comando_criar_cassino():
@@ -151,6 +179,8 @@ def comando_auditoria():
 
     click.echo(f"supply inicial     {economia['supply_inicial']} VVC")
     click.echo(f"supply atual       {economia['supply_atual']} VVC")
+    click.echo(f"supply máximo      {economia['supply_maximo']} VVC")
+    click.echo(f"ainda cabe emitir  {economia['cabe_emitir']} VVC")
     click.echo(f"cunhado depois     {economia['cunhado_depois']} VVC")
     click.echo(f"soma dos saldos    {economia['soma_dos_saldos']} VVC")
     click.echo(f"diferença          {economia['diferenca']} VVC")
@@ -214,6 +244,7 @@ def registrar_comandos(app):
     app.cli.add_command(comando_genese)
     app.cli.add_command(comando_senha_bc)
     app.cli.add_command(comando_criar_cassino)
+    app.cli.add_command(comando_emitir)
     app.cli.add_command(comando_convite)
     app.cli.add_command(comando_criar_conta)
     app.cli.add_command(comando_conservacao)

@@ -21,13 +21,14 @@ from decimal import Decimal
 
 from sqlalchemy import select, update
 
-from .constantes import SUPPLY_INICIAL, USUARIO_BANCO_CENTRAL
+from .constantes import SUPPLY_INICIAL, SUPPLY_MAXIMO, USUARIO_BANCO_CENTRAL
 from .dinheiro import ZERO, para_decimal
 from .erros import (
     MassaViolada,
     MesmaConta,
     SaldoInsuficiente,
     SemAutoridade,
+    TetoDoSupply,
     ValorInvalido,
 )
 from .extensoes import db
@@ -94,6 +95,12 @@ def supply_emitido(sessao=None):
 def total_cunhado_depois_da_genese(sessao=None):
     """O quanto já se cunhou além dos 5.000 do dia zero."""
     return supply_emitido(sessao) - SUPPLY_INICIAL
+
+
+def cabe_emitir(sessao=None):
+    """Quanto ainda dá para cunhar antes de bater o teto do supply."""
+    resta = SUPPLY_MAXIMO - supply_emitido(sessao)
+    return resta if resta > ZERO else ZERO
 
 
 def verificar_conservacao(sessao=None, esperado=None):
@@ -251,6 +258,19 @@ def _emitir(sessao, destino_id, valor, tipo, motivo, ator_id):
     ator = sessao.get(Usuario, ator_id) if ator_id is not None else None
     if ator is None or not ator.eh_banco_central:
         raise SemAutoridade("só o Banco Central emite moeda")
+
+    # O teto vale aqui, e só aqui, porque este é o único ponto que cria
+    # dinheiro. Conferir na operação de cima (o ajuste) deixaria de fora
+    # qualquer caminho novo que emitisse — e o ponto de ter um teto é ele não
+    # depender de quem lembra de checá-lo.
+    #
+    # A gênese não passa por aqui: ela escreve o saldo direto, quando ainda
+    # não existe Banco Central para autorizar coisa alguma.
+    resta = cabe_emitir(sessao)
+    if valor > resta:
+        raise TetoDoSupply(
+            f"o supply pararia acima de {SUPPLY_MAXIMO}; ainda cabem {resta} VVC"
+        )
 
     conta_destino = sessao.execute(
         select(Usuario).where(Usuario.id == destino_id).with_for_update()

@@ -69,6 +69,15 @@ class SemAutoridade(ErroMonetario):
     """
 
 
+class TetoDoSupply(ErroMonetario):
+    """A emissão levaria o supply acima do teto.
+
+    Recusa, não aviso. Ajuste para baixo nunca esbarra aqui, e ajuste para
+    cima que caiba no saldo não emitido do Banco Central também não — só
+    conta o que precisaria ser cunhado.
+    """
+
+
 class MotivoObrigatorio(ErroMonetario):
     """Ação do administrador que mexe em dinheiro chegou sem motivo escrito.
 

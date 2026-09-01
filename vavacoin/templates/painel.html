@@ -9,6 +9,11 @@
   <dl class="numeros">
     <div class="numero"><dt>Supply inicial</dt><dd>{{ estado.supply_inicial }}</dd></div>
     <div class="numero"><dt>Supply atual</dt><dd>{{ estado.supply_atual }}</dd></div>
+    <div class="numero"><dt>Supply máximo</dt><dd>{{ estado.supply_maximo }}</dd></div>
+    <div class="numero">
+      <dt>Ainda cabe emitir</dt>
+      <dd class="{{ 'text-red' if estado.cabe_emitir == 0 }}">{{ estado.cabe_emitir }}</dd>
+    </div>
     <div class="numero">
       <dt>Cunhado depois</dt>
       <dd class="{{ 'text-red' if estado.cunhado_depois > 0 }}">{{ estado.cunhado_depois }}</dd>
@@ -65,6 +70,12 @@
     <div class="numero"><dt>Comprometido</dt><dd>{{ comprometido }}</dd></div>
     <div class="numero"><dt>Aposta máxima</dt><dd>{{ aposta_max }}</dd></div>
   </dl>
+  {# O caixa é uma conta como outra qualquer: quem põe dinheiro nele é o mesmo
+     ajuste de saldo. O link só evita digitar o nome de novo. #}
+  <p>
+    <a class="btn btn-outline btn-sm"
+       href="{{ url_for('admin.painel', conta=casa.nome_usuario) }}#ajustar">Pôr dinheiro no caixa</a>
+  </p>
   {% endif %}
   <form method="post" action="{{ url_for('admin.cassino') }}">
     {{ form_caixa.hidden_tag() }}

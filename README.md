@@ -142,6 +142,28 @@ O que é diferente aqui:
 A visibilidade do caixa para os jogadores é um **interruptor no painel do
 Banco Central**, guardado no banco — trocar de ideia não exige deploy.
 
+## O supply para em 10.000
+
+`SUPPLY_MAXIMO` é teto de verdade: emissão que passaria dele é **recusada**,
+com a mensagem dizendo quanto ainda cabe. Vale sobre o supply contado do
+ledger, nunca sobre um número guardado à parte.
+
+A trava mora no ramo de emissão do `mover()` — o único ponto que cria
+dinheiro. Conferir na operação de cima deixaria de fora qualquer caminho novo
+que emitisse, e o ponto de ter um teto é ele não depender de quem lembra de
+checá-lo.
+
+Não esbarram no teto: ajuste **para baixo**, ajuste **para cima que caiba no
+não emitido** do Banco Central (gastar o que ele já tem não é cunhar), e
+transferência entre pessoas.
+
+Para emitir: `flask emitir 5000.00 --motivo "..."`. O motivo é obrigatório e
+vai para o ledger.
+
+**Consequência a saber antes de esbarrar:** com o supply no teto e o Banco
+Central sem saldo não emitido, corrigir o saldo de alguém *para cima* é
+recusado. A saída é tirar de outra conta — que é exatamente o ponto do teto.
+
 ## Não há saque inicial
 
 O convite dá **entrada na economia, não valor**. Quem resgata começa com zero;
@@ -274,6 +296,7 @@ como no ITA-IME. **Nenhum passo abaixo foi executado** — quem sobe é o autor.
    .venv/bin/flask db upgrade
    .venv/bin/flask genese
    .venv/bin/flask senha-bc      # senha do painel; pedida sem eco
+   .venv/bin/flask criar-cassino # a conta da casa do Caladinho
    .venv/bin/flask conservacao   # deve dizer 5000.00
    ```
 

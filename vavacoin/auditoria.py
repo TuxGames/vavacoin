@@ -21,11 +21,11 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from .constantes import SUPPLY_INICIAL
+from .constantes import SUPPLY_INICIAL, SUPPLY_MAXIMO
 from .dinheiro import ZERO
 from .erros import MassaViolada
 from .extensoes import db
-from .moeda import soma_saldos, supply_emitido
+from .moeda import cabe_emitir, soma_saldos, supply_emitido
 from .modelos import Convite, Transacao, Usuario, banco_central
 
 
@@ -133,6 +133,8 @@ def estado_da_economia(sessao=None):
     return {
         "supply_inicial": SUPPLY_INICIAL,
         "supply_atual": emitido,
+        "supply_maximo": SUPPLY_MAXIMO,
+        "cabe_emitir": cabe_emitir(sessao),
         "cunhado_depois": emitido - SUPPLY_INICIAL,
         "supply_esperado": emitido,
         "soma_dos_saldos": total,

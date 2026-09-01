@@ -434,6 +434,29 @@ label { font-size: 14px; color: var(--muted); margin-bottom: 5px; display: block
 .linha-form { display: flex; gap: 8px; align-items: center; }
 .linha-form .form-control { max-width: 8rem; }
 
+/* ── BLOCO QUE ABRE E FECHA (<details>) ──
+   Sem JavaScript. O <summary> vira um botão discreto; o triângulo padrão sai
+   e entra um sinal de mais/menos, que não muda de forma entre navegadores. */
+.revelavel { padding: 0; }
+.revelavel-botao {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 16px;
+    font-size: 13.5px; font-weight: 600; color: var(--muted);
+    cursor: pointer; list-style: none;
+    border-radius: var(--radius);
+}
+.revelavel-botao::-webkit-details-marker { display: none; }
+.revelavel-botao::after {
+    content: "+"; margin-left: auto;
+    font-size: 17px; line-height: 1; color: var(--gold);
+}
+.revelavel[open] > .revelavel-botao::after { content: "\2212"; }
+.revelavel-botao:hover { color: var(--text-hi); }
+.revelavel-botao > .ti { color: var(--gold); font-size: 15px; }
+.revelavel[open] > .revelavel-botao { border-bottom: 1px solid var(--border-soft); }
+.revelavel > *:not(.revelavel-botao) { margin-left: 16px; margin-right: 16px; }
+.revelavel > *:last-child { margin-bottom: 16px; }
+
 /* ── ÍCONES OUTLINE (SVG via CSS mask; tingido por currentColor) ──
    Self-contained, sem CDN nem fonte externa: sempre renderiza, e passa na CSP
    porque `data:` está liberado em img-src. Só os ícones usados aqui. */
