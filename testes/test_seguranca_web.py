@@ -170,8 +170,17 @@ def test_csp_nao_afrouxa_com_unsafe(app):
 def test_nenhum_template_tem_estilo_inline_ou_handler():
     """A CSP quebraria isso em produção; o teste avisa antes de subir.
 
-    Tirar `style=""` e `onclick=""` depois de espalhados é retrabalho. Aqui o
-    projeto simplesmente nunca deixa entrarem.
+    É o juiz da adaptação do visual do Benbals, que usa `style=` e `onclick=`
+    à vontade: nada disso entra aqui, por mais tentador que seja na hora de
+    portar uma tela.
+
+    O motivo é concreto: o **motivo** da transferência é texto que uma pessoa
+    escreve e outra lê no extrato. É por ali que um escape que falhe vira XSS,
+    e a CSP é a segunda tranca.
+
+    `<script src=...>` é permitido — o menu off-canvas é um arquivo servido
+    pela própria origem, que `script-src 'self'` cobre. O que não passa é
+    script com corpo embutido.
     """
     problemas = []
     for arquivo in TEMPLATES.glob("*.html"):
@@ -180,8 +189,30 @@ def test_nenhum_template_tem_estilo_inline_ou_handler():
             problemas.append(f"{arquivo.name}: atributo style=")
         if re.search(r"\son[a-z]+\s*=\s*[\"']", texto):
             problemas.append(f"{arquivo.name}: handler on*=")
-        if "<style" in texto or "<script" in texto:
-            problemas.append(f"{arquivo.name}: tag <style>/<script> embutida")
+        if "<style" in texto:
+            problemas.append(f"{arquivo.name}: tag <style> embutida")
+        for corpo in re.findall(r"<script\b[^>]*>(.*?)</script>", texto, re.S):
+            if corpo.strip():
+                problemas.append(f"{arquivo.name}: <script> com corpo embutido")
+        if re.search(r"<script\b(?![^>]*\ssrc=)", texto):
+            problemas.append(f"{arquivo.name}: <script> sem src")
+    assert not problemas, problemas
+
+
+def test_o_css_e_o_js_nao_puxam_nada_de_fora():
+    """A CSP é `default-src 'self'`: um @import ou uma URL externa não carrega.
+
+    O `stylepage.css` do Benbals foi descartado justamente por isto — ele
+    importa fonte do Google e uma imagem de fundo de um bucket S3.
+    """
+    estaticos = TEMPLATES.parent / "static"
+    problemas = []
+    for arquivo in list(estaticos.glob("*.css")) + list(estaticos.glob("*.js")):
+        texto = arquivo.read_text(encoding="utf-8")
+        for url in re.findall(r"url\(\s*['\"]?(https?://[^)'\"]+)", texto):
+            problemas.append(f"{arquivo.name}: {url}")
+        if "@import" in texto:
+            problemas.append(f"{arquivo.name}: @import")
     assert not problemas, problemas
 
 

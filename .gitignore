@@ -17,6 +17,7 @@ __pycache__/
 .pytest_cache/
 
 # Editor / SO
+.claude/
 .vscode/
 .idea/
 .DS_Store

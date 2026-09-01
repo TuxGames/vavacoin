@@ -29,7 +29,7 @@ def _endereco():
 @bp.route("/entrar", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("carteira.minha_carteira"))
+        return redirect(url_for("publico.inicio"))
 
     formulario = FormularioLogin()
     if formulario.validate_on_submit():
@@ -72,7 +72,7 @@ def login():
             return render_template("login.html", formulario=formulario), 403
 
         trava_por_falhas.limpar(nome)
-        return redirect(url_for("carteira.minha_carteira"))
+        return redirect(url_for("publico.inicio"))
 
     return render_template("login.html", formulario=formulario)
 
@@ -94,7 +94,7 @@ def cadastro():
     e que ninguém entra sem ter pedido.
     """
     if current_user.is_authenticated:
-        return redirect(url_for("carteira.minha_carteira"))
+        return redirect(url_for("publico.inicio"))
 
     formulario = FormularioCadastro()
     if formulario.validate_on_submit():
@@ -121,6 +121,6 @@ def cadastro():
 
         login_user(usuario)
         flash("Conta criada. Os 50 VVC já estão com você.", "ok")
-        return redirect(url_for("carteira.minha_carteira"))
+        return redirect(url_for("publico.inicio"))
 
     return render_template("cadastro.html", formulario=formulario)

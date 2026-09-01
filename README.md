@@ -73,6 +73,30 @@ A soma continuar 5.000,00 não prova nada sozinha — quem tira de um e põe no
 outro por fora do `mover()` conserva a massa. `auditoria` reconstrói todo saldo
 a partir do ledger e acusa a diferença; tem teste exatamente desse caso.
 
+## O visual veio do Benbals
+
+A casca (paleta, espaçamento, cards, hero de saldo, extrato com barra lateral
+colorida, menu off-canvas) foi trazida de `static/base.css` e `static/menu.js`
+do projeto Benbals, que tem quatro anos de ajuste com gente usando no celular.
+Herdar isso é mais barato e melhor do que inventar outra paleta.
+
+O que **não** veio, e por quê:
+
+- **`stylepage.css`**: importa fonte do Google e uma imagem de fundo de um
+  bucket S3 — a CSP (`default-src 'self'`) bloqueia as duas. Além disso ele
+  estiliza um login de card 3D que não existe aqui.
+- **Bootstrap por CDN**: mesma razão. As poucas classes que as telas usavam
+  (`.card`, `.btn`, `.form-control`, `.alert`) já tinham estilo próprio no
+  `base.css`.
+- **Telas de funcionalidade que não existe**: mural, fórum, chat, empresas,
+  leilões, títulos, quests, ranking.
+
+E o que precisou de adaptação: o Benbals guarda o CSS do topo e do menu dentro
+de um `<style>` no `dashboard.html`, e usa `style=` e `onclick=` à vontade.
+Aqui isso desceu para `base.css` e o `menu.js` (que já era `addEventListener`,
+então veio quase intacto). O teste `test_nenhum_template_tem_estilo_inline_ou_handler`
+é o juiz: falha se algum voltar.
+
 ## O supply não é mais uma constante
 
 Era 5.000 fixos. Deixou de ser quando o administrador ganhou o poder de
@@ -107,6 +131,8 @@ administrador conserta algo é um alarme que se aprende a ignorar.
 | `vavacoin/autoridade.py` | o Banco Central é o único administrador |
 | `vavacoin/rotas/admin.py` | o painel de god mode |
 | `vavacoin/limite.py` | os dois freios do login |
+| `vavacoin/static/base.css` | o visual, herdado do Benbals |
+| `vavacoin/static/menu.js` | o menu off-canvas do celular — o único JS do projeto |
 | `vavacoin/modelos.py` | `Usuario`, `Convite`, `Transacao` (ledger) |
 | `vavacoin/constantes.py` | supply, saque inicial, capacidade |
 

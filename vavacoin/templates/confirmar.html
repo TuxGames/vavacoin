@@ -3,29 +3,30 @@
 {% block conteudo %}
 <h1>Confirmar transferência</h1>
 
-<dl class="confirmacao">
-  <div class="numero">
-    <dt>Para</dt>
-    <dd>{{ pendente.destino_nome }} <span class="usuario">({{ pendente.destino_usuario }})</span></dd>
-  </div>
-  <div class="numero">
-    <dt>Valor</dt>
-    <dd>{{ pendente.valor }} VVC</dd>
+<div class="card">
+  <dl class="numeros">
+    <div class="numero"><dt>Para</dt><dd>{{ pendente.destino_nome }}</dd></div>
+    <div class="numero"><dt>Valor</dt><dd class="text-gold">{{ pendente.valor }} VVC</dd></div>
+  </dl>
+  <div class="row row-evt">
+    <div class="row-main">Usuário</div>
+    <div class="row-val"><code>{{ pendente.destino_usuario }}</code></div>
   </div>
   {% if pendente.motivo %}
-  <div class="numero">
-    <dt>Motivo</dt>
-    <dd>{{ pendente.motivo }}</dd>
+  <div class="row row-evt">
+    <div class="row-main">Motivo</div>
+    <div class="row-val">{{ pendente.motivo }}</div>
   </div>
   {% endif %}
-</dl>
 
-<p class="nota">Depois de confirmar não tem desfazer: peça de volta a quem recebeu.</p>
+  <p class="text-muted">Depois de confirmar não tem desfazer: peça de volta a quem recebeu.</p>
 
-<form method="post" class="formulario">
-  {{ formulario.hidden_tag() }}
-  {{ formulario.token(type="hidden") }}
-  {{ formulario.enviar(class="botao") }}
-</form>
-<p><a href="{{ url_for('carteira.transferir_passo1') }}">Cancelar e refazer</a></p>
+  <form method="post">
+    {{ formulario.hidden_tag() }}
+    {{ formulario.token(type="hidden") }}
+    {{ formulario.enviar(class="btn btn-gold btn-full") }}
+  </form>
+  <hr>
+  <a href="{{ url_for('carteira.transferir_passo1') }}">Cancelar e refazer</a>
+</div>
 {% endblock %}

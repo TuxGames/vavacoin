@@ -3,12 +3,15 @@
 {% block titulo %}Transferir — VavaCoin{% endblock %}
 {% block conteudo %}
 <h1>Transferir</h1>
-<p class="chamada">Você vai revisar antes de qualquer coisa sair da sua conta.</p>
-<form method="post" class="formulario">
-  {{ formulario.hidden_tag() }}
-  {{ campo(formulario.destinatario) }}
-  {{ campo(formulario.valor) }}
-  {{ campo(formulario.motivo) }}
-  {{ formulario.enviar(class="botao") }}
-</form>
+<p class="text-muted">Você vai revisar antes de qualquer coisa sair da sua conta.</p>
+
+<div class="card">
+  <form method="post" action="{{ url_for('carteira.transferir_passo1') }}">
+    {{ formulario.hidden_tag() }}
+    {{ campo(formulario.destinatario, "O nome de usuário de quem recebe.") }}
+    {{ campo(formulario.valor, "Use ponto ou vírgula: 12.50 ou 12,50.") }}
+    {{ campo(formulario.motivo, "Aparece no extrato de vocês dois.") }}
+    {{ formulario.enviar(class="btn btn-gold btn-full") }}
+  </form>
+</div>
 {% endblock %}

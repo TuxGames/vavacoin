@@ -1,40 +1,23 @@
 {% extends "base.html" %}
+{% from "_campos.html" import linha_extrato %}
 {% block titulo %}Extrato de {{ alvo.nome_usuario }} — VavaCoin{% endblock %}
 {% block conteudo %}
-<h1>{{ alvo.nome_exibicao }}</h1>
-<p class="saldo">{{ alvo.saldo }} <span class="unidade">VVC</span></p>
-<p class="nota">
-  Usuário <code>{{ alvo.nome_usuario }}</code>. Esta consulta ficou registrada
-  no diário do painel.
-</p>
+<div class="perfil-head">
+  <span class="avatar-mono avatar-grande" aria-hidden="true">{{ alvo.nome_exibicao[0]|upper }}</span>
+  <div class="perfil-ident">
+    <div class="perfil-nome">{{ alvo.nome_exibicao }}</div>
+    <div class="perfil-user">{{ alvo.nome_usuario }} &middot; {{ alvo.saldo }} VVC</div>
+  </div>
+</div>
+<p class="text-muted">Esta consulta ficou registrada no diário do painel.</p>
 
-{% if linhas %}
-<table class="extrato">
-  <thead>
-    <tr>
-      <th>Quando</th><th>Com quem</th><th>O quê</th>
-      <th class="numerico">Valor</th><th class="numerico">Saldo depois</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for linha in linhas %}
-    <tr>
-      <td>{{ linha.quando.strftime("%d/%m/%Y %H:%M") }}</td>
-      <td>{{ linha.contraparte }}</td>
-      <td>
-        {{ linha.tipo }}
-        {% if linha.motivo %}<span class="motivo">— {{ linha.motivo }}</span>{% endif %}
-      </td>
-      <td class="numerico {{ "saiu" if linha.valor_com_sinal < 0 else "entrou" }}">
-        {{ linha.valor_com_sinal }}
-      </td>
-      <td class="numerico">{{ linha.saldo_depois }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="nota">Nada ainda.</p>
-{% endif %}
-<p><a href="{{ url_for('admin.painel') }}">Voltar ao painel</a></p>
+<div class="card">
+  <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Extrato</div>
+  {% if linhas %}
+    {% for linha in linhas %}{{ linha_extrato(linha) }}{% endfor %}
+  {% else %}
+    <p class="vazio">Nada ainda.</p>
+  {% endif %}
+</div>
+<a class="btn btn-outline btn-sm" href="{{ url_for('admin.painel') }}">Voltar ao painel</a>
 {% endblock %}

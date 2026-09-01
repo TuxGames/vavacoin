@@ -243,6 +243,14 @@ def test_senhas_diferentes_nao_cadastram(app, bc, cliente):
 # --- login ------------------------------------------------------------------
 
 
+def test_login_leva_ao_painel_da_pessoa(app, bc, cliente):
+    """Depois de entrar, a primeira tela é o dashboard — não o extrato cru."""
+    _cadastrar(cliente, bc)
+    corpo = cliente.get("/").get_data(as_text=True)
+    assert "Seu saldo" in corpo
+    assert "Transferência rápida" in corpo
+
+
 def test_login_e_logout(app, bc, cliente):
     _cadastrar(cliente, bc)
     cliente.post("/sair", follow_redirects=True)
@@ -378,7 +386,9 @@ def test_carteira_mostra_saldo_e_extrato_proprios(app, bc, cliente):
     corpo = cliente.get("/carteira").get_data(as_text=True)
 
     assert "50.00" in corpo
-    assert "saque_inicial" in corpo
+    # O extrato mostra o motivo escrito, não o tipo cru da transação: quem lê
+    # é a pessoa, não o banco de dados.
+    assert "saque inicial" in corpo
     assert "banco_central" in corpo
     conservacao()
 

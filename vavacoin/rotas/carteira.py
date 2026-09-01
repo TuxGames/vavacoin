@@ -19,12 +19,13 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from ..auditoria import linhas_extrato
+from ..auditoria import linhas_extrato, resumo_da_conta
 from ..dinheiro import para_decimal
 from ..erros import ErroMonetario
 from ..extensoes import db
 from ..formularios import FormularioConfirmacao, FormularioTransferencia
-from ..modelos import Usuario
+from ..constantes import SAQUE_INICIAL
+from ..modelos import Convite, Usuario
 from ..operacoes import transferir
 
 bp = Blueprint("carteira", __name__)
@@ -44,6 +45,28 @@ def minha_carteira():
         "carteira.html",
         saldo=current_user.saldo,
         linhas=linhas_extrato(current_user, limite=30),
+    )
+
+
+@bp.route("/perfil")
+@login_required
+def perfil():
+    """O próprio perfil, e só o próprio.
+
+    O Benbals tem perfil público em ``/perfil/<usuario>``, com saldo à vista.
+    Aqui não: a decisão registrada é que saldo de terceiro não aparece para
+    ninguém além do Banco Central. Trazer a tela sem trazer essa parte é de
+    propósito.
+    """
+    convite = db.session.execute(
+        db.select(Convite).where(Convite.usuario_id == current_user.id)
+    ).scalar_one_or_none()
+    return render_template(
+        "perfil.html",
+        usuario=current_user,
+        resumo=resumo_da_conta(current_user),
+        convite=convite,
+        saque_inicial=SAQUE_INICIAL,
     )
 
 

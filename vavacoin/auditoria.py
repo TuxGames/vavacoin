@@ -81,6 +81,33 @@ def linhas_extrato(usuario, limite=50, sessao=None):
     return linhas
 
 
+def resumo_da_conta(usuario, sessao=None):
+    """Quanto entrou, quanto saiu e quantos movimentos teve a conta.
+
+    Reconstruído do ledger, como todo o resto: não há contador guardado em
+    lugar nenhum que possa ficar dessincronizado do que aconteceu de verdade.
+    """
+    sessao = sessao or db.session
+    usuario_id = usuario.id if isinstance(usuario, Usuario) else usuario
+
+    recebido = ZERO
+    enviado = ZERO
+    total = 0
+    for transacao in sessao.execute(
+        select(Transacao).where(
+            (Transacao.origem_id == usuario_id)
+            | (Transacao.destino_id == usuario_id)
+        )
+    ).scalars():
+        total += 1
+        if transacao.origem_id == usuario_id:
+            enviado += transacao.valor
+        else:
+            recebido += transacao.valor
+
+    return {"recebido": recebido, "enviado": enviado, "transacoes": total}
+
+
 def estado_da_economia(sessao=None):
     """Retrato da economia: quanto existe, quanto circula, quanto sobrou no BC.
 

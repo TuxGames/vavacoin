@@ -250,7 +250,7 @@ def test_extrato_de_qualquer_um(app, bc, painel):
     corpo = resposta.get_data(as_text=True)
 
     assert resposta.status_code == 200
-    assert "saque_inicial" in corpo
+    assert "saque inicial" in corpo
     assert "50.00" in corpo
 
 

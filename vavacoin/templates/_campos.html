@@ -1,12 +1,34 @@
-{# Macro unica para campo de formulario: rotulo, entrada e erros.
-   Existe para que nenhum template escreva <input> na mao — e, com isso,
-   nenhum esqueca o token CSRF que vem do hidden_tag(). #}
-{% macro campo(f, tipo_extra="") %}
-<p class="campo">
+{# Macro única para campo de formulário: rótulo, entrada e erros.
+   Existe para que nenhum template escreva <input> na mão — e, com isso,
+   nenhum esqueça o token CSRF que vem do hidden_tag(). #}
+{% macro campo(f, ajuda="") %}
+<div class="campo">
   {{ f.label }}
-  {{ f(class="entrada " ~ tipo_extra) }}
+  {{ f(class="form-control") }}
+  {% if ajuda %}<small class="ajuda">{{ ajuda }}</small>{% endif %}
   {% if f.errors %}
     <span class="erro-campo">{{ f.errors|join(" ") }}</span>
   {% endif %}
-</p>
+</div>
+{% endmacro %}
+
+{# Uma linha de extrato, no formato .row do Benbals: barra lateral verde para
+   o que entrou, vermelha para o que saiu. #}
+{% macro linha_extrato(linha) %}
+<div class="row {{ 'row-out' if linha.valor_com_sinal < 0 else 'row-in' }}">
+  <div>
+    <div class="row-main">
+      {{ linha.motivo or linha.tipo|replace("_", " ") }}
+    </div>
+    <div class="row-sub">
+      {{ linha.quando.strftime("%d/%m %H:%M") }} &middot; {{ linha.contraparte }}
+    </div>
+  </div>
+  <div class="text-right">
+    <div class="row-val {{ 'neg' if linha.valor_com_sinal < 0 else 'pos' }}">
+      {{ linha.valor_com_sinal }}
+    </div>
+    <div class="row-sub">saldo {{ linha.saldo_depois }}</div>
+  </div>
+</div>
 {% endmacro %}

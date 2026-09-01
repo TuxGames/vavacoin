@@ -1,16 +1,59 @@
 {% extends "base.html" %}
+{% from "_campos.html" import campo, linha_extrato %}
 {% block conteudo %}
-<h1>VavaCoin</h1>
-<p class="chamada">
-  A economia da turma. Cinco mil VVC existem desde o dia zero e nunca vão virar
-  cinco mil e um.
-</p>
-<ul class="lista-simples">
-  <li>Quem entra <strong>saca 50</strong> do que já existe — não é dinheiro novo.</li>
-  <li>Entra quem tem <strong>convite</strong>. Um por pessoa.</li>
-  <li>A moeda paga coisa da vida real; o site só registra a transferência.</li>
-</ul>
-{% if not current_user.is_authenticated %}
-  <p><a class="botao" href="{{ url_for('auth.cadastro') }}">Tenho um convite</a></p>
+
+{% if current_user.is_authenticated %}
+  {# DASHBOARD — o que quem usa todos os dias precisa ver de cara: quanto tem,
+     mandar dinheiro, e o que aconteceu. O texto explicativo ficou para quem
+     chega de fora, embaixo. #}
+  <div class="hero">
+    <div class="hero-orb"></div>
+    <div class="hero-label">Seu saldo</div>
+    <div class="hero-num">{{ current_user.saldo }}</div>
+    <div class="hero-sub">VavaCoin (VVC)</div>
+    <div class="hero-acoes">
+      <a href="{{ url_for('carteira.transferir_passo1') }}" class="btn btn-outline btn-sm">Transferir</a>
+      <a href="{{ url_for('carteira.minha_carteira') }}" class="btn btn-outline btn-sm">Extrato</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title"><i class="ti ti-send" aria-hidden="true"></i>Transferência rápida</div>
+    <form method="post" action="{{ url_for('carteira.transferir_passo1') }}">
+      {{ formulario.hidden_tag() }}
+      {{ campo(formulario.destinatario) }}
+      {{ campo(formulario.valor) }}
+      {{ campo(formulario.motivo) }}
+      {{ formulario.enviar(class="btn btn-gold btn-full") }}
+    </form>
+    <small class="ajuda">Você revisa antes de qualquer coisa sair da sua conta.</small>
+  </div>
+
+  <div class="card">
+    <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Últimas transações</div>
+    {% if linhas %}
+      {% for linha in linhas %}{{ linha_extrato(linha) }}{% endfor %}
+      <hr>
+      <a href="{{ url_for('carteira.minha_carteira') }}">Ver o extrato inteiro</a>
+    {% else %}
+      <p class="vazio">Nada ainda.</p>
+    {% endif %}
+  </div>
+
+{% else %}
+  <div class="card">
+    <h1>VavaCoin</h1>
+    <p class="text-muted">
+      A economia da turma. Cinco mil VVC existiam no dia zero, e quem cunhou
+      depois disso está no ledger, com nome e motivo.
+    </p>
+    <ul>
+      <li>Quem entra <strong>saca 50</strong> do que já existe — não é dinheiro novo.</li>
+      <li>Entra quem tem <strong>convite</strong>. Um por pessoa.</li>
+      <li>A moeda paga coisa da vida real; o site só registra a transferência.</li>
+    </ul>
+    <a class="btn btn-gold" href="{{ url_for('auth.cadastro') }}">Tenho um convite</a>
+  </div>
 {% endif %}
+
 {% endblock %}
