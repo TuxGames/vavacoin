@@ -79,7 +79,11 @@ def comando_criar_conta(nome_usuario, senha, exibicao):
     prompt="Senha do Banco Central",
     hide_input=True,
     confirmation_prompt=True,
-    help="Pedida sem eco. Nunca passe por argumento em servidor compartilhado.",
+    help=(
+        "Pedida sem eco e confirmada duas vezes. Não há tamanho mínimo; "
+        "vazia é recusada. Nunca passe por argumento em servidor "
+        "compartilhado — fica no histórico do shell."
+    ),
 )
 @with_appcontext
 def comando_senha_bc(senha):
@@ -88,14 +92,20 @@ def comando_senha_bc(senha):
     Só por aqui. Nunca no código, nunca em migration, nunca em seed — é a
     senha que dá god mode, e ela não pode existir em lugar nenhum que o git
     veja ou que alguém leia por cima do ombro.
+
+    **Não há tamanho mínimo**: é decisão do dono do projeto, tomada mais de
+    uma vez. Vazia continua recusada, e a diferença não é detalhe — o Banco
+    Central entra pelo site, então senha vazia deixaria a conta que tem todo
+    o dinheiro e todo o poder aberta para qualquer um que soubesse o nome
+    dela. Sem mínimo é escolha; sem senha é porta destrancada.
     """
     bc = banco_central()
     if bc is None:
         raise click.ClickException("gênese ainda não rodou; use `flask genese`")
-    if len(senha) < 12:
+    if not senha:
         raise click.ClickException(
-            "senha curta demais: use pelo menos 12 caracteres — esta senha "
-            "abre o painel que ajusta saldo de qualquer um"
+            "senha vazia deixaria o painel aberto para quem souber o nome da "
+            "conta; qualquer senha serve, menos nenhuma"
         )
     bc.definir_senha(senha)
     registrar_acao(bc, "senha", alvo=bc.nome_usuario, detalhe="senha definida por CLI")

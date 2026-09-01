@@ -27,28 +27,46 @@ quebrou no cassino, quem virou o rico da sala.
 
 ## Regras econômicas invioláveis
 
-- **Supply fixo em 5.000 VVC. Nunca cunhar.** Sem exceção, sem faucet
-  automático.
-- **Os 5.000 existem no banco central no dia zero**, todos de uma vez. O que
-  ainda não foi sacado por ninguém fica lá como saldo não emitido — não é
+O projeto começou com "supply fixo em 5.000, nunca cunhar". **Isso mudou**, por
+decisão do dono: o Banco Central pode ajustar o saldo de qualquer pessoa, para
+corrigir valor errado, e ajustar para cima é cunhar. O texto abaixo descreve o
+que vale hoje, e a mudança está registrada em vez de apagada.
+
+O invariante deixou de ser um **número** e passou a ser uma **propriedade**:
+não é mais "existem 5.000", é **"todo centavo tem origem registrada"**.
+
+- **Supply inicial de 5.000 VVC**, criados na gênese, todos de uma vez, no
+  Banco Central. O que ninguém sacou fica lá como saldo não emitido — não é
   "dinheiro do BC", é dinheiro que ainda não entrou em circulação.
-- **Quem entra SACA 50 do que já existe.** Não ganha 50 criados na hora — isso
-  seria cunhar, e faria o supply crescer com o número de contas.
-- O supply comporta **100 pessoas**. Se a turma passar disso, a decisão é
-  reduzir o saque inicial, não emitir mais moeda.
+- **Só o Banco Central emite**, e só pelo ajuste de saldo. Não existe faucet
+  automático, quest que paga, nem nada que cunhe sem uma pessoa ter mandado.
+- **Emitir é sempre um lançamento no ledger**, com ator e motivo obrigatórios,
+  nunca um `UPDATE` em saldo. É isso que mantém a auditoria funcionando: sem
+  esse cuidado, cada correção do admin faria o alarme disparar, e alarme que
+  dispara à toa é alarme que se aprende a ignorar.
+- **O supply é reconstruído, não constante.** `supply_emitido()` soma todo
+  lançamento sem origem. O painel mostra inicial, atual e quanto já foi cunhado
+  — quem cunha precisa ver o quanto cunhou.
+- **Quem entra SACA 50 do que já existe**, e só emite se o não emitido acabar.
 - **Os 50 são da pessoa, não da conta.** Amarrados ao código de convite, um por
   aluno. Sem isso, dez contas viram 500 VVC.
 - **Todo movimento de dinheiro passa por um único caminho** (`mover()`): trava a
   linha, conserva massa, crédito igual a débito. Nenhum caminho paralelo.
-- **Exceção única: a gênese.** Alguém precisa fazer os 5.000 existirem, e antes
-  disso não há de onde mover. `criar_genese()` é a única função que escreve
-  saldo sem origem. Ela é blindada — só roda se o Banco Central ainda não
-  existe, com ledger vazio e saldo zero — e a operação fica registrada no
-  ledger como uma linha `genese` sem origem. **Isso não é bug**; está escrito
-  aqui para o próximo leitor não "consertar".
+- **A emissão é o ramo sem origem do `mover()`**, não um desvio dele: aceita só
+  os tipos de `TIPOS_SEM_ORIGEM`, só com o Banco Central como ator, e o `CHECK`
+  da tabela repete a regra. A gênese é o primeiro caso desse ramo, e roda uma
+  vez só — com ledger vazio e sem Banco Central existente.
 - **Conservação de massa é verificável**: a soma de todos os saldos, incluindo
-  o do banco central, é sempre **5.000,00**, antes e depois de qualquer
-  operação. É o teste que roda em cima de qualquer feature que mexa em dinheiro.
+  o do Banco Central, é sempre igual ao **supply emitido segundo o ledger**,
+  antes e depois de qualquer operação. É o teste que roda em cima de qualquer
+  feature que mexa em dinheiro.
+
+### O que se perdeu, para ninguém redescobrir sozinho
+
+Com o poder de cunhar, "supply fixo" deixa de ser uma garantia do sistema e
+passa a ser uma **disciplina do dono**. O código não impede mais a inflação; ele
+apenas registra quem a causou e por quê. Se um dia o número em circulação
+crescer sem explicação, a resposta está no diário do god mode, não numa trava.
 
 ### Conservação de massa não é o mesmo que auditoria
 
