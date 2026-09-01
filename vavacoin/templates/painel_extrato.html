@@ -1,11 +1,13 @@
 {% extends "base.html" %}
-{% block titulo %}Carteira — VavaCoin{% endblock %}
+{% block titulo %}Extrato de {{ alvo.nome_usuario }} — VavaCoin{% endblock %}
 {% block conteudo %}
-<h1>Sua carteira</h1>
-<p class="saldo">{{ saldo }} <span class="unidade">VVC</span></p>
-<p><a class="botao" href="{{ url_for('carteira.transferir_passo1') }}">Transferir</a></p>
+<h1>{{ alvo.nome_exibicao }}</h1>
+<p class="saldo">{{ alvo.saldo }} <span class="unidade">VVC</span></p>
+<p class="nota">
+  Usuário <code>{{ alvo.nome_usuario }}</code>. Esta consulta ficou registrada
+  no diário do painel.
+</p>
 
-<h2>Extrato</h2>
 {% if linhas %}
 <table class="extrato">
   <thead>
@@ -34,4 +36,5 @@
 {% else %}
 <p class="nota">Nada ainda.</p>
 {% endif %}
+<p><a href="{{ url_for('admin.painel') }}">Voltar ao painel</a></p>
 {% endblock %}

@@ -13,10 +13,10 @@ from flask.cli import with_appcontext
 
 from .auditoria import auditar, linhas_extrato
 from .autoridade import exigir_banco_central
-from .constantes import SUPPLY_TOTAL
+from .constantes import SUPPLY_INICIAL
 from .extensoes import db
 from .moeda import criar_genese, soma_saldos, verificar_conservacao
-from .modelos import Usuario, banco_central
+from .modelos import Usuario, banco_central, registrar_acao
 from .operacoes import criar_convite, criar_usuario, resetar_economia
 
 
@@ -73,12 +73,42 @@ def comando_criar_conta(nome_usuario, senha, exibicao):
     click.echo(f"conta {usuario.nome_usuario} criada com saldo {usuario.saldo}")
 
 
+@click.command("senha-bc")
+@click.option(
+    "--senha",
+    prompt="Senha do Banco Central",
+    hide_input=True,
+    confirmation_prompt=True,
+    help="Pedida sem eco. Nunca passe por argumento em servidor compartilhado.",
+)
+@with_appcontext
+def comando_senha_bc(senha):
+    """Define (ou troca) a senha do Banco Central.
+
+    Só por aqui. Nunca no código, nunca em migration, nunca em seed — é a
+    senha que dá god mode, e ela não pode existir em lugar nenhum que o git
+    veja ou que alguém leia por cima do ombro.
+    """
+    bc = banco_central()
+    if bc is None:
+        raise click.ClickException("gênese ainda não rodou; use `flask genese`")
+    if len(senha) < 12:
+        raise click.ClickException(
+            "senha curta demais: use pelo menos 12 caracteres — esta senha "
+            "abre o painel que ajusta saldo de qualquer um"
+        )
+    bc.definir_senha(senha)
+    registrar_acao(bc, "senha", alvo=bc.nome_usuario, detalhe="senha definida por CLI")
+    db.session.commit()
+    click.echo("Senha do Banco Central definida.")
+
+
 @click.command("conservacao")
 @with_appcontext
 def comando_conservacao():
     """Confere que a soma de todos os saldos ainda é o supply."""
     total = verificar_conservacao()
-    click.echo(f"OK: {total} VVC (supply {SUPPLY_TOTAL})")
+    click.echo(f"OK: {total} VVC (supply inicial {SUPPLY_INICIAL})")
 
 
 @click.command("auditoria")
@@ -93,7 +123,9 @@ def comando_auditoria():
     economia = relatorio["economia"]
     ledger = relatorio["ledger"]
 
-    click.echo(f"supply esperado    {economia['supply_esperado']} VVC")
+    click.echo(f"supply inicial     {economia['supply_inicial']} VVC")
+    click.echo(f"supply atual       {economia['supply_atual']} VVC")
+    click.echo(f"cunhado depois     {economia['cunhado_depois']} VVC")
     click.echo(f"soma dos saldos    {economia['soma_dos_saldos']} VVC")
     click.echo(f"diferença          {economia['diferenca']} VVC")
     click.echo(f"não emitido (BC)   {economia['nao_emitido']} VVC")
@@ -156,6 +188,7 @@ def comando_resetar():
 
 def registrar_comandos(app):
     app.cli.add_command(comando_genese)
+    app.cli.add_command(comando_senha_bc)
     app.cli.add_command(comando_convite)
     app.cli.add_command(comando_criar_conta)
     app.cli.add_command(comando_conservacao)

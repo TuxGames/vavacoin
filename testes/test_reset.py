@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from conftest import conservacao
 
-from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_TOTAL
+from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_INICIAL
 from vavacoin.extensoes import db
 from vavacoin.moeda import TIPO_RESET_RECOLHIMENTO, TIPO_RESET_REDISTRIBUICAO, mover
 from vavacoin.modelos import Transacao
@@ -25,7 +25,7 @@ def test_reset_devolve_tudo_e_redistribui(app, bc, nova_pessoa):
     assert quantos == 2
     assert ana.saldo == SAQUE_INICIAL
     assert bia.saldo == SAQUE_INICIAL
-    assert bc.saldo == SUPPLY_TOTAL - 2 * SAQUE_INICIAL
+    assert bc.saldo == SUPPLY_INICIAL - 2 * SAQUE_INICIAL
     conservacao()
 
 
@@ -83,5 +83,5 @@ def test_reset_sem_ninguem_nao_quebra(app, bc):
     conservacao()
     assert resetar_economia(autoridade=bc) == 0
     db.session.commit()
-    assert bc.saldo == SUPPLY_TOTAL
+    assert bc.saldo == SUPPLY_INICIAL
     conservacao()

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% from "_campos.html" import campo %}
+{% block titulo %}Painel — VavaCoin{% endblock %}
+{% block conteudo %}
+<h1>Painel do Banco Central</h1>
+<p class="chamada">
+  Tudo que acontece aqui fica registrado, com data e motivo. É o que responde
+  &ldquo;por que meu saldo mudou?&rdquo; daqui a seis meses.
+</p>
+
+<h2>Economia</h2>
+<dl class="numeros">
+  <div class="numero">
+    <dt>Supply inicial</dt>
+    <dd>{{ estado.supply_inicial }} VVC</dd>
+  </div>
+  <div class="numero">
+    <dt>Supply atual</dt>
+    <dd>{{ estado.supply_atual }} VVC</dd>
+  </div>
+  <div class="numero">
+    <dt>Cunhado depois</dt>
+    <dd class="{{ 'saiu' if estado.cunhado_depois > 0 else '' }}">
+      {{ estado.cunhado_depois }} VVC
+    </dd>
+  </div>
+  <div class="numero">
+    <dt>Em circulação</dt>
+    <dd>{{ estado.em_circulacao }} VVC</dd>
+  </div>
+  <div class="numero">
+    <dt>Não emitido (BC)</dt>
+    <dd>{{ estado.nao_emitido }} VVC</dd>
+  </div>
+  <div class="numero">
+    <dt>Contas / sacaram</dt>
+    <dd>{{ estado.contas }} / {{ estado.participantes }}</dd>
+  </div>
+</dl>
+<p class="nota">
+  &ldquo;Cunhado depois&rdquo; é o quanto os ajustes criaram além do dia zero.
+  A conservação continua valendo contra o supply atual, não contra os 5.000 —
+  <a href="{{ url_for('admin.auditoria') }}">rodar auditoria</a>.
+</p>
+
+<h2>Contas</h2>
+{% if contas %}
+<table class="extrato">
+  <thead>
+    <tr><th>Usuário</th><th>Nome</th><th class="numerico">Saldo</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for conta in contas %}
+    <tr>
+      <td>{{ conta.nome_usuario }}</td>
+      <td>{{ conta.nome_exibicao }}</td>
+      <td class="numerico">{{ conta.saldo }}</td>
+      <td><a href="{{ url_for('admin.extrato_de', nome_usuario=conta.nome_usuario) }}">extrato</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="nota">Nenhuma conta ainda.</p>
+{% endif %}
+
+<h2>Ajustar saldo</h2>
+<p class="nota">
+  Ajuste para cima <strong>cunha moeda</strong>: se o Banco Central não tiver
+  o bastante em saldo não emitido, a diferença é emitida e o supply cresce. A
+  linha fica no ledger com o motivo — a auditoria continua fechando.
+</p>
+<form method="post" action="{{ url_for('admin.ajustar') }}" class="formulario">
+  {{ form_ajuste.hidden_tag() }}
+  {{ campo(form_ajuste.nome_usuario) }}
+  {{ campo(form_ajuste.novo_saldo) }}
+  {{ campo(form_ajuste.motivo) }}
+  {{ form_ajuste.enviar(class="botao") }}
+</form>
+
+<h2>Emitir convite</h2>
+<form method="post" action="{{ url_for('admin.emitir_convite') }}" class="formulario">
+  {{ form_convite.hidden_tag() }}
+  {{ campo(form_convite.destinatario) }}
+  {{ form_convite.enviar(class="botao") }}
+</form>
+{% if convites_livres %}
+<p class="nota">Convites ainda não usados:</p>
+<ul class="lista-simples">
+  {% for convite in convites_livres %}
+    <li><code>{{ convite.codigo }}</code>{% if convite.destinatario %} — {{ convite.destinatario }}{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>Criar conta</h2>
+<form method="post" action="{{ url_for('admin.criar_conta') }}" class="formulario">
+  {{ form_conta.hidden_tag() }}
+  {{ campo(form_conta.nome_usuario) }}
+  {{ campo(form_conta.nome_exibicao) }}
+  {{ campo(form_conta.senha) }}
+  {{ form_conta.enviar(class="botao") }}
+</form>
+
+<h2>Resetar economia</h2>
+<p class="nota">
+  Recolhe o saldo de <strong>todo mundo</strong>, sem exceção, e redistribui os
+  50 para quem tem convite resgatado. Não tem desfazer.
+</p>
+<form method="post" action="{{ url_for('admin.reset') }}" class="formulario">
+  {{ form_reset.hidden_tag() }}
+  {{ campo(form_reset.motivo) }}
+  {{ campo(form_reset.confirmacao) }}
+  {{ form_reset.enviar(class="botao") }}
+</form>
+
+<h2>Últimas ações</h2>
+{% if registros %}
+<table class="extrato">
+  <thead>
+    <tr><th>Quando</th><th>Ação</th><th>Alvo</th><th>O quê</th><th>Motivo</th></tr>
+  </thead>
+  <tbody>
+    {% for registro in registros %}
+    <tr>
+      <td>{{ registro.criado_em.strftime("%d/%m/%Y %H:%M") }}</td>
+      <td>{{ registro.acao }}</td>
+      <td>{{ registro.alvo or "—" }}</td>
+      <td>{{ registro.detalhe or "—" }}</td>
+      <td>{{ registro.motivo or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p><a href="{{ url_for('admin.registros') }}">Ver o diário inteiro</a></p>
+{% else %}
+<p class="nota">Nada registrado ainda.</p>
+{% endif %}
+{% endblock %}

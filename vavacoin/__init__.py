@@ -1,8 +1,7 @@
-"""VaVáCoin — fábrica da aplicação.
+"""VavaCoin — fábrica da aplicação.
 
-Web mínima: entrar por convite, ver o próprio saldo e extrato, transferir, e
-a economia inteira pública. Cassino, ranking e administração por tela estão
-fora — administração continua só na CLI.
+Web: entrar por convite, ver o próprio saldo e extrato, transferir, e o
+painel do Banco Central. Cassino e ranking continuam fora.
 """
 
 from flask import Flask, render_template
@@ -106,11 +105,10 @@ def criar_app(config=Config):
 
     @login_manager.user_loader
     def carregar_usuario(id_usuario):
-        usuario = db.session.get(modelos.Usuario, int(id_usuario))
-        # O Banco Central não autentica. Uma conta de tesouraria que loga é
-        # um caixa que qualquer um esvazia — o bug que o Benbals tem hoje.
-        if usuario is not None and usuario.eh_banco_central:
-            return None
-        return usuario
+        # O Banco Central entra como qualquer conta — decisão registrada no
+        # CLAUDE.md. O que o protege agora não é a porta fechada, é a senha
+        # (por CLI, com hash), o freio de tentativas e o rastro de tudo que
+        # ele faz.
+        return db.session.get(modelos.Usuario, int(id_usuario))
 
     return app

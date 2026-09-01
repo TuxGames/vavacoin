@@ -1,5 +1,11 @@
 """Leitura da economia: extrato e prova de que nada vazou.
 
+Depois que o administrador ganhou o poder de ajustar saldo, "nada vazou"
+deixou de significar "a soma é 5.000": significa que a soma dos saldos bate
+com o que o ledger diz ter sido emitido. Cunhagem aparece como uma linha, e
+uma linha é uma decisão registrada — o que a auditoria persegue é saldo que
+mudou **sem** linha nenhuma.
+
 Nada aqui escreve. O ponto destas funções é que **qualquer pessoa possa
 conferir** o que o núcleo monetário afirma, sem confiar nele: a conservação
 de massa e a reconstrução do ledger são checagens independentes do caminho
@@ -15,11 +21,11 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from .constantes import SUPPLY_TOTAL
+from .constantes import SUPPLY_INICIAL
 from .dinheiro import ZERO
 from .erros import MassaViolada
 from .extensoes import db
-from .moeda import soma_saldos
+from .moeda import soma_saldos, supply_emitido
 from .modelos import Convite, Transacao, Usuario, banco_central
 
 
@@ -96,11 +102,15 @@ def estado_da_economia(sessao=None):
         select(db.func.count(Convite.id)).where(Convite.usuario_id.is_not(None))
     ).scalar_one()
 
+    emitido = supply_emitido(sessao)
     return {
-        "supply_esperado": SUPPLY_TOTAL,
+        "supply_inicial": SUPPLY_INICIAL,
+        "supply_atual": emitido,
+        "cunhado_depois": emitido - SUPPLY_INICIAL,
+        "supply_esperado": emitido,
         "soma_dos_saldos": total,
-        "diferenca": total - SUPPLY_TOTAL,
-        "conservado": total == SUPPLY_TOTAL,
+        "diferenca": total - emitido,
+        "conservado": total == emitido,
         "nao_emitido": nao_emitido,
         "em_circulacao": total - nao_emitido,
         "contas": len(contas),
@@ -198,7 +208,7 @@ def auditar_ou_falhar(sessao=None):
         raise MassaViolada(
             "auditoria falhou: "
             f"soma {relatorio['economia']['soma_dos_saldos']} "
-            f"(esperado {SUPPLY_TOTAL}); "
+            f"(o ledger diz {relatorio['economia']['supply_atual']}); "
             f"{len(relatorio['ledger']['saldos_divergentes'])} saldo(s) que o "
             f"ledger não explica; "
             f"{len(relatorio['ledger']['linhas_inconsistentes'])} linha(s) "

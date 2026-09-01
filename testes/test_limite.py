@@ -8,7 +8,8 @@ from vavacoin.limite import (
     ESPERA_INICIAL,
     ESPERA_MAXIMA,
     FALHAS_ATE_TRAVAR,
-    LIMITE_POR_MINUTO,
+    JANELA_DE_TAXA,
+    LIMITE_DE_TAXA,
     LimitadorDeTaxa,
     TravaPorFalhas,
 )
@@ -39,8 +40,9 @@ def test_taxa_esquece_o_que_saiu_da_janela():
     assert limitador.registrar("ip") == 0
 
 
-def test_limite_padrao_e_quinze_por_minuto():
-    assert LIMITE_POR_MINUTO == 15
+def test_limite_padrao_e_quinze_por_cinco_minutos():
+    assert LIMITE_DE_TAXA == 15
+    assert JANELA_DE_TAXA == 5 * 60
 
 
 # --- trava por falhas consecutivas ------------------------------------------

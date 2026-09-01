@@ -1,4 +1,4 @@
-# CLAUDE.md — VaVáCoin (VVC)
+# CLAUDE.md — VavaCoin (VVC)
 
 Documento canônico do projeto. As decisões abaixo foram tomadas em conversa e
 **não precisam ser relitigadas** — o que precisa de decisão está na seção
@@ -10,7 +10,7 @@ Documento canônico do projeto. As decisões abaixo foram tomadas em conversa e
 
 ## O que é
 
-Economia digital simbólica da **turma ITA**. Moeda própria: **VaVáCoin (VVC)**.
+Economia digital simbólica da **turma ITA**. Moeda própria: **VavaCoin (VVC)**.
 
 É uma cópia em espírito da Sociedade Movida a Benbals, com o mesmo núcleo de
 disciplina monetária, mas **sem a seriedade** dos BBL: aqui não há lastro, não

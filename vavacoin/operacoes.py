@@ -17,11 +17,12 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from .autoridade import exigir_banco_central
-from .constantes import SAQUE_INICIAL, SUPPLY_TOTAL
+from .constantes import SAQUE_INICIAL
 from .dinheiro import ZERO, para_decimal
 from .erros import (
     ConviteInvalido,
     ConviteJaResgatado,
+    MotivoObrigatorio,
     SaldoInsuficiente,
     SupplyInsuficiente,
     UsuarioJaResgatou,
@@ -29,14 +30,17 @@ from .erros import (
 )
 from .extensoes import db
 from .moeda import (
+    TIPO_AJUSTE,
+    TIPO_EMISSAO,
     TIPO_RESET_RECOLHIMENTO,
     TIPO_RESET_REDISTRIBUICAO,
     TIPO_SAQUE_INICIAL,
     TIPO_TRANSFERENCIA,
     mover,
+    supply_emitido,
     verificar_conservacao,
 )
-from .modelos import Convite, Usuario, agora, banco_central
+from .modelos import Convite, Usuario, agora, banco_central, registrar_acao
 
 
 def criar_usuario(
@@ -49,7 +53,7 @@ def criar_usuario(
     só chega pelo resgate do convite, saindo do Banco Central.
     """
     sessao = sessao or db.session
-    exigir_banco_central(autoridade, sessao)
+    bc = exigir_banco_central(autoridade, sessao)
     usuario = Usuario(
         nome_usuario=nome_usuario,
         nome_exibicao=nome_exibicao or nome_usuario,
@@ -58,6 +62,7 @@ def criar_usuario(
     usuario.definir_senha(senha)
     sessao.add(usuario)
     sessao.flush()
+    registrar_acao(bc, "conta", alvo=usuario.nome_usuario, sessao=sessao)
     return usuario
 
 
@@ -68,13 +73,16 @@ def criar_convite(codigo=None, destinatario=None, autoridade=None, sessao=None):
     o que controla quantas pessoas entram, e o supply não cresce com eles.
     """
     sessao = sessao or db.session
-    exigir_banco_central(autoridade, sessao)
+    bc = exigir_banco_central(autoridade, sessao)
     convite = Convite(
         codigo=codigo or secrets.token_urlsafe(8),
         destinatario=destinatario,
     )
     sessao.add(convite)
     sessao.flush()
+    registrar_acao(
+        bc, "convite", alvo=destinatario, detalhe=convite.codigo, sessao=sessao
+    )
     return convite
 
 
@@ -174,10 +182,14 @@ def cadastrar_por_convite(
         if convite.resgatado:
             raise ConviteJaResgatado(f"código {codigo!r} já foi resgatado")
 
-        usuario = criar_usuario(
-            nome_usuario, senha, nome_exibicao=nome_exibicao, autoridade=bc,
-            sessao=sessao,
+        usuario = Usuario(
+            nome_usuario=nome_usuario,
+            nome_exibicao=nome_exibicao or nome_usuario,
+            saldo=ZERO,
         )
+        usuario.definir_senha(senha)
+        sessao.add(usuario)
+        sessao.flush()
         resgatar_convite(usuario, codigo, sessao=sessao)
 
     return usuario
@@ -231,11 +243,12 @@ def resetar_economia(
             .order_by(Usuario.id)
         ).scalars()
     )
+    disponivel = supply_emitido(sessao)
     necessario = saque * len(participantes)
-    if necessario > SUPPLY_TOTAL:
+    if necessario > disponivel:
         raise SupplyInsuficiente(
             f"{len(participantes)} participantes a {saque} exigem {necessario}, "
-            f"acima do supply de {SUPPLY_TOTAL}; reduza o saque inicial"
+            f"acima do supply de {disponivel}; reduza o saque inicial"
         )
 
     with sessao.begin_nested():
@@ -266,4 +279,107 @@ def resetar_economia(
             )
 
     verificar_conservacao(sessao)
+    registrar_acao(
+        bc,
+        "reset",
+        detalhe=f"{len(participantes)} participantes a {saque} VVC",
+        motivo=motivo,
+        sessao=sessao,
+    )
     return len(participantes)
+
+
+def ajustar_saldo(alvo, novo_saldo, motivo, autoridade=None, sessao=None):
+    """Deixa o saldo de ``alvo`` valendo ``novo_saldo``. Poder do administrador.
+
+    Existe para consertar valor errado. **Ajustar para cima cunha moeda** —
+    é uma decisão registrada, não um acidente —, e por isso o caminho é o
+    ledger, não um ``UPDATE`` na conta.
+
+    O que acontece, conforme o sinal da diferença:
+
+    - **Para cima**: se o Banco Central não tiver o bastante em saldo não
+      emitido, a diferença que falta é **emitida** (uma linha ``emissao``,
+      sem origem, que é o que faz o supply crescer); em seguida o valor sai
+      do Banco Central para a pessoa numa linha ``ajuste``. Só se cunha o que
+      falta: dinheiro parado no BC é usado antes.
+    - **Para baixo**: a diferença volta do alvo para o Banco Central, também
+      como ``ajuste``. O dinheiro não é queimado — volta a ser *não emitido*,
+      exatamente como no dia zero. Quem quiser ver o total cunhado tem
+      ``moeda.total_cunhado_depois_da_genese()``.
+
+    Passando pelo ledger, a auditoria continua fechando depois de um ajuste.
+    Esse é o ponto: um alarme que dispara toda vez que o administrador
+    conserta algo é um alarme que se aprende a ignorar.
+    """
+    sessao = sessao or db.session
+    bc = exigir_banco_central(autoridade, sessao)
+
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise MotivoObrigatorio(
+            "ajuste de saldo exige motivo: é ele que explica a mudança depois"
+        )
+
+    if isinstance(alvo, int):
+        alvo = sessao.get(Usuario, alvo)
+    if alvo is None:
+        raise ValorInvalido("conta inexistente")
+    if alvo.eh_banco_central:
+        raise ValorInvalido(
+            "o saldo do Banco Central é consequência do resto; ajuste as contas"
+        )
+
+    novo_saldo = para_decimal(novo_saldo)
+    if novo_saldo < ZERO:
+        raise ValorInvalido("saldo não pode ficar negativo")
+
+    verificar_conservacao(sessao)
+    anterior = alvo.saldo
+    diferenca = novo_saldo - anterior
+    if diferenca == ZERO:
+        registrar_acao(
+            bc,
+            "ajuste",
+            alvo=alvo.nome_usuario,
+            detalhe=f"sem mudança (já valia {anterior} VVC)",
+            motivo=motivo,
+            sessao=sessao,
+        )
+        return None
+
+    with sessao.begin_nested():
+        if diferenca > ZERO:
+            faltante = diferenca - bc.saldo
+            if faltante > ZERO:
+                # Cunhagem: o supply cresce exatamente aqui, e a linha diz
+                # quanto, quando e por quê.
+                mover(
+                    None,
+                    bc,
+                    faltante,
+                    tipo=TIPO_EMISSAO,
+                    motivo=f"cunhado para ajustar {alvo.nome_usuario}: {motivo}",
+                    ator=bc,
+                    sessao=sessao,
+                )
+            transacao = mover(
+                bc, alvo, diferenca, tipo=TIPO_AJUSTE, motivo=motivo,
+                ator=bc, sessao=sessao,
+            )
+        else:
+            transacao = mover(
+                alvo, bc, -diferenca, tipo=TIPO_AJUSTE, motivo=motivo,
+                ator=bc, sessao=sessao,
+            )
+
+    verificar_conservacao(sessao)
+    registrar_acao(
+        bc,
+        "ajuste",
+        alvo=alvo.nome_usuario,
+        detalhe=f"de {anterior} para {novo_saldo} VVC",
+        motivo=motivo,
+        sessao=sessao,
+    )
+    return transacao

@@ -17,7 +17,7 @@ from vavacoin.auditoria import (
     estado_da_economia,
     linhas_extrato,
 )
-from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_TOTAL
+from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_INICIAL
 from vavacoin.erros import MassaViolada
 from vavacoin.extensoes import db
 from vavacoin.moeda import mover
@@ -34,10 +34,10 @@ def test_estado_da_economia_separa_emitido_de_circulante(app, bc, nova_pessoa):
     estado = estado_da_economia()
 
     assert estado["conservado"] is True
-    assert estado["soma_dos_saldos"] == SUPPLY_TOTAL
+    assert estado["soma_dos_saldos"] == SUPPLY_INICIAL
     assert estado["diferenca"] == Decimal("0.00")
     assert estado["em_circulacao"] == 2 * SAQUE_INICIAL
-    assert estado["nao_emitido"] == SUPPLY_TOTAL - 2 * SAQUE_INICIAL
+    assert estado["nao_emitido"] == SUPPLY_INICIAL - 2 * SAQUE_INICIAL
     assert estado["contas"] == 3
     assert estado["participantes"] == 2
     conservacao()
@@ -57,7 +57,7 @@ def test_auditoria_passa_numa_economia_movimentada(app, bc, nova_pessoa):
     assert relatorio["ok"] is True
     assert relatorio["ledger"]["saldos_divergentes"] == []
     assert relatorio["ledger"]["linhas_inconsistentes"] == []
-    assert relatorio["ledger"]["soma_pelo_ledger"] == SUPPLY_TOTAL
+    assert relatorio["ledger"]["soma_pelo_ledger"] == SUPPLY_INICIAL
 
 
 def test_auditoria_acusa_saldo_escrito_por_fora(app, bc, nova_pessoa):
@@ -155,7 +155,7 @@ def test_extrato_do_banco_central_mostra_a_genese(app, bc):
     linhas = linhas_extrato(bc)
     assert len(linhas) == 1
     assert linhas[0]["tipo"] == "genese"
-    assert linhas[0]["valor_com_sinal"] == SUPPLY_TOTAL
+    assert linhas[0]["valor_com_sinal"] == SUPPLY_INICIAL
     assert linhas[0]["contraparte"] == "—"
 
 

@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from conftest import conservacao
 
-from vavacoin.constantes import CAPACIDADE, SAQUE_INICIAL, SUPPLY_TOTAL
+from vavacoin.constantes import CAPACIDADE, SAQUE_INICIAL, SUPPLY_INICIAL
 from vavacoin.erros import (
     ConviteInvalido,
     ConviteJaResgatado,
@@ -29,7 +29,7 @@ def test_saque_sai_do_banco_central(app, bc):
     db.session.commit()
 
     assert ana.saldo == SAQUE_INICIAL
-    assert bc.saldo == SUPPLY_TOTAL - SAQUE_INICIAL
+    assert bc.saldo == SUPPLY_INICIAL - SAQUE_INICIAL
     assert transacao.tipo == TIPO_SAQUE_INICIAL
     assert transacao.origem_id == bc.id
     conservacao()
@@ -176,4 +176,4 @@ def test_ledger_explica_cada_centavo(app, bc, nova_pessoa):
     assert saldos[ana.id] == ana.saldo
     assert saldos[bia.id] == bia.saldo
     assert saldos[bc.id] == bc.saldo
-    assert sum(saldos.values(), Decimal("0.00")) == SUPPLY_TOTAL
+    assert sum(saldos.values(), Decimal("0.00")) == SUPPLY_INICIAL

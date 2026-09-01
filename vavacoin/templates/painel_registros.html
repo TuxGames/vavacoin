@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Diário do painel — VavaCoin{% endblock %}
+{% block conteudo %}
+<h1>Diário do painel</h1>
+<p class="chamada">Tudo que o Banco Central fez, do mais recente ao mais antigo.</p>
+
+{% if registros %}
+<table class="extrato">
+  <thead>
+    <tr><th>Quando</th><th>Ação</th><th>Alvo</th><th>O quê</th><th>Motivo</th></tr>
+  </thead>
+  <tbody>
+    {% for registro in registros %}
+    <tr>
+      <td>{{ registro.criado_em.strftime("%d/%m/%Y %H:%M") }}</td>
+      <td>{{ registro.acao }}</td>
+      <td>{{ registro.alvo or "—" }}</td>
+      <td>{{ registro.detalhe or "—" }}</td>
+      <td>{{ registro.motivo or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p>
+  {% if pagina > 1 %}
+    <a href="{{ url_for('admin.registros', pagina=pagina - 1) }}">anteriores</a>
+  {% endif %}
+  {% if registros|length == 100 %}
+    <a href="{{ url_for('admin.registros', pagina=pagina + 1) }}">mais antigos</a>
+  {% endif %}
+</p>
+{% else %}
+<p class="nota">Nada registrado nesta página.</p>
+{% endif %}
+<p><a href="{{ url_for('admin.painel') }}">Voltar ao painel</a></p>
+{% endblock %}

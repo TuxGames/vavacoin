@@ -1,4 +1,4 @@
-"""Tipo monetário do VaVáCoin.
+"""Tipo monetário do VavaCoin.
 
 Dinheiro nunca é ``float``. O motivo é o de sempre: ``0.1 + 0.2 != 0.3`` em
 binário, e uma economia com supply fixo em 5.000,00 não sobrevive a um

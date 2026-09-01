@@ -3,14 +3,14 @@
 São **dois**, e fazem coisas diferentes — confundir os dois é como uma senha
 fraca cai:
 
-- **Limite de taxa** (:class:`LimitadorDeTaxa`): quantas tentativas por minuto
-  saem de um mesmo lugar. Protege o **servidor** de rajada. Sozinho, não
-  protege senha nenhuma: 15 por minuto são 21.600 por dia, o que é muito
-  chute para uma senha fraca.
+- **Limite de taxa** (:class:`LimitadorDeTaxa`): quantas tentativas saem de um
+  mesmo lugar numa janela de cinco minutos. Protege o **servidor** de rajada.
+  Sozinho, ainda não protege senha nenhuma: 15 a cada 5 minutos são 4.320 por
+  dia, o que continua sendo muito chute para uma senha fraca.
 - **Trava por falhas consecutivas** (:class:`TravaPorFalhas`): depois de N
   erros seguidos *na mesma conta*, a espera começa e dobra a cada erro novo.
-  É isso que protege a **conta**, porque transforma "21.600 chutes por dia"
-  em "meia dúzia por dia".
+  É isso que protege a **conta**, porque transforma "4.320 chutes por dia" em
+  "meia dúzia por dia".
 
 Os dois guardam estado em memória, com dois limites conhecidos, escritos aqui
 para ninguém confundir com garantia: somem quando o processo reinicia e não
@@ -22,14 +22,18 @@ isto vira tabela no banco — o que não pode é não existir nada.
 import threading
 import time
 
-#: Quantas tentativas de login um mesmo endereço pode fazer por minuto.
+#: Quantas tentativas de login um mesmo endereço pode fazer na janela abaixo.
 #: Freia rajada; não é proteção de senha (ver TravaPorFalhas).
-LIMITE_POR_MINUTO = 15
-JANELA_DE_TAXA = 60
+LIMITE_DE_TAXA = 15
+
+#: Cinco minutos. Com o limite acima, dá 4.320 tentativas por dia por
+#: endereço — patamar razoável para o servidor, e ainda assim longe de
+#: proteger uma senha fraca. Quem faz isso é a TravaPorFalhas.
+JANELA_DE_TAXA = 300
 
 #: Quantos erros **seguidos** na mesma conta antes de a espera começar.
 #: Esta é a trava que protege a conta: sem ela, o limite de taxa ainda
-#: permitiria 21.600 chutes por dia contra uma senha fraca.
+#: permitiria 4.320 chutes por dia contra uma senha fraca.
 FALHAS_ATE_TRAVAR = 5
 
 #: Primeira espera, em segundos. Dobra a cada erro seguinte.
@@ -43,7 +47,7 @@ ESPERA_MAXIMA = 3600
 class LimitadorDeTaxa:
     """Janela deslizante: no máximo ``limite`` eventos por ``janela`` segundos."""
 
-    def __init__(self, limite=LIMITE_POR_MINUTO, janela=JANELA_DE_TAXA):
+    def __init__(self, limite=LIMITE_DE_TAXA, janela=JANELA_DE_TAXA):
         self.limite = limite
         self.janela = janela
         self._eventos = {}

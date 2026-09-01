@@ -1,12 +1,11 @@
-# VaVáCoin
+# VavaCoin
 
 Economia simbólica da turma. Supply fixo de 5.000 VVC, que ninguém cunha.
 As decisões do projeto estão no `CLAUDE.md` e não se relitigam aqui.
 
-**O que já existe:** o núcleo monetário, a auditoria e a web mínima — entrar
-por convite, ver o próprio saldo e extrato, transferir com confirmação, e a
-economia inteira pública. **O que não existe:** cassino, ranking e qualquer
-administração por tela (administração é só CLI).
+**O que já existe:** o núcleo monetário, a auditoria, a web (entrar por
+convite, saldo e extrato próprios, transferir com confirmação) e o painel do
+Banco Central. **O que não existe:** cassino e ranking.
 
 ## Ambiente
 
@@ -21,6 +20,7 @@ python -m venv .venv
 export FLASK_APP=wsgi.py
 flask db upgrade
 flask genese
+flask senha-bc                          # senha do painel, pedida sem eco
 flask convite --destinatario "Fulano"   # imprime o código; entregue à pessoa
 flask run
 ```
@@ -28,8 +28,8 @@ flask run
 A pessoa entra em `/cadastro` com o código, escolhe usuário e senha, e sai de
 lá com os 50 VVC sacados do Banco Central.
 
-Os números da economia (emitido, em circulação, saldo do Banco Central) não
-aparecem no site — só por `flask auditoria`, na CLI.
+Os números da economia não são públicos: aparecem no painel do Banco Central
+e por `flask auditoria`, na CLI.
 
 | rota | o que é |
 | --- | --- |
@@ -39,6 +39,7 @@ aparecem no site — só por `flask auditoria`, na CLI.
 | `/carteira` | seu saldo e seu extrato (só o seu) |
 | `/transferir` | monta a transferência; **não move nada** |
 | `/transferir/confirmar` | mostra valor e destinatário, e só então efetiva |
+| `/painel/` | god mode do Banco Central: economia, contas, ajuste de saldo, convites, reset, diário |
 
 ## Testes
 
@@ -72,6 +73,29 @@ A soma continuar 5.000,00 não prova nada sozinha — quem tira de um e põe no
 outro por fora do `mover()` conserva a massa. `auditoria` reconstrói todo saldo
 a partir do ledger e acusa a diferença; tem teste exatamente desse caso.
 
+## O supply não é mais uma constante
+
+Era 5.000 fixos. Deixou de ser quando o administrador ganhou o poder de
+**ajustar saldo** para consertar valor errado: ajuste para cima cunha.
+
+O supply de verdade passou a ser **o que o ledger diz** — a soma de todo
+lançamento sem origem (`moeda.supply_emitido()`). `SUPPLY_INICIAL` continua
+sendo 5.000, mas agora é só o ponto de partida, e o painel mostra os dois lado
+a lado com o quanto já se cunhou.
+
+O que **não** mudou: nada altera saldo fora do `mover()`. O ajuste é uma
+operação em cima dele, não um desvio:
+
+- **para cima** — usa primeiro o saldo não emitido do Banco Central; se faltar,
+  emite a diferença numa linha `emissao` (sem origem, com ator e motivo) e só
+  então move para a pessoa numa linha `ajuste`. Cunha só o que falta.
+- **para baixo** — devolve ao Banco Central como `ajuste`. Não queima: volta a
+  ser não emitido, como no dia zero.
+
+Por isso **`flask auditoria` continua fechando depois de um ajuste**, e é esse
+o teste que prova que ficou certo. Um alarme que dispara toda vez que o
+administrador conserta algo é um alarme que se aprende a ignorar.
+
 ## Onde está o quê
 
 | arquivo | o que guarda |
@@ -81,6 +105,8 @@ a partir do ledger e acusa a diferença; tem teste exatamente desse caso.
 | `vavacoin/operacoes.py` | resgate do convite, transferência, reset |
 | `vavacoin/auditoria.py` | extrato, estado da economia, reconstrução do ledger |
 | `vavacoin/autoridade.py` | o Banco Central é o único administrador |
+| `vavacoin/rotas/admin.py` | o painel de god mode |
+| `vavacoin/limite.py` | os dois freios do login |
 | `vavacoin/modelos.py` | `Usuario`, `Convite`, `Transacao` (ledger) |
 | `vavacoin/constantes.py` | supply, saque inicial, capacidade |
 
@@ -92,13 +118,12 @@ a partir do ledger e acusa a diferença; tem teste exatamente desse caso.
 - Nada de `commit` dentro da biblioteca: quem chama é dono da transação. As
   operações compostas rodam em `SAVEPOINT` para não deixar meio trabalho.
 - Senha com hash bcrypt.
-- **O Banco Central não tem porta de entrada.** Ele é conta de dinheiro e poder
-  administrativo ao mesmo tempo, então quem entrasse nele seria dono de tudo —
-  o erro que o Benbals cometeu com contas de tesouraria. Fechado em cinco
-  camadas, cada uma com teste: não tem senha (`definir_senha` recusa e o banco
-  tem `CHECK`), não é `is_active`, o `user_loader` o descarta, o `get_id()`
-  estoura (fecha o `login_user(..., force=True)`), e uma conta que já tem senha
-  não pode ser promovida a BC.
+- **O Banco Central entra pelo site e tem god mode.** É decisão do autor,
+  tomada de olhos abertos: quem entrar nele é dono de tudo. O que o código faz
+  é não piorar — senha com hash, definida **só** por `flask senha-bc` (nunca no
+  código, nunca em migration); a conta não entra enquanto a senha não for
+  definida; os dois freios de login; e rastro de tudo. Ajuste de saldo exige
+  motivo escrito, e até olhar o extrato alheio deixa registro.
 - **Poder se pede explicitamente.** Criar conta, emitir convite e resetar exigem
   `autoridade=banco_central()`; não basta conseguir importar a função. A
   exceção é o cadastro pelo site, onde a autoridade chega **delegada pelo
@@ -111,10 +136,10 @@ a partir do ledger e acusa a diferença; tem teste exatamente desse caso.
   na sessão e desenhou na tela, não o que voltou no formulário: o confirmado
   não pode divergir do mostrado. A confirmação expira em 10 minutos.
 - **Dois freios no login**, e eles fazem coisas diferentes:
-  **limite de taxa** (15 tentativas por minuto por endereço) protege o
+  **limite de taxa** (15 tentativas a cada 5 minutos por endereço) protege o
   *servidor* de rajada; **trava por falhas consecutivas** na mesma conta
   (`FALHAS_ATE_TRAVAR`, com espera dobrando de 30s até 1h) protege a *conta*.
-  Só o primeiro deixaria 21.600 chutes por dia contra uma senha fraca. Ambos
+  Só o primeiro deixaria 4.320 chutes por dia contra uma senha fraca. Ambos
   em memória: somem no restart e não são compartilhados entre processos. Para
   um worker resolve; se um dia houver mais de um, vira tabela.
 
@@ -153,6 +178,7 @@ como no ITA-IME. **Nenhum passo abaixo foi executado** — quem sobe é o autor.
    export FLASK_APP=wsgi.py VAVACOIN_ENV=producao VAVACOIN_SECRET_KEY=<a chave>
    .venv/bin/flask db upgrade
    .venv/bin/flask genese
+   .venv/bin/flask senha-bc      # senha do painel; pedida sem eco
    .venv/bin/flask conservacao   # deve dizer 5000.00
    ```
 
@@ -186,3 +212,21 @@ O banco fica em `/home/vavacoin/vavacoin/vavacoin.sqlite3`, dentro do clone
 mas ignorado pelo git — `git pull` não encosta nele.
 
 Atualizar: `git pull && .venv/bin/flask db upgrade` e *Reload* no painel.
+
+### Atenção na migration `353a30f6e6f5` (num banco que já está no ar)
+
+Ela derruba o `CHECK` que proibia senha no Banco Central, e o SQLite não tem
+`DROP CONSTRAINT`: a tabela `usuario` — a que guarda os saldos — é **recriada
+e copiada**. Antes de rodar:
+
+```bash
+cp vavacoin.sqlite3 vavacoin.sqlite3.bak-$(date +%F)
+.venv/bin/flask db upgrade
+.venv/bin/flask auditoria      # tem que sair com código 0
+.venv/bin/flask senha-bc       # só então o painel abre
+```
+
+A migração já foi testada sobre um banco com dados do schema antigo: saldos,
+convites e chaves estrangeiras preservados, `saldo >= 0` mantido, e o
+`PRAGMA foreign_key_check` roda sozinho no fim (`migrations/env.py`) para
+recusar a migração se algo ficar órfão.

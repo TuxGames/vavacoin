@@ -97,6 +97,17 @@ def run_migrations_online():
     connectable = get_engine()
 
     with connectable.connect() as connection:
+        # No SQLite, mudar constraint significa trocar a tabela por uma nova,
+        # e as chaves estrangeiras das outras tabelas barram a troca. O
+        # procedimento documentado pelo próprio SQLite é desligar a checagem
+        # antes de começar — e `PRAGMA foreign_keys` é ignorado dentro de uma
+        # transação, por isso vai aqui, na conexão crua, antes do begin do
+        # Alembic. No fim, religa e confere que nada ficou órfão.
+        e_sqlite = connection.dialect.name == "sqlite"
+        if e_sqlite:
+            bruta = connection.connection.driver_connection
+            bruta.execute("PRAGMA foreign_keys=OFF")
+
         context.configure(
             connection=connection,
             target_metadata=get_metadata(),
@@ -105,6 +116,14 @@ def run_migrations_online():
 
         with context.begin_transaction():
             context.run_migrations()
+
+        if e_sqlite:
+            orfaos = bruta.execute("PRAGMA foreign_key_check").fetchall()
+            bruta.execute("PRAGMA foreign_keys=ON")
+            if orfaos:
+                raise RuntimeError(
+                    f"migração deixou referências órfãs: {orfaos[:5]}"
+                )
 
 
 if context.is_offline_mode():

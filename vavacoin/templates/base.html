@@ -3,16 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block titulo %}VaVáCoin{% endblock %}</title>
+  <title>{% block titulo %}VavaCoin{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='estilo.css') }}">
 </head>
 <body>
   <header class="topo">
-    <a class="marca" href="{{ url_for('publico.inicio') }}">VaVáCoin</a>
+    <a class="marca" href="{{ url_for('publico.inicio') }}">VavaCoin</a>
     <nav class="navegacao">
       {% if current_user.is_authenticated %}
         <a href="{{ url_for('carteira.minha_carteira') }}">Carteira</a>
         <a href="{{ url_for('carteira.transferir_passo1') }}">Transferir</a>
+        {% if current_user.eh_admin %}
+          <a href="{{ url_for('admin.painel') }}">Painel</a>
+        {% endif %}
         <form method="post" action="{{ url_for('auth.logout') }}" class="forma-sair">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="botao-texto">Sair</button>

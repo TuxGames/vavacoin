@@ -13,7 +13,6 @@ from flask_login import UserMixin
 from sqlalchemy import CheckConstraint
 
 from .constantes import USUARIO_BANCO_CENTRAL
-from .erros import BancoCentralNaoAutentica
 from .dinheiro import ZERO, Dinheiro
 from .extensoes import db
 
@@ -62,18 +61,22 @@ class Usuario(db.Model, UserMixin):
         # Saldo negativo não é um estado possível desta economia. Se o banco
         # aceitar um, o bug já passou por aqui — a checagem é a última rede.
         CheckConstraint("saldo >= 0", name="ck_usuario_saldo_nao_negativo"),
-        # Conta de tesouraria não autentica. No Benbals ela autenticava (com
-        # senha em texto puro) e dava para esvaziar o caixa de uma empresa.
-        CheckConstraint(
-            "NOT eh_banco_central OR senha_hash IS NULL",
-            name="ck_banco_central_sem_senha",
-        ),
+        # Havia aqui um CHECK proibindo senha no Banco Central. Ele caiu na
+        # migration 353a30f6e6f5: a decisão é que o BC entra pelo site e tem
+        # god mode. O que protege a conta agora não é a porta fechada — é a
+        # senha (por CLI, com hash), o freio de tentativas, e o fato de tudo
+        # que ele faz passar pelo ledger com ator e motivo.
     )
 
     def definir_senha(self, senha):
-        """Guarda o hash bcrypt da senha. Texto puro nunca toca o banco."""
-        if self.eh_banco_central:
-            raise ValueError("o Banco Central não autentica e não tem senha")
+        """Guarda o hash bcrypt da senha. Texto puro nunca toca o banco.
+
+        O Banco Central também tem senha, e ela é definida por CLI
+        (``flask senha-bc``) — nunca no código, nunca em migration. Quem
+        entrar nela é dono de tudo: é a decisão registrada no CLAUDE.md, e o
+        que resta ao código é não piorá-la (hash bcrypt, freio de tentativas,
+        e todo movimento no ledger com o ator anotado).
+        """
         self.senha_hash = bcrypt.hashpw(
             senha.encode("utf-8"), bcrypt.gensalt(_custo_bcrypt())
         ).decode("utf-8")
@@ -86,21 +89,17 @@ class Usuario(db.Model, UserMixin):
 
     @property
     def is_active(self):
-        """Flask-Login: o Banco Central não é uma sessão que alguém abre."""
-        return not self.eh_banco_central
+        """Flask-Login: toda conta com senha entra, o Banco Central inclusive.
 
-    def get_id(self):
-        """Flask-Login: identidade de sessão. O Banco Central não tem uma.
-
-        Estourar aqui é de propósito e é a trava mais interna: ``is_active``
-        já barra o ``login_user()`` normal, mas ``login_user(bc, force=True)``
-        passaria por cima dela. Nenhuma sessão do BC chega a ser criada.
+        Uma conta ainda sem senha definida não entra — é o estado do Banco
+        Central logo depois da gênese, antes do ``flask senha-bc``.
         """
-        if self.eh_banco_central:
-            raise BancoCentralNaoAutentica(
-                "o Banco Central não abre sessão; seus poderes são por CLI"
-            )
-        return str(self.id)
+        return self.senha_hash is not None
+
+    @property
+    def eh_admin(self):
+        """Quem tem god mode. Hoje, só o Banco Central."""
+        return self.eh_banco_central
 
     def __repr__(self):
         return f"<Usuario {self.nome_usuario} saldo={self.saldo}>"
@@ -151,12 +150,18 @@ class Transacao(db.Model):
     __tablename__ = "transacao"
 
     id = db.Column(db.Integer, primary_key=True)
-    #: NULL só na gênese — o único evento que cria dinheiro, uma vez na vida.
+    #: NULL quando o dinheiro entrou no mundo: a gênese, ou uma emissão feita
+    #: pelo administrador ao ajustar saldo para cima. Somar estas linhas dá o
+    #: supply — ver ``moeda.supply_emitido()``.
     origem_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=True, index=True)
     destino_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True)
     valor = db.Column(Dinheiro, nullable=False)
     tipo = db.Column(db.String(30), nullable=False, index=True)
     motivo = db.Column(db.String(200), nullable=True)
+    #: Quem mandou fazer, quando não é o dono da origem — o administrador
+    #: ajustando o saldo de alguém. É o que responde "por que meu saldo
+    #: mudou?" seis meses depois.
+    ator_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=True, index=True)
     saldo_origem_depois = db.Column(Dinheiro, nullable=True)
     saldo_destino_depois = db.Column(Dinheiro, nullable=False)
     criado_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora, index=True)
@@ -167,19 +172,73 @@ class Transacao(db.Model):
             "origem_id IS NULL OR origem_id <> destino_id",
             name="ck_transacao_origem_diferente_destino",
         ),
-        # Origem ausente é emissão. Se qualquer tipo além da gênese puder ter
-        # origem NULL, o supply deixa de ser fixo — a regra fica no banco.
+        # Origem ausente é criação de dinheiro. A lista de tipos que podem
+        # fazer isso é curta e mora também no banco: qualquer outro tipo sem
+        # origem seria moeda aparecendo sem ninguém ter decidido cunhar.
         CheckConstraint(
-            "(origem_id IS NOT NULL) OR tipo = 'genese'",
-            name="ck_transacao_sem_origem_so_na_genese",
+            "(origem_id IS NOT NULL) OR tipo IN ('genese', 'emissao')",
+            name="ck_transacao_sem_origem_so_emite",
         ),
     )
 
     origem = db.relationship("Usuario", foreign_keys=[origem_id])
     destino = db.relationship("Usuario", foreign_keys=[destino_id])
+    ator = db.relationship("Usuario", foreign_keys=[ator_id])
 
     def __repr__(self):
         return f"<Transacao {self.tipo} {self.valor} -> {self.destino_id}>"
+
+
+class RegistroAdministrativo(db.Model):
+    """Diário do god mode: o que o administrador fez, quando e por quê.
+
+    O ledger já explica todo centavo, mas metade do poder do administrador
+    não mexe em dinheiro — emitir convite, criar conta, olhar o extrato de
+    alguém. Sem este diário, essas ações não deixariam rastro nenhum.
+
+    Não substitui o ledger e não é fonte de verdade sobre saldo: é o registro
+    de decisão, para responder "quem fez isso e por quê" depois.
+    """
+
+    __tablename__ = "registro_administrativo"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ator_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    #: Verbo curto e estável, para dar para filtrar: "convite", "conta",
+    #: "ajuste", "reset", "extrato".
+    acao = db.Column(db.String(40), nullable=False, index=True)
+    #: Sobre quem ou sobre o quê. Guardado como texto, não como FK, para o
+    #: registro sobreviver ao sumiço do alvo.
+    alvo = db.Column(db.String(80), nullable=True)
+    #: O que aconteceu, em números ("de 50.00 para 80.00").
+    detalhe = db.Column(db.String(300), nullable=True)
+    #: Por quê, escrito pelo administrador. Obrigatório onde mexe em dinheiro.
+    motivo = db.Column(db.String(300), nullable=True)
+    criado_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
+
+    ator = db.relationship("Usuario", foreign_keys=[ator_id])
+
+    def __repr__(self):
+        return f"<RegistroAdministrativo {self.acao} {self.alvo}>"
+
+
+def registrar_acao(ator, acao, alvo=None, detalhe=None, motivo=None, sessao=None):
+    """Anota uma ação do god mode. Não faz ``commit``."""
+    sessao = sessao or db.session
+    registro = RegistroAdministrativo(
+        ator_id=ator.id if isinstance(ator, Usuario) else ator,
+        acao=acao,
+        alvo=alvo,
+        detalhe=detalhe,
+        motivo=motivo,
+    )
+    sessao.add(registro)
+    sessao.flush()
+    return registro
 
 
 def banco_central(sessao=None, travado=False):

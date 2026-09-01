@@ -11,9 +11,9 @@ from flask import g  # noqa: E402
 
 from vavacoin import criar_app  # noqa: E402
 from vavacoin.config import ConfigTeste  # noqa: E402
-from vavacoin.constantes import SUPPLY_TOTAL  # noqa: E402
+from vavacoin.constantes import SUPPLY_INICIAL  # noqa: E402
 from vavacoin.extensoes import db  # noqa: E402
-from vavacoin.moeda import criar_genese, soma_saldos  # noqa: E402
+from vavacoin.moeda import criar_genese, soma_saldos, supply_emitido  # noqa: E402
 from vavacoin.operacoes import criar_convite, criar_usuario  # noqa: E402
 
 
@@ -87,12 +87,18 @@ def nova_pessoa(app, bc):
     return criar
 
 
-def conservacao(esperado=SUPPLY_TOTAL):
+def conservacao(esperado=None):
     """A soma de TODOS os saldos, incluindo o do Banco Central, é o supply.
 
-    É o único teste que roda em cima de qualquer coisa que mexa em dinheiro.
     Chamar antes e depois de cada operação, em cada teste.
+
+    Sem ``esperado``, o alvo é o supply que o **ledger** diz existir, e não a
+    constante 5.000: desde que o administrador pode cunhar ao ajustar saldo,
+    fixar o número faria este helper acusar erro em toda correção legítima.
+    Cunhagem se verifica por ``supply_emitido()``, que os testes de ajuste
+    checam explicitamente.
     """
+    esperado = supply_emitido() if esperado is None else esperado
     total = soma_saldos()
     assert total == esperado, (
         f"massa violada: soma dos saldos é {total}, deveria ser {esperado}"

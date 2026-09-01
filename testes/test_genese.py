@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from conftest import conservacao
 
-from vavacoin.constantes import SUPPLY_TOTAL
+from vavacoin.constantes import SUPPLY_INICIAL
 from vavacoin.extensoes import db
 from vavacoin.moeda import TIPO_GENESE, criar_genese
 from vavacoin.modelos import Transacao, Usuario
@@ -14,7 +14,7 @@ from vavacoin.modelos import Transacao, Usuario
 def test_genese_poe_todo_o_supply_no_banco_central(app):
     bc = criar_genese()
     db.session.commit()
-    assert bc.saldo == SUPPLY_TOTAL
+    assert bc.saldo == SUPPLY_INICIAL
     conservacao()
 
 
@@ -38,16 +38,22 @@ def test_genese_e_a_unica_transacao_sem_origem(app, bc):
     assert len(linhas) == 1
     assert linhas[0].tipo == TIPO_GENESE
     assert linhas[0].origem_id is None
-    assert linhas[0].valor == SUPPLY_TOTAL
+    assert linhas[0].valor == SUPPLY_INICIAL
 
 
-def test_banco_central_nao_autentica(app, bc):
-    """Conta de tesouraria que loga é caixa que qualquer um esvazia."""
+def test_banco_central_nasce_sem_senha(app, bc):
+    """A gênese cria o BC mudo: a senha vem depois, por `flask senha-bc`.
+
+    Nunca no código, nunca em migration — é a senha que abre o god mode.
+    """
     assert bc.senha_hash is None
     assert bc.verificar_senha("qualquer") is False
     assert bc.is_active is False
-    with pytest.raises(ValueError):
-        bc.definir_senha("tentativa")
+
+    bc.definir_senha("senha-do-banco-central-123")
+    db.session.commit()
+    assert bc.is_active is True
+    assert bc.verificar_senha("senha-do-banco-central-123")
 
 
 def test_saldo_negativo_e_recusado_pelo_banco(app, bc):

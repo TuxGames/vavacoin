@@ -9,9 +9,9 @@ from decimal import Decimal
 import pytest
 from conftest import conservacao
 
-from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_TOTAL
+from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_INICIAL
 from vavacoin.extensoes import db
-from vavacoin.limite import FALHAS_ATE_TRAVAR, LIMITE_POR_MINUTO, limpar_tudo
+from vavacoin.limite import FALHAS_ATE_TRAVAR, LIMITE_DE_TAXA, limpar_tudo
 from vavacoin.modelos import Usuario
 from vavacoin.operacoes import criar_convite
 
@@ -98,7 +98,7 @@ def test_cadastro_por_convite_cria_conta_e_saca_50(app, bc, cliente):
         db.select(Usuario).where(Usuario.nome_usuario == "ana")
     ).scalar_one()
     assert ana.saldo == SAQUE_INICIAL
-    assert bc.saldo == SUPPLY_TOTAL - SAQUE_INICIAL
+    assert bc.saldo == SUPPLY_INICIAL - SAQUE_INICIAL
     conservacao()
 
     # Já entra logado.
@@ -187,8 +187,12 @@ def test_senha_errada_nao_entra(app, bc, cliente):
     assert cliente.get("/carteira", follow_redirects=False).status_code == 302
 
 
-def test_banco_central_nao_entra_pela_tela(app, bc, cliente):
-    """A porta não existe: sem senha, não há senha que sirva."""
+def test_banco_central_sem_senha_nao_entra_pela_tela(app, bc, cliente):
+    """Enquanto o `flask senha-bc` não roda, a conta não abre sessão.
+
+    O BC agora tem porta — mas só depois que alguém com acesso ao servidor
+    coloca a chave nela. Ver testes/test_painel.py para o outro lado.
+    """
     for tentativa in ["", "banco_central", "senha", SENHA]:
         resposta = cliente.post(
             "/entrar",
@@ -216,13 +220,13 @@ def test_mensagem_de_erro_nao_entrega_quem_tem_conta(app, bc, cliente):
 
 
 def test_limite_de_taxa_por_endereco(app, bc, cliente):
-    """15 tentativas por minuto do mesmo lugar, e a 16ª espera."""
+    """15 tentativas por 5 minutos do mesmo lugar, e a 16ª espera."""
     _cadastrar(cliente, bc, usuario="ana")
     outro = app.test_client()
 
     # Usuários diferentes a cada vez, para isolar do freio por conta: aqui
     # o que se mede é a rajada, não o chute numa conta específica.
-    for i in range(LIMITE_POR_MINUTO):
+    for i in range(LIMITE_DE_TAXA):
         resposta = outro.post(
             "/entrar", data={"nome_usuario": f"ninguem{i}", "senha": "x"}
         )

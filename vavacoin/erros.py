@@ -69,12 +69,9 @@ class SemAutoridade(ErroMonetario):
     """
 
 
-class BancoCentralNaoAutentica(ErroMonetario):
-    """Tentou-se abrir sessão na conta do Banco Central.
+class MotivoObrigatorio(ErroMonetario):
+    """Ação do administrador que mexe em dinheiro chegou sem motivo escrito.
 
-    No Benbals as contas de sistema autenticam com senha em texto puro e dá
-    para entrar na conta de uma empresa e esvaziar o caixa. Aqui a porta não
-    existe: o BC não tem senha, não é ``is_active``, o ``user_loader`` o
-    recusa e o ``get_id()`` estoura. Os poderes dele são por CLI, que exige
-    acesso ao servidor.
+    O motivo é o que transforma um saldo que mudou sozinho numa decisão que
+    alguém tomou. Sem ele, o diário do god mode não responde nada.
     """

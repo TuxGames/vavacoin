@@ -1,30 +1,50 @@
 """O caminho único do dinheiro.
 
 Só existe uma função que altera saldo: :func:`mover`. Não há um segundo
-caminho, nem para o seed, nem para o admin, nem para o teste. A única
-escrita de saldo fora dela é a gênese (:func:`criar_genese`), que existe
-porque antes dela não há dinheiro para mover — e é blindada para rodar uma
-vez só, quando o ledger está vazio.
+caminho, nem para o seed, nem para o admin, nem para o teste. A única escrita
+de saldo fora dela é a gênese (:func:`criar_genese`), que existe porque antes
+dela não há Banco Central para autorizar coisa alguma — e é blindada para
+rodar uma vez só, com o ledger vazio.
 
-O invariante que manda em tudo: a soma de **todos** os saldos, incluindo o do
-Banco Central, é sempre exatamente 5.000,00.
+**Dinheiro pode ser criado depois da gênese.** O administrador ajusta saldo
+para consertar valor errado, e ajuste para cima cunha. Isso não acontece por
+fora: acontece como um ``mover()`` sem origem, do tipo ``emissao``, exigindo
+o Banco Central e um motivo escrito. O supply, por causa disso, deixou de ser
+uma constante — passou a ser o que o ledger diz (:func:`supply_emitido`).
+
+O invariante continua valendo, só que na forma certa: a soma de **todos** os
+saldos é sempre igual ao total que entrou no mundo, isto é, à soma de todos os
+lançamentos sem origem.
 """
 
 from decimal import Decimal
 
 from sqlalchemy import select, update
 
-from .constantes import SUPPLY_TOTAL, USUARIO_BANCO_CENTRAL
+from .constantes import SUPPLY_INICIAL, USUARIO_BANCO_CENTRAL
 from .dinheiro import ZERO, para_decimal
-from .erros import MassaViolada, MesmaConta, SaldoInsuficiente, ValorInvalido
+from .erros import (
+    MassaViolada,
+    MesmaConta,
+    SaldoInsuficiente,
+    SemAutoridade,
+    ValorInvalido,
+)
 from .extensoes import db
 from .modelos import Transacao, Usuario
 
 TIPO_GENESE = "genese"
+TIPO_EMISSAO = "emissao"
 TIPO_SAQUE_INICIAL = "saque_inicial"
 TIPO_TRANSFERENCIA = "transferencia"
+TIPO_AJUSTE = "ajuste"
 TIPO_RESET_RECOLHIMENTO = "reset_recolhimento"
 TIPO_RESET_REDISTRIBUICAO = "reset_redistribuicao"
+
+#: Os únicos tipos que podem entrar no ledger sem origem — ou seja, os únicos
+#: que criam dinheiro. Está aqui em cima, e no CHECK da tabela, porque é a
+#: lista mais importante do projeto: tudo que não está nela conserva massa.
+TIPOS_SEM_ORIGEM = (TIPO_GENESE, TIPO_EMISSAO)
 
 
 def _id_de(usuario):
@@ -52,23 +72,56 @@ def soma_saldos(sessao=None):
     return total
 
 
-def verificar_conservacao(sessao=None, esperado=SUPPLY_TOTAL):
-    """Confere que a massa é a esperada; levanta :class:`MassaViolada` se não.
+def supply_emitido(sessao=None):
+    """Quanto dinheiro existe hoje, segundo o ledger.
 
-    Chamada nas bordas das operações compostas (resgate, reset). Se falhar,
-    não existe conserto local: existe um caminho de escrita fora do
-    ``mover()`` e é ele que precisa sumir.
+    É a soma dos lançamentos **sem origem**: a gênese mais toda emissão feita
+    depois por ajuste do administrador. Dinheiro só entra no mundo por uma
+    linha assim, então esta soma é a definição de supply — não um número
+    escrito no código, que poderia divergir da realidade sem ninguém notar.
     """
+    sessao = sessao or db.session
+    total = ZERO
+    for valor in sessao.execute(
+        select(Transacao.valor).where(Transacao.origem_id.is_(None))
+    ).scalars():
+        total += valor
+    return total
+
+
+def total_cunhado_depois_da_genese(sessao=None):
+    """O quanto já se cunhou além dos 5.000 do dia zero."""
+    return supply_emitido(sessao) - SUPPLY_INICIAL
+
+
+def verificar_conservacao(sessao=None, esperado=None):
+    """Confere que a soma dos saldos é o supply; levanta :class:`MassaViolada`.
+
+    Sem ``esperado``, compara com o supply reconstruído do ledger. Antes o
+    alvo era a constante 5.000; agora que o administrador pode cunhar, fixar
+    o número faria a verificação acusar erro toda vez que ele consertasse um
+    saldo — e alarme que dispara à toa é alarme que se aprende a ignorar.
+    """
+    sessao = sessao or db.session
+    esperado = supply_emitido(sessao) if esperado is None else para_decimal(esperado)
     total = soma_saldos(sessao)
     if total != esperado:
         raise MassaViolada(
-            f"soma dos saldos é {total}, deveria ser {esperado} "
+            f"soma dos saldos é {total}, o ledger diz que deveria ser {esperado} "
             f"(diferença de {total - esperado})"
         )
     return total
 
 
-def mover(origem, destino, valor, tipo=TIPO_TRANSFERENCIA, motivo=None, sessao=None):
+def mover(
+    origem,
+    destino,
+    valor,
+    tipo=TIPO_TRANSFERENCIA,
+    motivo=None,
+    ator=None,
+    sessao=None,
+):
     """Move ``valor`` de ``origem`` para ``destino`` e registra no ledger.
 
     É a única função que altera saldo. Débito e crédito acontecem na mesma
@@ -84,6 +137,15 @@ def mover(origem, destino, valor, tipo=TIPO_TRANSFERENCIA, motivo=None, sessao=N
     SQLite o ``SELECT ... FOR UPDATE`` é ignorado pelo dialeto, e é esse
     ``WHERE`` que impede duas retiradas simultâneas de estourarem o saldo.
 
+    ``origem=None`` é **emissão**: dinheiro novo entrando no mundo. Só é
+    aceita com ``tipo`` na lista :data:`TIPOS_SEM_ORIGEM` e com o Banco
+    Central como ``ator`` — cunhar é poder do administrador, e fica escrito
+    no ledger quem cunhou e por quê. Fora disso, nenhuma chamada cria moeda.
+
+    ``ator`` é quem mandou fazer, quando não é o próprio dono da origem: o
+    administrador ajustando o saldo de alguém, por exemplo. É o que permite
+    responder "por que meu saldo mudou?" seis meses depois.
+
     Não faz ``commit``: quem chama decide o limite da transação, e é isso que
     permite compor várias movimentações atomicamente (o reset faz isso).
 
@@ -98,8 +160,13 @@ def mover(origem, destino, valor, tipo=TIPO_TRANSFERENCIA, motivo=None, sessao=N
     if valor <= ZERO:
         raise ValorInvalido(f"valor precisa ser positivo, recebido {valor}")
 
-    origem_id = _id_de(origem)
     destino_id = _id_de(destino)
+    ator_id = _id_de(ator) if ator is not None else None
+
+    if origem is None:
+        return _emitir(sessao, destino_id, valor, tipo, motivo, ator_id)
+
+    origem_id = _id_de(origem)
     if origem_id == destino_id:
         raise MesmaConta("origem e destino são a mesma conta")
 
@@ -155,6 +222,7 @@ def mover(origem, destino, valor, tipo=TIPO_TRANSFERENCIA, motivo=None, sessao=N
         valor=valor,
         tipo=tipo,
         motivo=motivo,
+        ator_id=ator_id,
         saldo_origem_depois=conta_origem.saldo,
         saldo_destino_depois=conta_destino.saldo,
     )
@@ -163,14 +231,61 @@ def mover(origem, destino, valor, tipo=TIPO_TRANSFERENCIA, motivo=None, sessao=N
     return transacao
 
 
-def criar_genese(sessao=None, supply=SUPPLY_TOTAL):
-    """Cria o Banco Central com todo o supply. Idempotente.
+def _emitir(sessao, destino_id, valor, tipo, motivo, ator_id):
+    """Ramo de emissão do ``mover()``: dinheiro novo, sem origem.
 
-    Este é o **único** ponto do projeto que faz dinheiro existir, e existe
-    porque no dia zero não há de onde mover. É blindado de três formas: só
-    roda se não houver Banco Central, só roda se o ledger estiver vazio, e o
-    ``UPDATE`` exige que o saldo ainda seja zero. Rodar duas vezes devolve o
-    mesmo Banco Central com os mesmos 5.000,00 — nunca 10.000.
+    Fica dentro do ``mover()`` de propósito, e não numa função pública ao
+    lado: a regra do projeto é que só um lugar escreve saldo, e cunhar não
+    pode virar a exceção que fura essa regra.
+    """
+    if tipo not in TIPOS_SEM_ORIGEM:
+        raise ValorInvalido(
+            f"movimento sem origem só existe para {TIPOS_SEM_ORIGEM}, "
+            f"não para {tipo!r}"
+        )
+    if not (motivo or "").strip():
+        raise ValorInvalido("emissão exige motivo escrito: ela cunha moeda")
+
+    ator = sessao.get(Usuario, ator_id) if ator_id is not None else None
+    if ator is None or not ator.eh_banco_central:
+        raise SemAutoridade("só o Banco Central emite moeda")
+
+    conta_destino = sessao.execute(
+        select(Usuario).where(Usuario.id == destino_id).with_for_update()
+    ).scalar_one_or_none()
+    if conta_destino is None:
+        raise ValorInvalido(f"conta de destino inexistente: {destino_id}")
+
+    sessao.execute(
+        update(Usuario)
+        .where(Usuario.id == destino_id)
+        .values(saldo=Usuario.saldo + valor)
+    )
+    sessao.expire(conta_destino, ["saldo"])
+
+    transacao = Transacao(
+        origem_id=None,
+        destino_id=destino_id,
+        valor=valor,
+        tipo=tipo,
+        motivo=motivo,
+        ator_id=ator_id,
+        saldo_origem_depois=None,
+        saldo_destino_depois=conta_destino.saldo,
+    )
+    sessao.add(transacao)
+    sessao.flush()
+    return transacao
+
+
+def criar_genese(sessao=None, supply=SUPPLY_INICIAL):
+    """Cria o Banco Central com o supply inicial. Idempotente.
+
+    Escreve saldo fora do ``mover()`` porque é o único momento em que não há
+    Banco Central para autorizar a emissão — a autoridade ainda não existe.
+    É blindada de três formas: só roda se não houver Banco Central, só roda se
+    o ledger estiver vazio, e o ``UPDATE`` exige que o saldo ainda seja zero.
+    Rodar duas vezes devolve o mesmo Banco Central com o mesmo saldo.
 
     Os 5.000 ficam no Banco Central como **saldo não emitido**: não é
     "dinheiro do BC", é dinheiro que ainda não entrou em circulação.
@@ -191,7 +306,7 @@ def criar_genese(sessao=None, supply=SUPPLY_TOTAL):
     supply = para_decimal(supply)
     bc = Usuario(
         nome_usuario=USUARIO_BANCO_CENTRAL,
-        nome_exibicao="Banco Central do VaVaCoin",
+        nome_exibicao="Banco Central do VavaCoin",
         eh_banco_central=True,
         saldo=ZERO,
     )
@@ -213,7 +328,8 @@ def criar_genese(sessao=None, supply=SUPPLY_TOTAL):
             destino_id=bc.id,
             valor=supply,
             tipo=TIPO_GENESE,
-            motivo="emissão única do supply",
+            motivo="emissão única do supply inicial",
+            ator_id=None,
             saldo_origem_depois=None,
             saldo_destino_depois=bc.saldo,
         )
