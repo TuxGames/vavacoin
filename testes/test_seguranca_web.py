@@ -142,7 +142,7 @@ def test_todo_formulario_renderizado_tem_token(app_com_csrf):
 
 
 def test_cabecalhos_de_seguranca_em_toda_resposta(app, cliente_qualquer):
-    for rota in ["/", "/economia", "/entrar", "/cadastro", "/rota-que-nao-existe"]:
+    for rota in ["/", "/entrar", "/cadastro", "/rota-que-nao-existe"]:
         resposta = cliente_qualquer.get(rota)
         assert resposta.headers["Content-Security-Policy"] == POLITICA
         assert resposta.headers["X-Content-Type-Options"] == "nosniff"

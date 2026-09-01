@@ -15,20 +15,15 @@ from sqlalchemy.exc import IntegrityError
 from ..erros import ErroMonetario
 from ..extensoes import db
 from ..formularios import FormularioCadastro, FormularioLogin
-from ..limite import limitador_login
+from ..limite import limitador_taxa, trava_por_falhas
 from ..modelos import Usuario
 
 bp = Blueprint("auth", __name__)
 
 
-def _chave_do_limite(nome_usuario):
-    """Chave do freio: IP + usuário tentado.
-
-    Os dois juntos, e não só um: por IP sozinho, uma rede compartilhada
-    (a do colégio, por exemplo) travaria todo mundo junto; por usuário
-    sozinho, dá para trancar a conta de alguém de fora só errando a senha.
-    """
-    return f"{request.remote_addr or 'desconhecido'}|{(nome_usuario or '').lower()}"
+def _endereco():
+    """De onde veio a tentativa. Chave do limite de taxa."""
+    return request.remote_addr or "desconhecido"
 
 
 @bp.route("/entrar", methods=["GET", "POST"])
@@ -39,12 +34,21 @@ def login():
     formulario = FormularioLogin()
     if formulario.validate_on_submit():
         nome = formulario.nome_usuario.data.strip().lower()
-        chave = _chave_do_limite(nome)
 
-        bloqueio = limitador_login.segundos_de_bloqueio(chave)
-        if bloqueio:
+        # Freio 1, do servidor: rajada de um mesmo endereço. Conta toda
+        # tentativa, certa ou errada, e é o mais barato de avaliar.
+        espera = limitador_taxa.registrar(_endereco())
+        if espera:
+            flash(f"Tentativas demais. Espere {espera} segundos.", "erro")
+            return render_template("login.html", formulario=formulario), 429
+
+        # Freio 2, da conta: erros seguidos nesta conta específica. É este
+        # que impede chute paciente — o de cima, sozinho, ainda deixaria
+        # milhares de tentativas por dia contra uma senha fraca.
+        espera = trava_por_falhas.segundos_de_bloqueio(nome)
+        if espera:
             flash(
-                f"Tentativas demais. Espere {bloqueio} segundos.",
+                f"Conta temporariamente bloqueada. Espere {espera} segundos.",
                 "erro",
             )
             return render_template("login.html", formulario=formulario), 429
@@ -56,18 +60,18 @@ def login():
         # `is_active` False barra o Banco Central aqui: `login_user` recusa.
         # A conta dele nem chega a comparar senha, porque senha ele não tem.
         if usuario is None or not usuario.verificar_senha(formulario.senha.data):
-            limitador_login.registrar_falha(chave)
+            trava_por_falhas.registrar_falha(nome)
             # Mensagem única de propósito: dizer "usuário não existe" entrega
             # quem tem conta para quem está sondando.
             flash("Usuário ou senha incorretos.", "erro")
             return render_template("login.html", formulario=formulario), 401
 
         if not login_user(usuario):
-            limitador_login.registrar_falha(chave)
+            trava_por_falhas.registrar_falha(nome)
             flash("Esta conta não entra pelo site.", "erro")
             return render_template("login.html", formulario=formulario), 403
 
-        limitador_login.limpar(chave)
+        trava_por_falhas.limpar(nome)
         return redirect(url_for("carteira.minha_carteira"))
 
     return render_template("login.html", formulario=formulario)

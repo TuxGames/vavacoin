@@ -11,7 +11,7 @@ from conftest import conservacao
 
 from vavacoin.constantes import SAQUE_INICIAL, SUPPLY_TOTAL
 from vavacoin.extensoes import db
-from vavacoin.limite import limitador_login
+from vavacoin.limite import FALHAS_ATE_TRAVAR, LIMITE_POR_MINUTO, limpar_tudo
 from vavacoin.modelos import Usuario
 from vavacoin.operacoes import criar_convite
 
@@ -20,10 +20,10 @@ SENHA = "senha-boa-123"
 
 @pytest.fixture(autouse=True)
 def limite_limpo():
-    """O freio de login é global; sem zerar, um teste contamina o outro."""
-    limitador_login._falhas.clear()
+    """Os freios de login são globais; sem zerar, um teste contamina o outro."""
+    limpar_tudo()
     yield
-    limitador_login._falhas.clear()
+    limpar_tudo()
 
 
 @pytest.fixture
@@ -64,37 +64,26 @@ def test_inicio_e_publico(app, cliente):
     assert cliente.get("/").status_code == 200
 
 
-def test_economia_e_publica_e_mostra_agregados(app, bc, nova_pessoa, cliente):
-    nova_pessoa(com_convite=True)
+def test_economia_saiu_do_ar(app, bc, nova_pessoa, cliente):
+    """Rota fechada, não escondida: não existe mais URL que responda."""
     nova_pessoa(com_convite=True)
     db.session.commit()
     conservacao()
 
-    resposta = cliente.get("/economia")
-    corpo = resposta.get_data(as_text=True)
-
-    assert resposta.status_code == 200
-    assert str(SUPPLY_TOTAL) in corpo
-    assert "100.00" in corpo  # em circulação
-    assert "4900.00" in corpo  # saldo do Banco Central, público
-    conservacao()
+    assert cliente.get("/economia").status_code == 404
+    assert "/economia" not in cliente.get("/").get_data(as_text=True)
 
 
-def test_economia_nao_mostra_saldo_de_ninguem(app, bc, nova_pessoa, cliente):
-    """Agregados sim; conta de fulano, não."""
-    ana = nova_pessoa(nome="ana", com_convite=True)
-    from vavacoin.moeda import mover
-
-    bia = nova_pessoa(nome="bia", com_convite=True)
-    mover(ana, bia, "13.00")
+def test_nenhuma_rota_expoe_agregado_da_economia(app, bc, nova_pessoa, cliente):
+    """O saldo do Banco Central não aparece em nenhuma página pública."""
+    nova_pessoa(com_convite=True)
     db.session.commit()
     conservacao()
 
-    corpo = cliente.get("/economia").get_data(as_text=True)
-    assert "ana" not in corpo
-    assert "bia" not in corpo
-    assert "37.00" not in corpo  # saldo da ana
-    assert "63.00" not in corpo  # saldo da bia
+    for rota in ["/", "/entrar", "/cadastro"]:
+        corpo = cliente.get(rota).get_data(as_text=True)
+        assert "4950.00" not in corpo  # saldo do BC
+        assert "5000.00" not in corpo  # supply
 
 
 # --- cadastro por convite ---------------------------------------------------
@@ -226,36 +215,73 @@ def test_mensagem_de_erro_nao_entrega_quem_tem_conta(app, bc, cliente):
     assert "Usuário ou senha incorretos." in senha_errada
 
 
-def test_rate_limit_no_login(app, bc, cliente):
-    """Cinco erros e a porta fecha por um tempo."""
+def test_limite_de_taxa_por_endereco(app, bc, cliente):
+    """15 tentativas por minuto do mesmo lugar, e a 16ª espera."""
     _cadastrar(cliente, bc, usuario="ana")
     outro = app.test_client()
 
-    for _ in range(5):
+    # Usuários diferentes a cada vez, para isolar do freio por conta: aqui
+    # o que se mede é a rajada, não o chute numa conta específica.
+    for i in range(LIMITE_POR_MINUTO):
+        resposta = outro.post(
+            "/entrar", data={"nome_usuario": f"ninguem{i}", "senha": "x"}
+        )
+        assert resposta.status_code == 401, i
+
+    excedeu = outro.post("/entrar", data={"nome_usuario": "ninguem99", "senha": "x"})
+    assert excedeu.status_code == 429
+    assert "Tentativas demais" in excedeu.get_data(as_text=True)
+
+
+def test_trava_por_falhas_consecutivas_na_conta(app, bc, cliente):
+    """O freio que protege a senha: erros seguidos na mesma conta travam."""
+    _cadastrar(cliente, bc, usuario="ana")
+    outro = app.test_client()
+
+    for _ in range(FALHAS_ATE_TRAVAR):
         assert (
             outro.post("/entrar", data={"nome_usuario": "ana", "senha": "x"}).status_code
             == 401
         )
 
-    bloqueado = outro.post("/entrar", data={"nome_usuario": "ana", "senha": "x"})
-    assert bloqueado.status_code == 429
-    assert "Tentativas demais" in bloqueado.get_data(as_text=True)
+    travado = outro.post("/entrar", data={"nome_usuario": "ana", "senha": "x"})
+    assert travado.status_code == 429
+    assert "bloqueada" in travado.get_data(as_text=True)
 
-    # Mesmo com a senha certa: enquanto bloqueado, não passa.
-    assert outro.post(
-        "/entrar", data={"nome_usuario": "ana", "senha": SENHA}
-    ).status_code == 429
+    # Mesmo com a senha certa, e mesmo de outro endereço: a trava é da conta.
+    de_outro_lugar = app.test_client()
+    assert (
+        de_outro_lugar.post(
+            "/entrar", data={"nome_usuario": "ana", "senha": SENHA}
+        ).status_code
+        == 429
+    )
 
 
-def test_login_certo_zera_o_contador(app, bc, cliente):
+def test_trava_nao_atinge_quem_nao_errou(app, bc, cliente):
+    """Travar a conta da ana não pode travar a da bia."""
+    _cadastrar(cliente, bc, usuario="ana")
+    bia_cliente = app.test_client()
+    _cadastrar(bia_cliente, bc, usuario="bia")
+    bia_cliente.post("/sair", follow_redirects=True)
+
+    atacante = app.test_client()
+    for _ in range(FALHAS_ATE_TRAVAR + 1):
+        atacante.post("/entrar", data={"nome_usuario": "ana", "senha": "x"})
+
+    assert _entrar(bia_cliente, "bia").status_code == 200
+
+
+def test_login_certo_zera_a_trava(app, bc, cliente):
     _cadastrar(cliente, bc, usuario="ana")
     outro = app.test_client()
-    for _ in range(4):
+    for _ in range(FALHAS_ATE_TRAVAR - 1):
         outro.post("/entrar", data={"nome_usuario": "ana", "senha": "x"})
 
     assert _entrar(outro, "ana").status_code == 200
     outro.post("/sair", follow_redirects=True)
-    for _ in range(4):
+
+    for _ in range(FALHAS_ATE_TRAVAR - 1):
         outro.post("/entrar", data={"nome_usuario": "ana", "senha": "x"})
     assert _entrar(outro, "ana").status_code == 200
 

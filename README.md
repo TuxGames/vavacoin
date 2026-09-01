@@ -28,10 +28,12 @@ flask run
 A pessoa entra em `/cadastro` com o código, escolhe usuário e senha, e sai de
 lá com os 50 VVC sacados do Banco Central.
 
+Os números da economia (emitido, em circulação, saldo do Banco Central) não
+aparecem no site — só por `flask auditoria`, na CLI.
+
 | rota | o que é |
 | --- | --- |
 | `/` | o que é a moeda |
-| `/economia` | estado da economia, público: emitido, em circulação, saldo do BC |
 | `/cadastro` | única porta de entrada, e só com convite |
 | `/entrar`, `/sair` | login com Flask-Login |
 | `/carteira` | seu saldo e seu extrato (só o seu) |
@@ -108,9 +110,13 @@ a partir do ledger e acusa a diferença; tem teste exatamente desse caso.
 - **Transferência tem confirmação.** O que executa é o que o servidor guardou
   na sessão e desenhou na tela, não o que voltou no formulário: o confirmado
   não pode divergir do mostrado. A confirmação expira em 10 minutos.
-- **Rate limit no login**, por IP + usuário. É em memória: some no restart e
-  não é compartilhado entre processos. Para um worker resolve; se um dia
-  houver mais de um, vira tabela.
+- **Dois freios no login**, e eles fazem coisas diferentes:
+  **limite de taxa** (15 tentativas por minuto por endereço) protege o
+  *servidor* de rajada; **trava por falhas consecutivas** na mesma conta
+  (`FALHAS_ATE_TRAVAR`, com espera dobrando de 30s até 1h) protege a *conta*.
+  Só o primeiro deixaria 21.600 chutes por dia contra uma senha fraca. Ambos
+  em memória: somem no restart e não são compartilhados entre processos. Para
+  um worker resolve; se um dia houver mais de um, vira tabela.
 
 ## Publicar no PythonAnywhere
 

@@ -1,7 +1,8 @@
 """A carteira da pessoa: saldo, extrato e transferência.
 
-Nada aqui mostra saldo de terceiro. O que é de todo mundo está em
-``/economia``, em agregado.
+Nada aqui mostra saldo de terceiro — e, desde que a página de economia saiu,
+o site não mostra agregado nenhum. Os números da economia continuam existindo
+e conferíveis por ``flask auditoria``, na CLI.
 """
 
 import secrets
