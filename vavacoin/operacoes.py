@@ -54,11 +54,8 @@ def criar_usuario(
     """
     sessao = sessao or db.session
     bc = exigir_banco_central(autoridade, sessao)
-    usuario = Usuario(
-        nome_usuario=nome_usuario,
-        nome_exibicao=nome_exibicao or nome_usuario,
-        saldo=ZERO,
-    )
+    usuario = Usuario(nome_exibicao=nome_exibicao or nome_usuario, saldo=ZERO)
+    usuario.definir_nome(nome_usuario)
     usuario.definir_senha(senha)
     sessao.add(usuario)
     sessao.flush()
@@ -182,11 +179,8 @@ def cadastrar_por_convite(
         if convite.resgatado:
             raise ConviteJaResgatado(f"código {codigo!r} já foi resgatado")
 
-        usuario = Usuario(
-            nome_usuario=nome_usuario,
-            nome_exibicao=nome_exibicao or nome_usuario,
-            saldo=ZERO,
-        )
+        usuario = Usuario(nome_exibicao=nome_exibicao or nome_usuario, saldo=ZERO)
+        usuario.definir_nome(nome_usuario)
         usuario.definir_senha(senha)
         sessao.add(usuario)
         sessao.flush()

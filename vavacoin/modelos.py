@@ -15,6 +15,7 @@ from sqlalchemy import CheckConstraint
 from .constantes import USUARIO_BANCO_CENTRAL
 from .dinheiro import ZERO, Dinheiro
 from .extensoes import db
+from .nomes import normalizar_nome
 
 
 def _custo_bcrypt():
@@ -50,7 +51,13 @@ class Usuario(db.Model, UserMixin):
     __tablename__ = "usuario"
 
     id = db.Column(db.Integer, primary_key=True)
-    nome_usuario = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    #: Como a pessoa escreveu — com maiúscula e acento, se quis. É o que
+    #: aparece na tela.
+    nome_usuario = db.Column(db.String(50), nullable=False, index=True)
+    #: A forma que o sistema compara: sem acento, minúscula. É esta que é
+    #: única, e é por ela que se busca no login e na transferência. Sem isso,
+    #: "João" e "joao" seriam duas contas.
+    nome_normalizado = db.Column(db.String(50), unique=True, nullable=False, index=True)
     nome_exibicao = db.Column(db.String(80), nullable=False)
     senha_hash = db.Column(db.String(128), nullable=True)
     eh_banco_central = db.Column(db.Boolean, nullable=False, default=False)
@@ -67,6 +74,19 @@ class Usuario(db.Model, UserMixin):
         # senha (por CLI, com hash), o freio de tentativas, e o fato de tudo
         # que ele faz passar pelo ledger com ator e motivo.
     )
+
+    def definir_nome(self, nome_usuario):
+        """Guarda as duas formas de uma vez.
+
+        Existe para que ninguém escreva ``nome_usuario`` sem escrever o
+        normalizado junto — os dois andam em par, e um sem o outro deixa a
+        conta invisível para o login.
+        """
+        self.nome_usuario = (nome_usuario or "").strip()
+        self.nome_normalizado = normalizar_nome(self.nome_usuario)
+        if not self.nome_normalizado:
+            raise ValueError("nome de usuário vazio depois de normalizado")
+        return self.nome_normalizado
 
     def definir_senha(self, senha):
         """Guarda o hash bcrypt da senha. Texto puro nunca toca o banco.
@@ -241,11 +261,28 @@ def registrar_acao(ator, acao, alvo=None, detalhe=None, motivo=None, sessao=None
     return registro
 
 
+def buscar_usuario(nome, sessao=None):
+    """Acha a conta pelo nome, comparando a forma normalizada.
+
+    É o único jeito de buscar usuário no projeto. Comparar ``nome_usuario``
+    direto acha só quem digitou exatamente igual — com o mesmo acento e a
+    mesma caixa —, que é justamente o que não se pode exigir de quem está
+    digitando no celular.
+    """
+    sessao = sessao or db.session
+    normalizado = normalizar_nome(nome)
+    if not normalizado:
+        return None
+    return sessao.execute(
+        db.select(Usuario).where(Usuario.nome_normalizado == normalizado)
+    ).scalar_one_or_none()
+
+
 def banco_central(sessao=None, travado=False):
     """Devolve a conta do Banco Central, ou ``None`` se a gênese não rodou."""
     sessao = sessao or db.session
     consulta = db.select(Usuario).where(
-        Usuario.nome_usuario == USUARIO_BANCO_CENTRAL
+        Usuario.nome_normalizado == USUARIO_BANCO_CENTRAL
     )
     if travado:
         consulta = consulta.with_for_update()

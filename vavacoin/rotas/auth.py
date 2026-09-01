@@ -16,7 +16,8 @@ from ..erros import ErroMonetario
 from ..extensoes import db
 from ..formularios import FormularioCadastro, FormularioLogin
 from ..limite import limitador_taxa, trava_por_falhas
-from ..modelos import Usuario
+from ..nomes import normalizar_nome
+from ..modelos import buscar_usuario
 
 bp = Blueprint("auth", __name__)
 
@@ -33,7 +34,7 @@ def login():
 
     formulario = FormularioLogin()
     if formulario.validate_on_submit():
-        nome = formulario.nome_usuario.data.strip().lower()
+        nome = formulario.nome_usuario.data.strip()
 
         # Freio 1, do servidor: rajada de um mesmo endereço. Conta toda
         # tentativa, certa ou errada, e é o mais barato de avaliar.
@@ -45,7 +46,7 @@ def login():
         # Freio 2, da conta: erros seguidos nesta conta específica. É este
         # que impede chute paciente — o de cima, sozinho, ainda deixaria
         # milhares de tentativas por dia contra uma senha fraca.
-        espera = trava_por_falhas.segundos_de_bloqueio(nome)
+        espera = trava_por_falhas.segundos_de_bloqueio(normalizar_nome(nome))
         if espera:
             flash(
                 f"Conta temporariamente bloqueada. Espere {espera} segundos.",
@@ -53,25 +54,25 @@ def login():
             )
             return render_template("login.html", formulario=formulario), 429
 
-        usuario = db.session.execute(
-            db.select(Usuario).where(Usuario.nome_usuario == nome)
-        ).scalar_one_or_none()
+        # Busca pela forma normalizada: quem se cadastrou como "João" entra
+        # digitando "joao", que é o que a pessoa faz no celular.
+        usuario = buscar_usuario(nome)
 
         # `is_active` False barra o Banco Central aqui: `login_user` recusa.
         # A conta dele nem chega a comparar senha, porque senha ele não tem.
         if usuario is None or not usuario.verificar_senha(formulario.senha.data):
-            trava_por_falhas.registrar_falha(nome)
+            trava_por_falhas.registrar_falha(normalizar_nome(nome))
             # Mensagem única de propósito: dizer "usuário não existe" entrega
             # quem tem conta para quem está sondando.
             flash("Usuário ou senha incorretos.", "erro")
             return render_template("login.html", formulario=formulario), 401
 
         if not login_user(usuario):
-            trava_por_falhas.registrar_falha(nome)
+            trava_por_falhas.registrar_falha(normalizar_nome(nome))
             flash("Esta conta não entra pelo site.", "erro")
             return render_template("login.html", formulario=formulario), 403
 
-        trava_por_falhas.limpar(nome)
+        trava_por_falhas.limpar(normalizar_nome(nome))
         return redirect(url_for("publico.inicio"))
 
     return render_template("login.html", formulario=formulario)
@@ -100,7 +101,8 @@ def cadastro():
     if formulario.validate_on_submit():
         from ..operacoes import cadastrar_por_convite
 
-        nome = formulario.nome_usuario.data.strip().lower()
+        # Guarda como a pessoa escreveu; a unicidade é pela forma normalizada.
+        nome = formulario.nome_usuario.data.strip()
         try:
             usuario = cadastrar_por_convite(
                 nome,

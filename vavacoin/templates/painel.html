@@ -33,14 +33,28 @@
   {% if contas %}
   <div class="rolagem">
     <table class="tabela">
-      <thead><tr><th>Usuário</th><th>Nome</th><th class="numerico">Saldo</th><th></th></tr></thead>
+      <thead>
+        <tr>
+          <th>ID</th><th>Usuário</th><th class="numerico">Saldo</th><th>Ações</th>
+        </tr>
+      </thead>
       <tbody>
         {% for conta in contas %}
         <tr>
-          <td>{{ conta.nome_usuario }}</td>
-          <td>{{ conta.nome_exibicao }}</td>
+          <td>{{ conta.id }}</td>
+          <td>
+            {{ conta.nome_usuario }}
+            {% if conta.nome_exibicao != conta.nome_usuario %}
+              <div class="ei-sub">{{ conta.nome_exibicao }}</div>
+            {% endif %}
+          </td>
           <td class="numerico">{{ conta.saldo }}</td>
-          <td><a href="{{ url_for('admin.extrato_de', nome_usuario=conta.nome_usuario) }}">extrato</a></td>
+          <td>
+            <span class="acoes-linha">
+              <a href="{{ url_for('admin.painel', conta=conta.nome_usuario) }}#ajustar">ajustar</a>
+              <a href="{{ url_for('admin.extrato_de', nome_usuario=conta.nome_normalizado) }}">extrato</a>
+            </span>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -51,7 +65,7 @@
   {% endif %}
 </div>
 
-<div class="card">
+<div class="card" id="ajustar">
   <div class="section-title"><i class="ti ti-settings" aria-hidden="true"></i>Ajustar saldo</div>
   <p class="text-muted">
     Ajuste para cima <strong>cunha moeda</strong>: se o Banco Central não tiver

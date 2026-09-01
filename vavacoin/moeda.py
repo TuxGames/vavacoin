@@ -293,7 +293,7 @@ def criar_genese(sessao=None, supply=SUPPLY_INICIAL):
     sessao = sessao or db.session
 
     existente = sessao.execute(
-        select(Usuario).where(Usuario.nome_usuario == USUARIO_BANCO_CENTRAL)
+        select(Usuario).where(Usuario.nome_normalizado == USUARIO_BANCO_CENTRAL)
     ).scalar_one_or_none()
     if existente is not None:
         return existente
@@ -305,11 +305,11 @@ def criar_genese(sessao=None, supply=SUPPLY_INICIAL):
 
     supply = para_decimal(supply)
     bc = Usuario(
-        nome_usuario=USUARIO_BANCO_CENTRAL,
         nome_exibicao="Banco Central do VavaCoin",
         eh_banco_central=True,
         saldo=ZERO,
     )
+    bc.definir_nome(USUARIO_BANCO_CENTRAL)
     sessao.add(bc)
     sessao.flush()
 

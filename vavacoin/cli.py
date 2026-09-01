@@ -16,7 +16,7 @@ from .autoridade import exigir_banco_central
 from .constantes import SUPPLY_INICIAL
 from .extensoes import db
 from .moeda import criar_genese, soma_saldos, verificar_conservacao
-from .modelos import Usuario, banco_central, registrar_acao
+from .modelos import banco_central, buscar_usuario, registrar_acao
 from .operacoes import criar_convite, criar_usuario, resetar_economia
 
 
@@ -169,9 +169,7 @@ def comando_auditoria():
 @with_appcontext
 def comando_extrato(nome_usuario, limite):
     """Extrato de uma conta, do mais recente para o mais antigo."""
-    usuario = db.session.execute(
-        db.select(Usuario).where(Usuario.nome_usuario == nome_usuario)
-    ).scalar_one_or_none()
+    usuario = buscar_usuario(nome_usuario)
     if usuario is None:
         raise click.ClickException(f"conta inexistente: {nome_usuario}")
 

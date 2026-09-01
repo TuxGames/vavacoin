@@ -25,7 +25,7 @@ from ..erros import ErroMonetario
 from ..extensoes import db
 from ..formularios import FormularioConfirmacao, FormularioTransferencia
 from ..constantes import SAQUE_INICIAL
-from ..modelos import Convite, Usuario
+from ..modelos import Convite, buscar_usuario
 from ..operacoes import transferir
 
 bp = Blueprint("carteira", __name__)
@@ -76,10 +76,7 @@ def transferir_passo1():
     """Primeiro passo: só monta a intenção. Nada de dinheiro se move aqui."""
     formulario = FormularioTransferencia()
     if formulario.validate_on_submit():
-        nome = formulario.destinatario.data.strip().lower()
-        destino = db.session.execute(
-            db.select(Usuario).where(Usuario.nome_usuario == nome)
-        ).scalar_one_or_none()
+        destino = buscar_usuario(formulario.destinatario.data)
 
         if destino is None or destino.eh_banco_central:
             # O Banco Central some do universo de destinos: não se paga ao BC,

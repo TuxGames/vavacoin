@@ -40,7 +40,8 @@ def test_ida_e_volta_do_tipo_no_banco(app):
     from vavacoin.extensoes import db
     from vavacoin.modelos import Usuario
 
-    u = Usuario(nome_usuario="x", nome_exibicao="x", saldo=Decimal("5000.00"))
+    u = Usuario(nome_exibicao="x", saldo=Decimal("5000.00"))
+    u.definir_nome("x")  # nome_usuario e nome_normalizado andam em par
     db.session.add(u)
     db.session.commit()
     db.session.expire_all()

@@ -248,7 +248,8 @@ def test_login_leva_ao_painel_da_pessoa(app, bc, cliente):
     _cadastrar(cliente, bc)
     corpo = cliente.get("/").get_data(as_text=True)
     assert "Seu saldo" in corpo
-    assert "Transferência rápida" in corpo
+    assert "Transferência" in corpo
+    assert "Enviar VavaCoin" in corpo
 
 
 def test_login_e_logout(app, bc, cliente):

@@ -14,9 +14,12 @@ from wtforms.validators import DataRequired, EqualTo, Length, Regexp, Validation
 
 from .dinheiro import ZERO, para_decimal
 
+#: Maiúscula e acento são permitidos — o nome é da pessoa, e ela escreve
+#: como quiser. Espaço fica de fora para o nome caber numa URL sem escape, e
+#: a comparação (unicidade, login) usa a forma normalizada, não esta.
 NOME_USUARIO = Regexp(
-    r"^[a-z0-9._-]+$",
-    message="Use só letras minúsculas, números, ponto, hífen ou sublinhado.",
+    r"^[A-Za-zÀ-ÖØ-öø-ÿ0-9._-]+$",
+    message="Use letras, números, ponto, hífen ou sublinhado — sem espaço.",
 )
 
 #: Senha: sem tamanho mínimo, por decisão do dono do projeto — repetida e

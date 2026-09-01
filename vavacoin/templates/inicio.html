@@ -1,42 +1,56 @@
 {% extends "base.html" %}
-{% from "_campos.html" import campo, linha_extrato %}
+{% from "_campos.html" import linha_extrato %}
 {% block conteudo %}
 
 {% if current_user.is_authenticated %}
-  {# DASHBOARD — o que quem usa todos os dias precisa ver de cara: quanto tem,
-     mandar dinheiro, e o que aconteceu. O texto explicativo ficou para quem
-     chega de fora, embaixo. #}
+  {# DASHBOARD — mesma disposição do Benbals: saldo em destaque, transferência
+     logo abaixo, extrato embaixo. É a ordem que onze pessoas já usaram. #}
   <div class="hero">
     <div class="hero-orb"></div>
     <div class="hero-label">Seu saldo</div>
     <div class="hero-num">{{ current_user.saldo }}</div>
     <div class="hero-sub">VavaCoin (VVC)</div>
     <div class="hero-acoes">
-      <a href="{{ url_for('carteira.transferir_passo1') }}" class="btn btn-outline btn-sm">Transferir</a>
-      <a href="{{ url_for('carteira.minha_carteira') }}" class="btn btn-outline btn-sm">Extrato</a>
+      <a href="{{ url_for('carteira.minha_carteira') }}" class="btn btn-outline btn-sm">Extrato completo</a>
     </div>
   </div>
 
   <div class="card">
-    <div class="section-title"><i class="ti ti-send" aria-hidden="true"></i>Transferência rápida</div>
-    <form method="post" action="{{ url_for('carteira.transferir_passo1') }}">
-      {{ formulario.hidden_tag() }}
-      {{ campo(formulario.destinatario) }}
-      {{ campo(formulario.valor) }}
-      {{ campo(formulario.motivo) }}
-      {{ formulario.enviar(class="btn btn-gold btn-full") }}
-    </form>
-    <small class="ajuda">Você revisa antes de qualquer coisa sair da sua conta.</small>
-  </div>
+  <div class="section-title"><i class="ti ti-send" aria-hidden="true"></i>Transferência</div>
+  <form method="post" action="{{ url_for('carteira.transferir_passo1') }}">
+    {{ formulario.hidden_tag() }}
+    <div class="campo">
+      {{ formulario.destinatario(class="form-control", placeholder="usuário (ex: joao)", required=true) }}
+      <small class="ajuda-campo">Quem recebe. Pode escrever com acento e maiúscula.</small>
+      {% if formulario.destinatario.errors %}
+        <span class="erro-campo">{{ formulario.destinatario.errors|join(" ") }}</span>
+      {% endif %}
+    </div>
+    <div class="campo">
+      {{ formulario.valor(class="form-control", type="number", min="0.01", step="0.01", placeholder="0.00", required=true) }}
+      {% if formulario.valor.errors %}
+        <span class="erro-campo">{{ formulario.valor.errors|join(" ") }}</span>
+      {% endif %}
+    </div>
+    <div class="campo">
+      {{ formulario.motivo(class="form-control", placeholder="por quê (aparece no extrato dos dois)") }}
+      {% if formulario.motivo.errors %}
+        <span class="erro-campo">{{ formulario.motivo.errors|join(" ") }}</span>
+      {% endif %}
+    </div>
+    <button type="submit" class="btn btn-gold btn-full">Enviar VavaCoin</button>
+  </form>
+  <small class="ajuda-campo">Você revisa antes de qualquer coisa sair da sua conta.</small>
+</div>
 
   <div class="card">
-    <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Últimas transações</div>
+    <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Extrato</div>
     {% if linhas %}
       {% for linha in linhas %}{{ linha_extrato(linha) }}{% endfor %}
       <hr>
       <a href="{{ url_for('carteira.minha_carteira') }}">Ver o extrato inteiro</a>
     {% else %}
-      <p class="vazio">Nada ainda.</p>
+      <p class="vazio">Nenhuma transação ainda.</p>
     {% endif %}
   </div>
 

@@ -171,12 +171,18 @@ h2 { font-size: 17px; margin: 22px 0 10px; color: var(--text-hi); }
 .row-evt { border-left-color: var(--gold); }
 .row-main  { color: var(--text); font-size: 13.5px; font-weight: 500; min-width: 0; }
 .row-sub   { color: var(--muted-2); font-size: 11.5px; margin-top: 2px; }
+/* Linha de baixo do extrato: "para fulano · 01/09 14:20 · saldo 58.75". Corta
+   com reticências em vez de quebrar — igual ao .ei-sub do Benbals. */
+.ei-sub {
+    color: var(--muted-2); font-size: 11.5px; margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .row-val   { font-size: 13.5px; font-weight: 600; white-space: nowrap; }
 .row-val.pos { color: var(--green); }
 .row-val.neg { color: var(--red); }
 @media (max-width: 767px) {
     .row-main { font-size: 15px; }
-    .row-sub  { font-size: 13px; }
+    .row-sub, .ei-sub { font-size: 13px; }
     .row-val  { font-size: 16px; }
 }
 
@@ -187,7 +193,11 @@ h2 { font-size: 17px; margin: 22px 0 10px; color: var(--text-hi); }
 .text-muted { color: var(--muted); }
 .text-right { text-align: right; }
 .btn-full   { width: 100%; }
-.vazio      { color: var(--muted); font-size: 14px; padding: 6px 0; }
+/* Estado vazio: centralizado e com respiro, como no Benbals. */
+.vazio      { color: var(--muted); font-size: 14px; text-align: center; padding: 30px 0; }
+/* Ajuda logo abaixo de um campo, sem label acima (padrão do Benbals). */
+.ajuda-campo { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; }
+.acoes-linha { display: flex; gap: 10px; white-space: nowrap; }
 hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 code {
     background: var(--input); border: 1px solid var(--border);

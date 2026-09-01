@@ -36,7 +36,13 @@ from ..formularios import (
     FormularioEmitirConvite,
     FormularioReset,
 )
-from ..modelos import Convite, RegistroAdministrativo, Usuario, registrar_acao
+from ..modelos import (
+    Convite,
+    RegistroAdministrativo,
+    Usuario,
+    buscar_usuario,
+    registrar_acao,
+)
 from ..operacoes import ajustar_saldo, criar_convite, criar_usuario, resetar_economia
 
 bp = Blueprint("admin", __name__, url_prefix="/painel")
@@ -55,10 +61,20 @@ def exigir_administrador():
 
 
 def _formularios():
+    """Os quatro formulários do painel, em branco.
+
+    O de ajuste aceita vir pré-preenchido por ``?conta=fulano`` — é o que o
+    link "ajustar" de cada linha da tabela faz. Sem isso, mexer no saldo de
+    alguém exige digitar o nome de novo, olhando para a linha logo acima.
+    """
+    form_ajuste = FormularioAjusteDeSaldo()
+    conta = request.args.get("conta")
+    if conta and not form_ajuste.nome_usuario.data:
+        form_ajuste.nome_usuario.data = conta
     return {
         "form_convite": FormularioEmitirConvite(),
         "form_conta": FormularioCriarConta(),
-        "form_ajuste": FormularioAjusteDeSaldo(),
+        "form_ajuste": form_ajuste,
         "form_reset": FormularioReset(),
     }
 
@@ -122,7 +138,8 @@ def criar_conta():
 
     try:
         usuario = criar_usuario(
-            formulario.nome_usuario.data.strip().lower(),
+            # Como a pessoa escreveu: a unicidade é pela forma normalizada.
+            formulario.nome_usuario.data.strip(),
             formulario.senha.data,
             nome_exibicao=formulario.nome_exibicao.data.strip(),
             autoridade=current_user,
@@ -144,11 +161,7 @@ def ajustar():
     if not formulario.validate_on_submit():
         return _pagina(form_ajuste=formulario), 400
 
-    alvo = db.session.execute(
-        db.select(Usuario).where(
-            Usuario.nome_usuario == formulario.nome_usuario.data.strip().lower()
-        )
-    ).scalar_one_or_none()
+    alvo = buscar_usuario(formulario.nome_usuario.data)
     if alvo is None:
         flash("Não existe ninguém com esse usuário.", "erro")
         return _pagina(form_ajuste=formulario), 404
@@ -178,9 +191,7 @@ def ajustar():
 @bp.route("/extrato/<nome_usuario>")
 def extrato_de(nome_usuario):
     """Extrato de qualquer um. Olhar também deixa rastro."""
-    alvo = db.session.execute(
-        db.select(Usuario).where(Usuario.nome_usuario == nome_usuario)
-    ).scalar_one_or_none()
+    alvo = buscar_usuario(nome_usuario)
     if alvo is None:
         abort(404)
 

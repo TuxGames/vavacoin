@@ -12,23 +12,27 @@
 </div>
 {% endmacro %}
 
-{# Uma linha de extrato, no formato .row do Benbals: barra lateral verde para
-   o que entrou, vermelha para o que saiu. #}
+{# Uma linha de extrato, na disposição do Benbals: descrição em cima, e
+   embaixo "para/de fulano · data". Barra lateral verde para o que entrou,
+   vermelha para o que saiu, e o valor à direita com sinal explícito. Sem
+   badge de texto — o tipo já está na descrição.
+
+   Diferença nossa: o saldo resultante entra na linha de baixo. O Benbals não
+   mostra, mas aqui o ledger grava, e é a informação que responde sozinha
+   "quanto eu tinha depois disso". #}
 {% macro linha_extrato(linha) %}
-<div class="row {{ 'row-out' if linha.valor_com_sinal < 0 else 'row-in' }}">
-  <div>
-    <div class="row-main">
-      {{ linha.motivo or linha.tipo|replace("_", " ") }}
-    </div>
-    <div class="row-sub">
-      {{ linha.quando.strftime("%d/%m %H:%M") }} &middot; {{ linha.contraparte }}
+{% set saida = linha.valor_com_sinal < 0 %}
+<div class="row {{ 'row-out' if saida else 'row-in' }}">
+  <div class="row-main">
+    <div>{{ linha.motivo or linha.tipo|replace("_", " ") }}</div>
+    <div class="ei-sub">
+      {% if saida %}para{% else %}de{% endif %} {{ linha.contraparte }}
+      &middot; {{ linha.quando.strftime("%d/%m %H:%M") }}
+      &middot; saldo {{ linha.saldo_depois }}
     </div>
   </div>
-  <div class="text-right">
-    <div class="row-val {{ 'neg' if linha.valor_com_sinal < 0 else 'pos' }}">
-      {{ linha.valor_com_sinal }}
-    </div>
-    <div class="row-sub">saldo {{ linha.saldo_depois }}</div>
+  <div class="row-val {{ 'neg' if saida else 'pos' }}">
+    {{ "" if saida else "+" }}{{ linha.valor_com_sinal }}
   </div>
 </div>
 {% endmacro %}

@@ -97,6 +97,17 @@ Aqui isso desceu para `base.css` e o `menu.js` (que já era `addEventListener`,
 então veio quase intacto). O teste `test_nenhum_template_tem_estilo_inline_ou_handler`
 é o juiz: falha se algum voltar.
 
+## Nome de usuário: escreve como quiser, compara normalizado
+
+A pessoa escolhe o nome com maiúscula e acento — `João` aparece `João`. Por
+baixo, o sistema guarda também a forma **normalizada** (`joao`: sem acento,
+minúscula, espaços colapsados) e é ela que é única e é ela que o login e a
+transferência procuram.
+
+São dois problemas, e só o par resolve os dois: sem normalizar, `João` e
+`joao` viram duas contas; e quem se cadastrou com acento não consegue entrar
+digitando sem, que é o que se faz no celular.
+
 ## O supply não é mais uma constante
 
 Era 5.000 fixos. Deixou de ser quando o administrador ganhou o poder de
@@ -133,6 +144,7 @@ administrador conserta algo é um alarme que se aprende a ignorar.
 | `vavacoin/limite.py` | os dois freios do login |
 | `vavacoin/static/base.css` | o visual, herdado do Benbals |
 | `vavacoin/static/menu.js` | o menu off-canvas do celular — o único JS do projeto |
+| `vavacoin/nomes.py` | normalização do nome de usuário (acento e caixa) |
 | `vavacoin/modelos.py` | `Usuario`, `Convite`, `Transacao` (ledger) |
 | `vavacoin/constantes.py` | supply, saque inicial, capacidade |
 
@@ -238,6 +250,23 @@ O banco fica em `/home/vavacoin/vavacoin/vavacoin.sqlite3`, dentro do clone
 mas ignorado pelo git — `git pull` não encosta nele.
 
 Atualizar: `git pull && .venv/bin/flask db upgrade` e *Reload* no painel.
+
+### Atenção nas migrations que recriam a tabela `usuario`
+
+Duas fazem isso (`353a30f6e6f5` e `5e2a8edc70ea`), porque o SQLite não tem
+`ALTER` para constraint. **Backup antes das duas**, e `flask auditoria`
+depois.
+
+Um defeito conhecido, e já corrigido: a `353a30f6e6f5` recriou `usuario` com
+`copy_from`, que carrega colunas e CHECKs mas **não carrega índices** — e o
+UNIQUE de `nome_usuario` se perdeu. A `5e2a8edc70ea` recria os índices e move
+o UNIQUE para `nome_normalizado`. Enquanto só a primeira estiver aplicada, o
+banco aceita dois usuários com o mesmo nome.
+
+`testes/test_migracoes.py` existe por causa disso: sobe um banco pelo caminho
+real (`flask db upgrade`) e compara com o metadata dos modelos. A suíte usa
+`create_all()`, que testa o que os modelos dizem, nunca o que as migrations
+fazem — e o erro morava exatamente aí no meio.
 
 ### Atenção na migration `353a30f6e6f5` (num banco que já está no ar)
 

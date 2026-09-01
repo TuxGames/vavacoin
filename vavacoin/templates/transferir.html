@@ -1,17 +1,31 @@
 {% extends "base.html" %}
-{% from "_campos.html" import campo %}
 {% block titulo %}Transferir — VavaCoin{% endblock %}
 {% block conteudo %}
-<h1>Transferir</h1>
-<p class="text-muted">Você vai revisar antes de qualquer coisa sair da sua conta.</p>
-
 <div class="card">
+  <div class="section-title"><i class="ti ti-send" aria-hidden="true"></i>Transferência</div>
   <form method="post" action="{{ url_for('carteira.transferir_passo1') }}">
     {{ formulario.hidden_tag() }}
-    {{ campo(formulario.destinatario, "O nome de usuário de quem recebe.") }}
-    {{ campo(formulario.valor, "Use ponto ou vírgula: 12.50 ou 12,50.") }}
-    {{ campo(formulario.motivo, "Aparece no extrato de vocês dois.") }}
-    {{ formulario.enviar(class="btn btn-gold btn-full") }}
+    <div class="campo">
+      {{ formulario.destinatario(class="form-control", placeholder="usuário (ex: joao)", required=true) }}
+      <small class="ajuda-campo">Quem recebe. Pode escrever com acento e maiúscula.</small>
+      {% if formulario.destinatario.errors %}
+        <span class="erro-campo">{{ formulario.destinatario.errors|join(" ") }}</span>
+      {% endif %}
+    </div>
+    <div class="campo">
+      {{ formulario.valor(class="form-control", type="number", min="0.01", step="0.01", placeholder="0.00", required=true) }}
+      {% if formulario.valor.errors %}
+        <span class="erro-campo">{{ formulario.valor.errors|join(" ") }}</span>
+      {% endif %}
+    </div>
+    <div class="campo">
+      {{ formulario.motivo(class="form-control", placeholder="por quê (aparece no extrato dos dois)") }}
+      {% if formulario.motivo.errors %}
+        <span class="erro-campo">{{ formulario.motivo.errors|join(" ") }}</span>
+      {% endif %}
+    </div>
+    <button type="submit" class="btn btn-gold btn-full">Enviar VavaCoin</button>
   </form>
+  <small class="ajuda-campo">Você revisa antes de qualquer coisa sair da sua conta.</small>
 </div>
 {% endblock %}
