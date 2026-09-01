@@ -4,7 +4,9 @@ Documento canônico do projeto. As decisões abaixo foram tomadas em conversa e
 **não precisam ser relitigadas** — o que precisa de decisão está na seção
 "Em aberto", separado de propósito.
 
-**Estado: desenho fechado, nada implementado.**
+**Estado: no ar em `vavacoin.pythonanywhere.com`.** Núcleo monetário, auditoria,
+cadastro por convite, carteira, transferência e painel do Banco Central com god
+mode. O cassino ainda não existe.
 
 ---
 
@@ -128,13 +130,35 @@ ninguém consentiu em nada.
 
 ## Cassino
 
-**Fica.** Integra o Jogo do Caladinho, mines e o que mais existir, no site
-oficial.
+**Fica.** O cassino se chama **Caladinho**; os jogos dentro dele são **mines**
+e **roleta**. Fica no site oficial.
 
 - **Dono: o autor do projeto** (decisão explícita, revisitável).
-- **O saldo da casa e a vantagem são públicos**, sempre. O que é público vira
-  personagem do jogo; o que é escondido vira suspeita que o dono não consegue
-  desprovar depois — ainda mais sendo ele quem escreveu o jogo.
+- **O saldo da casa é visível por interruptor**, no painel do Banco Central: o
+  dono liga e desliga quando quiser. A recomendação original era "público
+  sempre", pelo argumento de que o escondido vira suspeita que o dono não
+  consegue desprovar — ele preferiu decidir caso a caso, e a escolha é dele.
+
+### Mines — parâmetros fechados
+
+- Multiplicador **máximo 25×**, com **saque forçado** ao atingi-lo. Sem isso,
+  alguém continuaria abrindo casas acima do que a casa cobriu na aposta, que é
+  exatamente o buraco que o teto existe para fechar.
+- **Aposta máxima = saldo da casa ÷ 50**, que é a regra do dono ("25× a aposta
+  tem que ser menor que 50% do cassino"). Implementada pela **exposição real da
+  rodada**, não pelo 25 fixo: se a tabela mudar, o teto acompanha em vez de
+  virar mentira. Conferida na aposta **e** antes de pagar — entre as duas pode
+  ter entrado outra rodada.
+- **Verificação justa desde o primeiro dia.** Antes da rodada o servidor mostra
+  o hash de um segredo; o **jogador contribui com uma semente**; as bombas saem
+  de `(segredo, semente, nonce)`; no fim o segredo é revelado e existe tela para
+  conferir. A semente do jogador é a peça que fecha o buraco de verdade — sem
+  ela o servidor poderia sortear muitos tabuleiros e escolher o pior.
+- Hash prova que o tabuleiro não mudou; **não** prova que o pagamento é justo.
+  Por isso a tabela de multiplicadores fica visível na tela.
+- Resultado decidido **no servidor**, nunca no navegador. Rodada resolve **uma
+  vez só**, com trava de status. Aposta e prêmio são **dois lançamentos** no
+  ledger, via `mover()`.
 
 ### O problema que o cassino cria, e como ele se resolve
 
@@ -159,14 +183,15 @@ sorteado, leiloado ou rotativo).
 
 ## Ordem de implantação
 
-**O cassino é a última coisa a ligar.**
+**Resolvido: o colégio liberou.** O dono conversou com a escola, que entendeu
+que a mini-economia não tem relação com o ITA-IME Analytics, não envolve
+dinheiro real e não expõe dado pessoal. O cassino deixou de estar bloqueado por
+ordem.
 
-Não é sobre o código: é que mines e cassino são exatamente a tela que o
-coordenador do colégio não deveria ver enquanto a assessoria jurídica do GGE
-analisa o ITA-IME Analytics. Os dois projetos são independentes, mas têm o mesmo
-autor, os mesmos alunos e o mesmo mês — e quem olha de fora não separa.
-
-Construir tudo; ligar o cassino depois da resposta.
+O bloqueio existia por percepção, não por código: mines e cassino eram
+exatamente a tela que o coordenador não deveria ver enquanto o jurídico do GGE
+analisava o ITA-IME. Registrado porque a preocupação era legítima e a resposta
+dela também.
 
 ---
 

@@ -2,7 +2,6 @@
 {% block titulo %}Diário do painel — VavaCoin{% endblock %}
 {% block conteudo %}
 <h1>Diário do painel</h1>
-<p class="text-muted">Tudo que o Banco Central fez, do mais recente ao mais antigo.</p>
 
 <div class="card">
   {% if registros %}
@@ -30,7 +29,7 @@
     <a href="{{ url_for('admin.registros', pagina=pagina + 1) }}">mais antigos</a>
   {% endif %}
   {% else %}
-  <p class="vazio">Nada registrado nesta página.</p>
+  <p class="vazio">Nada registrado ainda.</p>
   {% endif %}
 </div>
 <a class="btn btn-outline btn-sm" href="{{ url_for('admin.painel') }}">Voltar ao painel</a>

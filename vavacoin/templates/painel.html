@@ -3,10 +3,6 @@
 {% block titulo %}Painel — VavaCoin{% endblock %}
 {% block conteudo %}
 <h1>Painel do Banco Central</h1>
-<p class="text-muted">
-  Tudo que acontece aqui fica registrado, com data e motivo. É o que responde
-  &ldquo;por que meu saldo mudou?&rdquo; daqui a seis meses.
-</p>
 
 <div class="card">
   <div class="section-title"><i class="ti ti-chart-pie" aria-hidden="true"></i>Economia</div>
@@ -21,10 +17,6 @@
     <div class="numero"><dt>Não emitido</dt><dd>{{ estado.nao_emitido }}</dd></div>
     <div class="numero"><dt>Contas / sacaram</dt><dd>{{ estado.contas }} / {{ estado.participantes }}</dd></div>
   </dl>
-  <p class="text-muted">
-    &ldquo;Cunhado depois&rdquo; é o quanto os ajustes criaram além do dia zero.
-    A conservação vale contra o supply atual, não contra os 5.000.
-  </p>
   <a class="btn btn-outline btn-sm" href="{{ url_for('admin.auditoria') }}">Rodar auditoria</a>
 </div>
 
@@ -67,16 +59,11 @@
 
 <div class="card" id="ajustar">
   <div class="section-title"><i class="ti ti-settings" aria-hidden="true"></i>Ajustar saldo</div>
-  <p class="text-muted">
-    Ajuste para cima <strong>cunha moeda</strong>: se o Banco Central não tiver
-    o bastante em saldo não emitido, a diferença é emitida e o supply cresce. A
-    linha fica no ledger com o motivo — a auditoria continua fechando.
-  </p>
   <form method="post" action="{{ url_for('admin.ajustar') }}">
     {{ form_ajuste.hidden_tag() }}
     {{ campo(form_ajuste.nome_usuario) }}
     {{ campo(form_ajuste.novo_saldo) }}
-    {{ campo(form_ajuste.motivo, "Obrigatório: é o que explica a mudança depois.") }}
+    {{ campo(form_ajuste.motivo) }}
     {{ form_ajuste.enviar(class="btn btn-gold btn-full") }}
   </form>
 </div>
@@ -113,10 +100,6 @@
 
 <div class="card">
   <div class="section-title"><i class="ti ti-shield" aria-hidden="true"></i>Resetar economia</div>
-  <p class="text-muted">
-    Recolhe o saldo de <strong>todo mundo</strong>, sem exceção, e redistribui
-    os 50 para quem tem convite resgatado. Não tem desfazer.
-  </p>
   <form method="post" action="{{ url_for('admin.reset') }}">
     {{ form_reset.hidden_tag() }}
     {{ campo(form_reset.motivo) }}

@@ -19,14 +19,12 @@
   </div>
   {% endif %}
 
-  <p class="text-muted">Depois de confirmar não tem desfazer: peça de volta a quem recebeu.</p>
-
   <form method="post">
     {{ formulario.hidden_tag() }}
     {{ formulario.token(type="hidden") }}
     {{ formulario.enviar(class="btn btn-gold btn-full") }}
   </form>
   <hr>
-  <a href="{{ url_for('carteira.transferir_passo1') }}">Cancelar e refazer</a>
+  <a href="{{ url_for('carteira.transferir_passo1') }}">Cancelar</a>
 </div>
 {% endblock %}

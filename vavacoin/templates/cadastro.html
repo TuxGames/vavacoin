@@ -5,19 +5,17 @@
 <div class="centro">
   <div class="card">
     <h1>Criar conta</h1>
-    <p class="text-muted">
-      O convite é seu, não da conta: vale uma vez só. Ao usá-lo você saca
-      50 VVC do que já existe.
-    </p>
     <form method="post">
       {{ formulario.hidden_tag() }}
       {{ campo(formulario.codigo) }}
-      {{ campo(formulario.nome_usuario, "Minúsculas, números, ponto, hífen ou sublinhado.") }}
-      {{ campo(formulario.nome_exibicao, "É o que os outros veem.") }}
+      {{ campo(formulario.nome_usuario) }}
+      {{ campo(formulario.nome_exibicao) }}
       {{ campo(formulario.senha) }}
       {{ campo(formulario.confirmacao) }}
       {{ formulario.enviar(class="btn btn-gold btn-full") }}
     </form>
+    <hr>
+    <a href="{{ url_for('auth.login') }}">Já tenho conta</a>
   </div>
 </div>
 {% endblock %}

@@ -3,8 +3,6 @@
 {% block conteudo %}
 
 {% if current_user.is_authenticated %}
-  {# DASHBOARD — mesma disposição do Benbals: saldo em destaque, transferência
-     logo abaixo, extrato embaixo. É a ordem que onze pessoas já usaram. #}
   <div class="hero">
     <div class="hero-orb"></div>
     <div class="hero-label">Seu saldo</div>
@@ -21,7 +19,6 @@
     {{ formulario.hidden_tag() }}
     <div class="campo">
       {{ formulario.destinatario(class="form-control", placeholder="usuário (ex: joao)", required=true) }}
-      <small class="ajuda-campo">Quem recebe. Pode escrever com acento e maiúscula.</small>
       {% if formulario.destinatario.errors %}
         <span class="erro-campo">{{ formulario.destinatario.errors|join(" ") }}</span>
       {% endif %}
@@ -33,14 +30,13 @@
       {% endif %}
     </div>
     <div class="campo">
-      {{ formulario.motivo(class="form-control", placeholder="por quê (aparece no extrato dos dois)") }}
+      {{ formulario.motivo(class="form-control", placeholder="por quê") }}
       {% if formulario.motivo.errors %}
         <span class="erro-campo">{{ formulario.motivo.errors|join(" ") }}</span>
       {% endif %}
     </div>
     <button type="submit" class="btn btn-gold btn-full">Enviar VavaCoin</button>
   </form>
-  <small class="ajuda-campo">Você revisa antes de qualquer coisa sair da sua conta.</small>
 </div>
 
   <div class="card">
@@ -55,18 +51,12 @@
   </div>
 
 {% else %}
-  <div class="card">
-    <h1>VavaCoin</h1>
-    <p class="text-muted">
-      A economia da turma. Cinco mil VVC existiam no dia zero, e quem cunhou
-      depois disso está no ledger, com nome e motivo.
-    </p>
-    <ul>
-      <li>Quem entra <strong>saca 50</strong> do que já existe — não é dinheiro novo.</li>
-      <li>Entra quem tem <strong>convite</strong>. Um por pessoa.</li>
-      <li>A moeda paga coisa da vida real; o site só registra a transferência.</li>
-    </ul>
-    <a class="btn btn-gold" href="{{ url_for('auth.cadastro') }}">Tenho um convite</a>
+  <div class="centro">
+    <div class="card">
+      <h1>VavaCoin</h1>
+      <p><a class="btn btn-gold btn-full" href="{{ url_for('auth.cadastro') }}">Tenho um convite</a></p>
+      <p><a class="btn btn-outline btn-full" href="{{ url_for('auth.login') }}">Entrar</a></p>
+    </div>
   </div>
 {% endif %}
 

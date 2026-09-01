@@ -12,10 +12,7 @@
       {{ formulario.enviar(class="btn btn-gold btn-full") }}
     </form>
     <hr>
-    <p class="text-muted">
-      Sem conta? Só entra quem tem
-      <a href="{{ url_for('auth.cadastro') }}">convite</a>.
-    </p>
+    <a href="{{ url_for('auth.cadastro') }}">Tenho um convite</a>
   </div>
 </div>
 {% endblock %}

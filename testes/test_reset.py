@@ -14,7 +14,7 @@ from vavacoin.operacoes import resetar_economia
 def test_reset_devolve_tudo_e_redistribui(app, bc, nova_pessoa):
     ana = nova_pessoa(com_convite=True)
     bia = nova_pessoa(com_convite=True)
-    mover(ana, bia, "40.00", motivo="quebrou no caladinho")
+    mover(ana, bia, "40.00", motivo="quebrou no mines")
     db.session.commit()
     assert (ana.saldo, bia.saldo) == (Decimal("10.00"), Decimal("90.00"))
     conservacao()

@@ -7,7 +7,6 @@
     {{ formulario.hidden_tag() }}
     <div class="campo">
       {{ formulario.destinatario(class="form-control", placeholder="usuário (ex: joao)", required=true) }}
-      <small class="ajuda-campo">Quem recebe. Pode escrever com acento e maiúscula.</small>
       {% if formulario.destinatario.errors %}
         <span class="erro-campo">{{ formulario.destinatario.errors|join(" ") }}</span>
       {% endif %}
@@ -19,13 +18,12 @@
       {% endif %}
     </div>
     <div class="campo">
-      {{ formulario.motivo(class="form-control", placeholder="por quê (aparece no extrato dos dois)") }}
+      {{ formulario.motivo(class="form-control", placeholder="por quê") }}
       {% if formulario.motivo.errors %}
         <span class="erro-campo">{{ formulario.motivo.errors|join(" ") }}</span>
       {% endif %}
     </div>
     <button type="submit" class="btn btn-gold btn-full">Enviar VavaCoin</button>
   </form>
-  <small class="ajuda-campo">Você revisa antes de qualquer coisa sair da sua conta.</small>
 </div>
 {% endblock %}

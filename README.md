@@ -73,6 +73,19 @@ A soma continuar 5.000,00 não prova nada sozinha — quem tira de um e põe no
 outro por fora do `mover()` conserva a massa. `auditoria` reconstrói todo saldo
 a partir do ledger e acusa a diferença; tem teste exatamente desse caso.
 
+## A tela não explica nada
+
+Regra do projeto: **se a frase existe para convencer alguém de alguma coisa,
+ela não vai para a tela.** A interface mostra número, botão e o que aconteceu.
+
+Fica: mensagem de erro e de resultado, rótulo de campo, texto de ajuda curto
+quando sem ele a pessoa não sabe o que digitar, e a confirmação da
+transferência (valor e destinatário — é a única proteção contra mandar
+errado).
+
+Sai: aviso, lista de tópicos, justificativa de decisão. O raciocínio de
+projeto mora no `CLAUDE.md`, que é onde alguém vai procurá-lo.
+
 ## O visual veio do Benbals
 
 A casca (paleta, espaçamento, cards, hero de saldo, extrato com barra lateral

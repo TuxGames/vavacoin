@@ -5,6 +5,8 @@
 <div class="campo">
   {{ f.label }}
   {{ f(class="form-control") }}
+  {# `ajuda` só para quando sem ela a pessoa não sabe o que digitar. Nunca
+     para explicar por que a tela existe — isso vive no CLAUDE.md. #}
   {% if ajuda %}<small class="ajuda">{{ ajuda }}</small>{% endif %}
   {% if f.errors %}
     <span class="erro-campo">{{ f.errors|join(" ") }}</span>

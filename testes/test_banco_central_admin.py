@@ -183,7 +183,7 @@ def test_reset_recolhe_do_dono_do_cassino_tambem(app, bc, nova_pessoa):
     """Sem exceção: o reset é o que desfaz a concentração."""
     dono = nova_pessoa(com_convite=True)
     otario = nova_pessoa(com_convite=True)
-    mover(otario, dono, "50.00", motivo="mines")
+    mover(otario, dono, "50.00", motivo="mines do Caladinho")
     db.session.commit()
     assert dono.saldo == Decimal("100.00")
     conservacao()

@@ -9,14 +9,13 @@
     <div class="perfil-user">{{ alvo.nome_usuario }} &middot; {{ alvo.saldo }} VVC</div>
   </div>
 </div>
-<p class="text-muted">Esta consulta ficou registrada no diário do painel.</p>
 
 <div class="card">
   <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Extrato</div>
   {% if linhas %}
     {% for linha in linhas %}{{ linha_extrato(linha) }}{% endfor %}
   {% else %}
-    <p class="vazio">Nada ainda.</p>
+    <p class="vazio">Nenhuma transação ainda.</p>
   {% endif %}
 </div>
 <a class="btn btn-outline btn-sm" href="{{ url_for('admin.painel') }}">Voltar ao painel</a>
