@@ -401,6 +401,33 @@ label { font-size: 14px; color: var(--muted); margin-bottom: 5px; display: block
 .tabela .numerico { text-align: right; white-space: nowrap; }
 .rolagem { overflow-x: auto; }
 
+/* ── TABELA COM EDIÇÃO NA LINHA (painel) ──
+   Campos pequenos dentro da célula: digita o número novo, salva, acabou. */
+.forma-linha { display: none; }
+.tabela-edicao td { vertical-align: middle; }
+.tabela-edicao .col-id { color: var(--muted); font-variant-numeric: tabular-nums; }
+.entrada-linha {
+    width: 100%; min-width: 6rem;
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-hi);
+    font: inherit; font-size: 14px;
+    padding: 7px 9px;
+    min-height: 38px;
+}
+.entrada-linha::placeholder { color: var(--muted-2); }
+.entrada-linha:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 2px rgba(245,196,81,.15);
+}
+.entrada-numero { text-align: right; min-width: 7rem; }
+.linha-erro td {
+    color: var(--red); font-size: 13px;
+    padding-top: 0; border-bottom: 1px solid var(--border-soft);
+}
+
 /* ── CENTRALIZADO (entrar / cadastro) ── */
 .centro { max-width: 420px; margin: 0 auto; }
 

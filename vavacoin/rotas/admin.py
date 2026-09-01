@@ -28,17 +28,20 @@ from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
 from ..auditoria import auditar, estado_da_economia, linhas_extrato
-from ..erros import ErroMonetario
+from ..erros import ErroMonetario, ValorInvalido
 from ..extensoes import db
 from ..caladinho import casa as casa_do_cassino
 from ..caladinho import criar_casa, exposicao_comprometida, limite_de_aposta
 from ..formularios import (
+    MOTIVO_PADRAO,
     FormularioAjusteDeSaldo,
     FormularioCriarConta,
     FormularioEmitirConvite,
+    FormularioLinhaDaConta,
     FormularioReset,
     FormularioVisibilidadeDoCaixa,
 )
+from ..nomes import normalizar_nome
 from ..modelos import (
     CHAVE_CAIXA_VISIVEL,
     Convite,
@@ -89,11 +92,17 @@ def _formularios():
 
 
 def _pagina(**extras):
+    # Todas as contas, inclusive as de sistema: o Banco Central e a casa do
+    # Caladinho aparecem para consulta. Quem não pode ser editado a tela
+    # mostra sem campo — a regra de verdade está na rota, não no HTML.
     contas = list(
         db.session.execute(
-            db.select(Usuario)
-            .where(Usuario.eh_banco_central.is_(False))
-            .order_by(Usuario.saldo.desc(), Usuario.nome_usuario)
+            db.select(Usuario).order_by(
+                Usuario.eh_banco_central.desc(),
+                Usuario.eh_cassino.desc(),
+                Usuario.saldo.desc(),
+                Usuario.nome_usuario,
+            )
         ).scalars()
     )
     convites_livres = list(
@@ -112,6 +121,8 @@ def _pagina(**extras):
     contexto = {
         "estado": estado_da_economia(),
         "contas": contas,
+        "linhas": {c.id: FormularioLinhaDaConta(saldo=str(c.saldo)) for c in contas},
+        "erro_na_linha": {},
         "convites_livres": convites_livres,
         "registros": registros,
         "casa": conta_da_casa,
@@ -168,6 +179,61 @@ def criar_conta():
     return redirect(url_for("admin.painel"))
 
 
+@bp.route("/conta/<int:conta_id>", methods=["POST"])
+def salvar_conta(conta_id):
+    """Salva nome, senha e saldo de uma conta, direto da linha da tabela.
+
+    O saldo continua passando por ``ajustar_saldo`` — nunca por ``UPDATE`` na
+    linha. A tabela mudou a tela, não o caminho do dinheiro: sem isso a
+    auditoria pararia de fechar no primeiro ajuste.
+    """
+    conta = db.session.get(Usuario, conta_id)
+    if conta is None:
+        abort(404)
+
+    formulario = FormularioLinhaDaConta()
+    if not formulario.validate_on_submit():
+        erros = " ".join(
+            m for campo in formulario for m in campo.errors
+        )
+        return _pagina(erro_na_linha={conta_id: erros or "dados inválidos"}), 400
+
+    motivo = (formulario.motivo.data or "").strip() or MOTIVO_PADRAO
+    novo_nome = (formulario.nome_usuario.data or "").strip()
+    nova_senha = formulario.senha.data or ""
+
+    try:
+        # Renomear: "joao" para "João" é a mesma pessoa; para um nome que já
+        # é de outra conta, não.
+        if novo_nome and normalizar_nome(novo_nome) != conta.nome_normalizado:
+            if conta.eh_conta_de_sistema:
+                raise ValorInvalido("conta de sistema não é renomeada")
+            if buscar_usuario(novo_nome) is not None:
+                raise ValorInvalido(f"já existe uma conta chamada {novo_nome}")
+        if novo_nome and novo_nome != conta.nome_usuario:
+            if conta.eh_conta_de_sistema:
+                raise ValorInvalido("conta de sistema não é renomeada")
+            conta.definir_nome(novo_nome)
+
+        if nova_senha:
+            if conta.eh_cassino:
+                raise ValorInvalido("a casa do Caladinho não entra pelo site")
+            conta.definir_senha(nova_senha)
+
+        if formulario.saldo.decimal != conta.saldo:
+            ajustar_saldo(
+                conta, formulario.saldo.decimal, motivo, autoridade=current_user
+            )
+        db.session.commit()
+    except (ErroMonetario, ValueError) as erro:
+        db.session.rollback()
+        current_app.logger.info("edição da conta %s recusada: %s", conta_id, erro)
+        return _pagina(erro_na_linha={conta_id: str(erro)}), 400
+
+    flash(f"{conta.nome_usuario} salvo.", "ok")
+    return redirect(url_for("admin.painel"))
+
+
 @bp.route("/saldo", methods=["POST"])
 def ajustar():
     """Conserta o saldo de alguém. Para cima, cunha — e o ledger diz quanto."""
@@ -185,7 +251,7 @@ def ajustar():
         ajustar_saldo(
             alvo,
             formulario.novo_saldo.decimal,
-            formulario.motivo.data.strip(),
+            (formulario.motivo.data or "").strip() or MOTIVO_PADRAO,
             autoridade=current_user,
         )
         db.session.commit()

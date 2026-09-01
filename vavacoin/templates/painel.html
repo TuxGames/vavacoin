@@ -28,31 +28,78 @@
 <div class="card">
   <div class="section-title"><i class="ti ti-user" aria-hidden="true"></i>Contas</div>
   {% if contas %}
+  {# Cada linha é um formulário. O <form> não pode ser filho de <tr>, então
+     ele mora fora da tabela e os campos apontam para ele por `form=` — é o
+     jeito padrão de fazer isso sem JavaScript. #}
+  {% for conta in contas %}
+    <form id="linha-{{ conta.id }}" method="post"
+          action="{{ url_for('admin.salvar_conta', conta_id=conta.id) }}"
+          class="forma-linha">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    </form>
+  {% endfor %}
   <div class="rolagem">
-    <table class="tabela">
+    <table class="tabela tabela-edicao">
       <thead>
         <tr>
-          <th>ID</th><th>Usuário</th><th class="numerico">Saldo</th><th>Ações</th>
+          <th>ID</th><th>Usuário</th><th>Senha</th>
+          <th class="numerico">Saldo</th><th>Motivo</th><th></th>
         </tr>
       </thead>
       <tbody>
         {% for conta in contas %}
-        <tr>
-          <td>{{ conta.id }}</td>
+        {% set linha = linhas[conta.id] %}
+        <tr id="conta-{{ conta.id }}">
+          <td class="col-id">{{ conta.id }}</td>
           <td>
-            {{ conta.nome_usuario }}
-            {% if conta.nome_exibicao != conta.nome_usuario %}
-              <div class="ei-sub">{{ conta.nome_exibicao }}</div>
+            {% if conta.eh_conta_de_sistema %}
+              {{ conta.nome_usuario }}
+            {% else %}
+              <input class="entrada-linha" form="linha-{{ conta.id }}"
+                     name="nome_usuario" value="{{ conta.nome_usuario }}"
+                     aria-label="Usuário de {{ conta.nome_usuario }}">
             {% endif %}
           </td>
-          <td class="numerico">{{ conta.saldo }}</td>
           <td>
-            <span class="acoes-linha">
-              <a href="{{ url_for('admin.painel', conta=conta.nome_usuario) }}#ajustar">ajustar</a>
-              <a href="{{ url_for('admin.extrato_de', nome_usuario=conta.nome_normalizado) }}">extrato</a>
-            </span>
+            {% if conta.eh_conta_de_sistema %}
+              <span class="text-muted">—</span>
+            {% else %}
+              <input class="entrada-linha" form="linha-{{ conta.id }}"
+                     name="senha" placeholder="nova senha"
+                     aria-label="Nova senha de {{ conta.nome_usuario }}">
+            {% endif %}
+          </td>
+          <td class="numerico">
+            {% if conta.eh_banco_central %}
+              {{ conta.saldo }}
+            {% else %}
+              <input class="entrada-linha entrada-numero" form="linha-{{ conta.id }}"
+                     name="saldo" type="number" step="0.01" min="0"
+                     value="{{ conta.saldo }}"
+                     aria-label="Saldo de {{ conta.nome_usuario }}">
+            {% endif %}
+          </td>
+          <td>
+            {% if not conta.eh_banco_central %}
+              <input class="entrada-linha" form="linha-{{ conta.id }}"
+                     name="motivo" placeholder="opcional"
+                     aria-label="Motivo do ajuste de {{ conta.nome_usuario }}">
+            {% endif %}
+          </td>
+          <td class="acoes-linha">
+            {% if not conta.eh_banco_central %}
+              <button type="submit" form="linha-{{ conta.id }}"
+                      class="btn btn-gold btn-sm"
+                      aria-label="Salvar {{ conta.nome_usuario }}">Salvar</button>
+            {% endif %}
+            <a href="{{ url_for('admin.extrato_de', nome_usuario=conta.nome_normalizado) }}">extrato</a>
           </td>
         </tr>
+        {% if erro_na_linha.get(conta.id) %}
+        <tr class="linha-erro">
+          <td colspan="6">{{ erro_na_linha[conta.id] }}</td>
+        </tr>
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>
@@ -70,11 +117,11 @@
     <div class="numero"><dt>Comprometido</dt><dd>{{ comprometido }}</dd></div>
     <div class="numero"><dt>Aposta máxima</dt><dd>{{ aposta_max }}</dd></div>
   </dl>
-  {# O caixa é uma conta como outra qualquer: quem põe dinheiro nele é o mesmo
-     ajuste de saldo. O link só evita digitar o nome de novo. #}
+  {# O caixa é uma conta como outra qualquer: quem põe dinheiro nele é a mesma
+     linha da tabela acima. O link só evita procurar. #}
   <p>
     <a class="btn btn-outline btn-sm"
-       href="{{ url_for('admin.painel', conta=casa.nome_usuario) }}#ajustar">Pôr dinheiro no caixa</a>
+       href="{{ url_for('admin.painel') }}#conta-{{ casa.id }}">Pôr dinheiro no caixa</a>
   </p>
   {% endif %}
   <form method="post" action="{{ url_for('admin.cassino') }}">

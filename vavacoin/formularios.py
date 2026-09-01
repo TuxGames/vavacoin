@@ -10,7 +10,14 @@ WTForms faria a conversão por conta própria, e a regra do projeto é que só
 
 from flask_wtf import FlaskForm
 from wtforms import BooleanField, PasswordField, StringField, SubmitField
-from wtforms.validators import DataRequired, EqualTo, Length, Regexp, ValidationError
+from wtforms.validators import (
+    DataRequired,
+    EqualTo,
+    Length,
+    Optional,
+    Regexp,
+    ValidationError,
+)
 
 from .dinheiro import ZERO, para_decimal
 
@@ -108,19 +115,19 @@ class FormularioCriarConta(FlaskForm):
     enviar = SubmitField("Criar conta")
 
 
-class FormularioAjusteDeSaldo(FlaskForm):
-    """Ajuste de saldo: o novo valor e, obrigatoriamente, o porquê.
+#: O que vai para o ledger quando o administrador não escreve um motivo.
+#: Escrever à mão continua valendo mais, mas exigir a frase era o atrito que
+#: fazia ele evitar o painel — e o lançamento sozinho já responde quem, quando
+#: e de quanto para quanto, que é a maior parte do valor.
+MOTIVO_PADRAO = "ajuste pelo painel"
 
-    O motivo é campo obrigatório aqui e no núcleo. Não é burocracia: um saldo
-    que muda sem explicação é indistinguível de um bug, e é o administrador
-    quem vai precisar responder pela mudança daqui a seis meses.
-    """
+
+class FormularioAjusteDeSaldo(FlaskForm):
+    """Ajuste de saldo por nome. O motivo é opcional; em branco vira o padrão."""
 
     nome_usuario = StringField("Usuário", validators=[DataRequired()])
     novo_saldo = StringField("Saldo correto (VVC)", validators=[DataRequired()])
-    motivo = StringField(
-        "Motivo", validators=[DataRequired(), Length(min=3, max=300)]
-    )
+    motivo = StringField("Motivo", validators=[Optional(), Length(max=300)])
     enviar = SubmitField("Ajustar saldo")
 
     def validate_novo_saldo(self, campo):
@@ -131,6 +138,36 @@ class FormularioAjusteDeSaldo(FlaskForm):
             raise ValidationError(
                 "Valor inválido. Use no máximo dois decimais, como 12.50."
             ) from erro
+        if valor < ZERO:
+            raise ValidationError("O saldo não pode ficar negativo.")
+        campo.decimal = valor
+
+
+class FormularioLinhaDaConta(FlaskForm):
+    """Uma linha da tabela de contas do painel, editável.
+
+    Nome, senha e saldo de uma vez, sem sair da tela. Cada campo é opcional:
+    em branco significa "não mexe nisso". O saldo é o único que sempre vem
+    preenchido, porque é o número que a pessoa veio mudar.
+
+    A senha é **de escrita**: com hash bcrypt não há o que mostrar, então o
+    campo troca a senha quando preenchido e não faz nada quando vazio.
+    """
+
+    nome_usuario = StringField(
+        validators=[Optional(), Length(max=50), NOME_USUARIO]
+    )
+    senha = StringField(validators=[Optional(), Length(max=200)])
+    saldo = StringField(validators=[DataRequired()])
+    motivo = StringField(validators=[Optional(), Length(max=300)])
+    enviar = SubmitField("Salvar")
+
+    def validate_saldo(self, campo):
+        """Mesma régua do núcleo: quem decide o que é dinheiro é para_decimal."""
+        try:
+            valor = para_decimal(campo.data.strip().replace(",", "."))
+        except TypeError as erro:
+            raise ValidationError("Valor inválido; use até dois decimais.") from erro
         if valor < ZERO:
             raise ValidationError("O saldo não pode ficar negativo.")
         campo.decimal = valor

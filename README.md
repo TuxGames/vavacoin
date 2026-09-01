@@ -43,7 +43,7 @@ e por `flask auditoria`, na CLI.
 | `/carteira` | seu saldo e seu extrato (só o seu) |
 | `/transferir` | monta a transferência; **não move nada** |
 | `/transferir/confirmar` | mostra valor e destinatário, e só então efetiva |
-| `/painel/` | god mode do Banco Central: economia, contas, ajuste de saldo, convites, reset, diário, Caladinho |
+| `/painel/` | god mode do Banco Central: contas editáveis na linha, convites, reset, diário, Caladinho |
 | `/caladinho/` | o cassino |
 | `/caladinho/mines` | mines: rodada ativa ou resultado da última |
 
@@ -149,6 +149,31 @@ O que é diferente aqui:
 
 A visibilidade do caixa para os jogadores é um **interruptor no painel do
 Banco Central**, guardado no banco — trocar de ideia não exige deploy.
+
+## O painel edita na linha
+
+Como o admin do Benbals: `ID · Usuário · Senha · Saldo · Motivo`, cada linha um
+formulário com botão de salvar. Digita o número novo, salva, acabou.
+
+O que não mudou: **o saldo continua passando por `ajustar_saldo`**, com
+lançamento no ledger e ator. A tabela mudou a tela, não o caminho do dinheiro —
+sem isso a auditoria pararia de fechar no primeiro ajuste.
+
+O motivo é **opcional**; em branco grava `ajuste pelo painel`. Exigir a frase
+era atrito de verdade, e o lançamento sozinho já responde quem, quando e de
+quanto para quanto. O campo continua no modelo e no diário para quem quiser
+escrever.
+
+Detalhes: o campo de senha é **de escrita** (com hash não há o que mostrar) —
+em branco não mexe. Renomear respeita a unicidade normalizada, então `joao` →
+`João` passa e `joao` → nome de outra conta é recusado com a mensagem na
+linha. Banco Central e `caladinho` aparecem para consulta, sem senha e sem
+renomear; o saldo da casa é editável, que é o atalho para pôr dinheiro no
+cassino. Não há excluir conta — é justamente o bug que existe no Benbals.
+
+`<form>` não pode ser filho de `<tr>`, então cada formulário mora fora da
+tabela e os campos apontam para ele pelo atributo `form=`. Padrão, e sem
+JavaScript.
 
 ## O supply para em 10.000
 

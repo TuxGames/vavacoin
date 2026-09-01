@@ -9,7 +9,7 @@ from vavacoin.constantes import SUPPLY_INICIAL
 from vavacoin.extensoes import db
 from vavacoin.limite import limpar_tudo
 from vavacoin.moeda import mover, supply_emitido
-from vavacoin.modelos import Convite, RegistroAdministrativo, Usuario
+from vavacoin.modelos import Convite, RegistroAdministrativo, Transacao, Usuario
 from vavacoin.operacoes import criar_convite
 
 SENHA_BC = "senha-do-banco-central-123"
@@ -171,19 +171,40 @@ def test_ajuste_pela_web_muda_o_saldo_e_fecha_a_auditoria(app, bc, painel):
     conservacao()
 
 
-def test_ajuste_pela_web_sem_motivo_nao_passa(app, bc, painel):
+def test_ajuste_sem_motivo_grava_o_motivo_padrao(app, bc, painel):
+    """Exigir a frase era o atrito; o rastro continua.
+
+    Este teste afirmava o contrário — que sem motivo o ajuste era recusado.
+    A decisão mudou: em branco vira "ajuste pelo painel", e o lançamento
+    continua dizendo quem, quando e de quanto para quanto.
+    """
+    from vavacoin.formularios import MOTIVO_PADRAO
+    from vavacoin.moeda import TIPO_AJUSTE
+
     _cadastrar(app, bc, "ana")
+    conservacao()
+
     resposta = painel.post(
         "/painel/saldo",
-        data={"nome_usuario": "ana", "novo_saldo": "999.00", "motivo": ""},
+        data={"nome_usuario": "ana", "novo_saldo": "80.00", "motivo": ""},
+        follow_redirects=True,
     )
-    assert resposta.status_code == 400
+    assert resposta.status_code == 200
 
     db.session.expire_all()
     ana = db.session.execute(
         db.select(Usuario).where(Usuario.nome_usuario == "ana")
     ).scalar_one()
-    assert ana.saldo == Decimal("50.00")
+    assert ana.saldo == Decimal("80.00")
+
+    linha = (
+        db.session.query(Transacao)
+        .filter_by(tipo=TIPO_AJUSTE)
+        .order_by(Transacao.id.desc())
+        .first()
+    )
+    assert linha.motivo == MOTIVO_PADRAO
+    assert linha.ator_id == bc.id
     conservacao()
 
 
