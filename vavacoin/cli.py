@@ -113,6 +113,22 @@ def comando_senha_bc(senha):
     click.echo("Senha do Banco Central definida.")
 
 
+@click.command("criar-cassino")
+@with_appcontext
+def comando_criar_cassino():
+    """Cria a conta da casa do Caladinho. Idempotente.
+
+    É uma conta no ledger como qualquer outra, com saldo próprio: não é o
+    Banco Central e não é a conta pessoal de ninguém. Nasce sem senha, então
+    não entra pelo site.
+    """
+    from .caladinho import criar_casa
+
+    conta = criar_casa(autoridade=_autoridade())
+    db.session.commit()
+    click.echo(f"Casa do Caladinho: {conta.nome_usuario} — caixa {conta.saldo} VVC")
+
+
 @click.command("conservacao")
 @with_appcontext
 def comando_conservacao():
@@ -197,6 +213,7 @@ def comando_resetar():
 def registrar_comandos(app):
     app.cli.add_command(comando_genese)
     app.cli.add_command(comando_senha_bc)
+    app.cli.add_command(comando_criar_cassino)
     app.cli.add_command(comando_convite)
     app.cli.add_command(comando_criar_conta)
     app.cli.add_command(comando_conservacao)

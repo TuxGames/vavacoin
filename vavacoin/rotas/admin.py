@@ -30,17 +30,23 @@ from sqlalchemy.exc import IntegrityError
 from ..auditoria import auditar, estado_da_economia, linhas_extrato
 from ..erros import ErroMonetario
 from ..extensoes import db
+from ..caladinho import casa as casa_do_cassino
+from ..caladinho import criar_casa, exposicao_comprometida, limite_de_aposta
 from ..formularios import (
     FormularioAjusteDeSaldo,
     FormularioCriarConta,
     FormularioEmitirConvite,
     FormularioReset,
+    FormularioVisibilidadeDoCaixa,
 )
 from ..modelos import (
+    CHAVE_CAIXA_VISIVEL,
     Convite,
     RegistroAdministrativo,
     Usuario,
     buscar_usuario,
+    config_ligada,
+    definir_config,
     registrar_acao,
 )
 from ..operacoes import ajustar_saldo, criar_convite, criar_usuario, resetar_economia
@@ -76,6 +82,9 @@ def _formularios():
         "form_conta": FormularioCriarConta(),
         "form_ajuste": form_ajuste,
         "form_reset": FormularioReset(),
+        "form_caixa": FormularioVisibilidadeDoCaixa(
+            visivel=config_ligada(CHAVE_CAIXA_VISIVEL)
+        ),
     }
 
 
@@ -99,11 +108,16 @@ def _pagina(**extras):
             .limit(30)
         ).scalars()
     )
+    conta_da_casa = casa_do_cassino()
     contexto = {
         "estado": estado_da_economia(),
         "contas": contas,
         "convites_livres": convites_livres,
         "registros": registros,
+        "casa": conta_da_casa,
+        "caixa_visivel": config_ligada(CHAVE_CAIXA_VISIVEL),
+        "comprometido": exposicao_comprometida() if conta_da_casa else None,
+        "aposta_max": limite_de_aposta() if conta_da_casa else None,
     }
     contexto.update(_formularios())
     contexto.update(extras)
@@ -218,6 +232,32 @@ def reset():
     )
     db.session.commit()
     flash(f"Reset concluído para {quantos} participantes.", "ok")
+    return redirect(url_for("admin.painel"))
+
+
+@bp.route("/cassino", methods=["POST"])
+def cassino():
+    """Cria a casa e liga/desliga a exibição do caixa para os jogadores.
+
+    O interruptor é dado no banco, não constante no código: trocar de ideia
+    sobre mostrar o caixa não pode exigir deploy.
+    """
+    formulario = FormularioVisibilidadeDoCaixa()
+    if not formulario.validate_on_submit():
+        return _pagina(form_caixa=formulario), 400
+
+    if casa_do_cassino() is None:
+        criar_casa(autoridade=current_user)
+
+    definir_config(CHAVE_CAIXA_VISIVEL, formulario.visivel.data)
+    registrar_acao(
+        current_user,
+        "cassino",
+        alvo="caixa",
+        detalhe="visível" if formulario.visivel.data else "escondido",
+    )
+    db.session.commit()
+    flash("Caladinho atualizado.", "ok")
     return redirect(url_for("admin.painel"))
 
 

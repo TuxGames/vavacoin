@@ -57,6 +57,24 @@
   {% endif %}
 </div>
 
+<div class="card">
+  <div class="section-title"><i class="ti ti-dice" aria-hidden="true"></i>Caladinho</div>
+  {% if casa %}
+  <dl class="numeros">
+    <div class="numero"><dt>Caixa</dt><dd>{{ casa.saldo }}</dd></div>
+    <div class="numero"><dt>Comprometido</dt><dd>{{ comprometido }}</dd></div>
+    <div class="numero"><dt>Aposta máxima</dt><dd>{{ aposta_max }}</dd></div>
+  </dl>
+  {% endif %}
+  <form method="post" action="{{ url_for('admin.cassino') }}">
+    {{ form_caixa.hidden_tag() }}
+    <div class="campo">
+      {{ form_caixa.visivel() }} {{ form_caixa.visivel.label }}
+    </div>
+    {{ form_caixa.enviar(class="btn btn-outline btn-full") }}
+  </form>
+</div>
+
 <div class="card" id="ajustar">
   <div class="section-title"><i class="ti ti-settings" aria-hidden="true"></i>Ajustar saldo</div>
   <form method="post" action="{{ url_for('admin.ajustar') }}">

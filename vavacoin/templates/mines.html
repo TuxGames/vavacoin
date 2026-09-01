@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block titulo %}Mines — VavaCoin{% endblock %}
+{% block conteudo %}
+<h1>Mines</h1>
+
+{% if rodada %}
+  <dl class="numeros">
+    <div class="numero"><dt>Aposta</dt><dd>{{ rodada.aposta }}</dd></div>
+    <div class="numero">
+      <dt>Multiplicador</dt>
+      <dd class="text-gold">{{ rodada.multiplicador }}× / {{ teto }}×</dd>
+    </div>
+    <div class="numero"><dt>Minas</dt><dd>{{ rodada.minas_escolhidas }}</dd></div>
+    <div class="numero">
+      <dt>{% if rodada.encerrada %}Prêmio{% else %}Se retirar agora{% endif %}</dt>
+      <dd class="{{ 'text-green' if rodada.premio > 0 or not rodada.encerrada else 'text-red' }}">
+        {% if rodada.encerrada %}{{ rodada.premio }}{% else %}{{ rodada.premio_atual }}{% endif %}
+      </dd>
+    </div>
+  </dl>
+
+  <div class="card">
+    <div class="tabuleiro">
+      {% for i in range(casas) %}
+        {% set aberta = i in rodada.reveladas %}
+        {% set mina = rodada.minas and i in rodada.minas %}
+        {% if rodada.encerrada or aberta %}
+          <div class="casa {{ 'casa-mina' if mina else 'casa-segura' }}">
+            {% if mina %}✖{% elif aberta %}◆{% endif %}
+          </div>
+        {% else %}
+          <form method="post" action="{{ url_for('caladinho.revelar') }}" class="casa-forma">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="casa" value="{{ i }}">
+            <button type="submit" class="casa casa-fechada"></button>
+          </form>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {% if rodada.encerrada %}
+      <a class="btn btn-gold btn-full" href="{{ url_for('caladinho.mines') }}">Jogar de novo</a>
+    {% else %}
+      <form method="post" action="{{ url_for('caladinho.sacar') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-gold btn-full"
+                {% if not rodada.reveladas %}disabled{% endif %}>
+          Retirar {{ rodada.premio_atual }} VVC
+        </button>
+      </form>
+    {% endif %}
+  </div>
+
+{% else %}
+  <div class="card">
+    <form method="post" action="{{ url_for('caladinho.comecar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="campo">
+        <label for="aposta">Aposta (máx. {{ aposta_max }})</label>
+        <input class="form-control" id="aposta" name="aposta" type="number"
+               min="0.01" step="0.01" max="{{ aposta_max }}" placeholder="0.00" required>
+      </div>
+      <div class="campo">
+        <label for="minas">Minas</label>
+        <input class="form-control" id="minas" name="minas" type="number"
+               min="{{ min_minas }}" max="{{ max_minas }}" value="{{ minas }}" required>
+      </div>
+      <button type="submit" class="btn btn-gold btn-full">Começar</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="section-title">
+      <i class="ti ti-list-details" aria-hidden="true"></i>{{ minas }} minas · vantagem {{ vantagem }}%
+    </div>
+    <div class="rolagem">
+      <table class="tabela">
+        <thead><tr><th>Casas</th><th class="numerico">Multiplicador</th></tr></thead>
+        <tbody>
+          {% for k, valor in tabela %}
+          <tr><td>{{ k }}</td><td class="numerico">{{ valor }}×</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <hr>
+    <form method="get" action="{{ url_for('caladinho.mines') }}" class="linha-form">
+      <input class="form-control" name="minas" type="number"
+             min="{{ min_minas }}" max="{{ max_minas }}" value="{{ minas }}">
+      <button type="submit" class="btn btn-outline btn-sm">Ver tabela</button>
+    </form>
+  </div>
+{% endif %}
+
+{% if caixa is not none %}
+<dl class="numeros">
+  <div class="numero"><dt>Caixa da casa</dt><dd>{{ caixa }} VVC</dd></div>
+</dl>
+{% endif %}
+
+{% if historico %}
+<div class="card">
+  <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Suas rodadas</div>
+  {% for r in historico %}
+  <div class="row {{ 'row-in' if r.premio > 0 else 'row-out' }}">
+    <div class="row-main">
+      <div>{{ r.minas_escolhidas }} minas · {{ r.casas_reveladas|length }} abertas</div>
+      <div class="ei-sub">{{ r.criada_em.strftime("%d/%m %H:%M") }} · aposta {{ r.aposta }}</div>
+    </div>
+    <div class="row-val {{ 'pos' if r.premio > 0 else 'neg' }}">
+      {% if r.premio > 0 %}+{{ r.premio }}{% else %}-{{ r.aposta }}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

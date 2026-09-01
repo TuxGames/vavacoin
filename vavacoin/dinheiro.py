@@ -10,7 +10,7 @@ float com outro nome. Inteiro é exato em qualquer banco, e a conversão para
 ``Decimal`` acontece na borda.
 """
 
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 
 from sqlalchemy import BigInteger
 from sqlalchemy.types import TypeDecorator
@@ -55,6 +55,20 @@ def para_decimal(valor):
             "(arredondar em silêncio é como massa some)"
         )
     return quantizado
+
+
+def quantizar_para_baixo(valor):
+    """Arredonda para dois decimais **para baixo**.
+
+    Existe separado de :func:`para_decimal`, que recusa precisão abaixo do
+    centavo em vez de arredondar. Aqui arredondar é o certo e o sentido
+    importa: multiplicador e prêmio saem de divisão, e sobra dízima. Para
+    baixo, sempre — a diferença de meio centavo tem que cair para a casa, não
+    contra ela, senão o jogo paga um pouquinho mais do que a tabela promete.
+    """
+    if isinstance(valor, float):
+        raise TypeError("dinheiro não aceita float; use Decimal('...') ou string")
+    return Decimal(valor).quantize(CENTAVO, rounding=ROUND_DOWN)
 
 
 def centavos(valor):

@@ -16,3 +16,7 @@ SUPPLY_INICIAL = Decimal("5000.00")
 
 #: Identificador da conta do Banco Central.
 USUARIO_BANCO_CENTRAL = "banco_central"
+
+#: Identificador da conta da casa. O cassino se chama Caladinho; mines e
+#: roleta são jogos dentro dele.
+USUARIO_CASSINO = "caladinho"

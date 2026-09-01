@@ -23,6 +23,9 @@
     <a href="{{ url_for('carteira.transferir_passo1') }}" class="{{ classe }}"
        {% if request.endpoint == 'carteira.transferir_passo1' %}aria-current="page"{% endif %}>
       <i class="ti ti-send" aria-hidden="true"></i>Transferir</a>
+    <a href="{{ url_for('caladinho.lobby') }}" class="{{ classe }}"
+       {% if request.blueprint == 'caladinho' %}aria-current="page"{% endif %}>
+      <i class="ti ti-dice" aria-hidden="true"></i>Cassino</a>
     <a href="{{ url_for('carteira.perfil') }}" class="{{ classe }}"
        {% if request.endpoint == 'carteira.perfil' %}aria-current="page"{% endif %}>
       <i class="ti ti-user" aria-hidden="true"></i>Perfil</a>

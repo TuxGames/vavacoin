@@ -9,7 +9,7 @@ WTForms faria a conversão por conta própria, e a regra do projeto é que só
 """
 
 from flask_wtf import FlaskForm
-from wtforms import PasswordField, StringField, SubmitField
+from wtforms import BooleanField, PasswordField, StringField, SubmitField
 from wtforms.validators import DataRequired, EqualTo, Length, Regexp, ValidationError
 
 from .dinheiro import ZERO, para_decimal
@@ -148,3 +148,10 @@ class FormularioReset(FlaskForm):
     def validate_confirmacao(self, campo):
         if campo.data.strip() != "RESETAR":
             raise ValidationError("Digite exatamente RESETAR.")
+
+
+class FormularioVisibilidadeDoCaixa(FlaskForm):
+    """Liga e desliga o caixa da casa para os jogadores."""
+
+    visivel = BooleanField("Mostrar o caixa da casa para os jogadores")
+    enviar = SubmitField("Salvar")

@@ -61,6 +61,12 @@ class Usuario(db.Model, UserMixin):
     nome_exibicao = db.Column(db.String(80), nullable=False)
     senha_hash = db.Column(db.String(128), nullable=True)
     eh_banco_central = db.Column(db.Boolean, nullable=False, default=False)
+    #: A conta da casa do Caladinho. É uma conta de verdade no ledger, com
+    #: saldo próprio — não uma coluna de configuração. Separada das duas
+    #: coisas com que não pode se confundir: não é o Banco Central (que
+    #: emite) nem a conta pessoal do dono (que joga). Nasce sem senha, então
+    #: não entra pelo site.
+    eh_cassino = db.Column(db.Boolean, nullable=False, default=False)
     saldo = db.Column(Dinheiro, nullable=False, default=ZERO)
     criado_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
 
@@ -120,6 +126,15 @@ class Usuario(db.Model, UserMixin):
     def eh_admin(self):
         """Quem tem god mode. Hoje, só o Banco Central."""
         return self.eh_banco_central
+
+    @property
+    def eh_conta_de_sistema(self):
+        """Banco Central e casa do cassino: não são jogadores.
+
+        Nenhum dos dois resgata convite nem recebe transferência de gente. O
+        dinheiro chega neles por caminho próprio — ajuste, aposta.
+        """
+        return self.eh_banco_central or self.eh_cassino
 
     def __repr__(self):
         return f"<Usuario {self.nome_usuario} saldo={self.saldo}>"
@@ -259,6 +274,157 @@ def registrar_acao(ator, acao, alvo=None, detalhe=None, motivo=None, sessao=None
     sessao.add(registro)
     sessao.flush()
     return registro
+
+
+class Configuracao(db.Model):
+    """Interruptores do jogo, guardados no banco e não no código.
+
+    Mesma ideia do ``pagina_<x>_visivel`` do Benbals: o que o dono liga e
+    desliga durante o jogo é dado, não constante — senão trocar de ideia
+    exige deploy.
+    """
+
+    __tablename__ = "configuracao"
+
+    id = db.Column(db.Integer, primary_key=True)
+    chave = db.Column(db.String(60), unique=True, nullable=False, index=True)
+    valor = db.Column(db.String(200), nullable=False)
+    atualizado_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, onupdate=agora
+    )
+
+    def __repr__(self):
+        return f"<Configuracao {self.chave}={self.valor}>"
+
+
+#: Se o saldo da casa aparece para os jogadores.
+CHAVE_CAIXA_VISIVEL = "caladinho_caixa_visivel"
+
+
+def config_ligada(chave, padrao=False, sessao=None):
+    """A configuração está ligada? Guardada como "1"/"0"."""
+    sessao = sessao or db.session
+    registro = sessao.execute(
+        db.select(Configuracao).where(Configuracao.chave == chave)
+    ).scalar_one_or_none()
+    if registro is None:
+        return padrao
+    return registro.valor == "1"
+
+
+def definir_config(chave, ligada, sessao=None):
+    """Grava a configuração. Não faz ``commit``."""
+    sessao = sessao or db.session
+    valor = "1" if ligada else "0"
+    registro = sessao.execute(
+        db.select(Configuracao).where(Configuracao.chave == chave)
+    ).scalar_one_or_none()
+    if registro is None:
+        registro = Configuracao(chave=chave, valor=valor)
+        sessao.add(registro)
+    else:
+        registro.valor = valor
+        registro.atualizado_em = agora()
+    sessao.flush()
+    return registro
+
+
+class RodadaMines(db.Model):
+    """Uma rodada de mines. É a fonte da verdade do servidor.
+
+    O tabuleiro (``minas``) mora só aqui e **nunca vai para o cliente
+    enquanto a rodada está ativa** — é o coração do anti-trapaça. O navegador
+    informa qual casa foi clicada; quem decide se era mina é o servidor.
+
+    Estados:
+
+    - ``ativa``: em andamento; dá para revelar casa ou retirar;
+    - ``estourada``: revelou uma mina e perdeu a aposta (já debitada);
+    - ``retirada``: parou e recebeu o prêmio.
+
+    "No máximo uma rodada ativa por jogador" tem duas defesas: o ``FOR
+    UPDATE`` mais a checagem na criação, e um **índice único parcial** no
+    banco. A segunda existe porque a primeira não cobre duas requisições que
+    chegam ao mesmo tempo em processos diferentes.
+    """
+
+    __tablename__ = "rodada_mines"
+
+    ATIVA = "ativa"
+    ESTOURADA = "estourada"
+    RETIRADA = "retirada"
+
+    id = db.Column(db.Integer, primary_key=True)
+    jogador_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    aposta = db.Column(Dinheiro, nullable=False)
+    minas_escolhidas = db.Column(db.Integer, nullable=False)
+
+    #: Posições das minas (0..24), em CSV. SEGREDO DO SERVIDOR enquanto ativa.
+    minas = db.Column(db.String(120), nullable=False)
+    #: Casas seguras já abertas, em CSV.
+    reveladas = db.Column(db.String(120), nullable=False, default="")
+
+    estado = db.Column(db.String(12), nullable=False, default=ATIVA, index=True)
+    #: Multiplicador acumulado, sem teto. Dois decimais exatos, como dinheiro.
+    multiplicador = db.Column(Dinheiro, nullable=False, default=ZERO)
+    premio = db.Column(Dinheiro, nullable=False, default=ZERO)
+
+    #: As duas pontas no ledger. Toda rodada tem aposta; só a retirada tem
+    #: prêmio.
+    transacao_aposta_id = db.Column(
+        db.Integer, db.ForeignKey("transacao.id"), nullable=True
+    )
+    transacao_premio_id = db.Column(
+        db.Integer, db.ForeignKey("transacao.id"), nullable=True
+    )
+
+    criada_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
+    encerrada_em = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    jogador = db.relationship("Usuario", foreign_keys=[jogador_id])
+
+    __table_args__ = (
+        CheckConstraint("aposta > 0", name="ck_rodada_aposta_positiva"),
+        CheckConstraint(
+            "minas_escolhidas >= 1 AND minas_escolhidas <= 24",
+            name="ck_rodada_minas",
+        ),
+        CheckConstraint(
+            "estado IN ('ativa', 'estourada', 'retirada')", name="ck_rodada_estado"
+        ),
+        # Índice único parcial: o banco recusa a segunda rodada ativa do mesmo
+        # jogador, mesmo em corrida entre processos.
+        db.Index(
+            "uq_uma_rodada_ativa_por_jogador",
+            "jogador_id",
+            unique=True,
+            sqlite_where=db.text("estado = 'ativa'"),
+            postgresql_where=db.text("estado = 'ativa'"),
+        ),
+    )
+
+    @staticmethod
+    def _lista(texto):
+        return [int(c) for c in (texto or "").split(",") if c != ""]
+
+    @property
+    def casas_reveladas(self):
+        return self._lista(self.reveladas)
+
+    @property
+    def casas_com_mina(self):
+        return self._lista(self.minas)
+
+    @property
+    def encerrada(self):
+        return self.estado != self.ATIVA
+
+    def __repr__(self):
+        return f"<RodadaMines {self.id} {self.estado} aposta={self.aposta}>"
 
 
 def buscar_usuario(nome, sessao=None):

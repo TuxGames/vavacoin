@@ -43,7 +43,9 @@ e por `flask auditoria`, na CLI.
 | `/carteira` | seu saldo e seu extrato (só o seu) |
 | `/transferir` | monta a transferência; **não move nada** |
 | `/transferir/confirmar` | mostra valor e destinatário, e só então efetiva |
-| `/painel/` | god mode do Banco Central: economia, contas, ajuste de saldo, convites, reset, diário |
+| `/painel/` | god mode do Banco Central: economia, contas, ajuste de saldo, convites, reset, diário, Caladinho |
+| `/caladinho/` | o cassino |
+| `/caladinho/mines` | mines: rodada ativa ou resultado da última |
 
 ## Testes
 
@@ -114,6 +116,32 @@ Aqui isso desceu para `base.css` e o `menu.js` (que já era `addEventListener`,
 então veio quase intacto). O teste `test_nenhum_template_tem_estilo_inline_ou_handler`
 é o juiz: falha se algum voltar.
 
+## Caladinho
+
+O cassino. O primeiro jogo é o **mines**, trazido do `cassino_benbal` — mesma
+matemática (multiplicador como fração de inteiros, uma só divisão no fim),
+mesma vantagem de 2%, mesmo teto de 25×, minas por `secrets` no servidor.
+
+O que é diferente aqui:
+
+- **Sem ficha, sem depósito, sem saque.** A aposta debita VVC pelo `mover()` e
+  o prêmio credita pelo mesmo caminho: dois lançamentos no ledger. A auditoria
+  fecha com rodada ganha, perdida e abandonada no meio.
+- **O caixa é uma conta**, `caladinho`, com saldo próprio. Não é o Banco
+  Central e não é a conta de ninguém. Nasce sem senha, então não entra pelo
+  site. Criada por `flask criar-cassino`.
+- **O teto de banca lê o caixa real**, no momento da aposta, e desconta o que
+  as rodadas ativas já comprometeram. O original não desconta porque lá só há
+  uma rodada ativa por jogador; com vários jogadores ao mesmo tempo, cada
+  aposta passa sozinha e juntas estouram a casa.
+- **Ao bater 25× a rodada encerra e paga.** Continuar seria risco sem prêmio,
+  e prêmio acima do que a casa cobriu na hora da aposta.
+- **Sem JavaScript.** Cada casa é um formulário; o servidor decide e a página
+  recarrega. As minas só aparecem quando a rodada encerra.
+
+A visibilidade do caixa para os jogadores é um **interruptor no painel do
+Banco Central**, guardado no banco — trocar de ideia não exige deploy.
+
 ## Não há saque inicial
 
 O convite dá **entrada na economia, não valor**. Quem resgata começa com zero;
@@ -172,6 +200,8 @@ administrador conserta algo é um alarme que se aprende a ignorar.
 | `vavacoin/static/base.css` | o visual, herdado do Benbals |
 | `vavacoin/static/menu.js` | o menu off-canvas do celular — o único JS do projeto |
 | `vavacoin/nomes.py` | normalização do nome de usuário (acento e caixa) |
+| `vavacoin/mines.py` | a matemática do mines, pura |
+| `vavacoin/caladinho.py` | o cassino onde ela encosta no ledger |
 | `vavacoin/modelos.py` | `Usuario`, `Convite`, `Transacao` (ledger) |
 | `vavacoin/constantes.py` | supply inicial e os identificadores das contas de sistema |
 

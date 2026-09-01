@@ -38,8 +38,8 @@ O invariante deixou de ser um **número** e passou a ser uma **propriedade**:
 não é mais "existem 5.000", é **"todo centavo tem origem registrada"**.
 
 - **Supply inicial de 5.000 VVC**, criados na gênese, todos de uma vez, no
-  Banco Central. O que ninguém sacou fica lá como saldo não emitido — não é
-  "dinheiro do BC", é dinheiro que ainda não entrou em circulação.
+  Banco Central. O que ainda não foi distribuído fica lá como saldo não emitido
+  — não é "dinheiro do BC", é dinheiro que ainda não entrou em circulação.
 - **Só o Banco Central emite**, e só pelo ajuste de saldo. Não existe faucet
   automático, quest que paga, nem nada que cunhe sem uma pessoa ter mandado.
 - **Emitir é sempre um lançamento no ledger**, com ator e motivo obrigatórios,
@@ -49,9 +49,17 @@ não é mais "existem 5.000", é **"todo centavo tem origem registrada"**.
 - **O supply é reconstruído, não constante.** `supply_emitido()` soma todo
   lançamento sem origem. O painel mostra inicial, atual e quanto já foi cunhado
   — quem cunha precisa ver o quanto cunhou.
-- **Quem entra SACA 50 do que já existe**, e só emite se o não emitido acabar.
-- **Os 50 são da pessoa, não da conta.** Amarrados ao código de convite, um por
-  aluno. Sem isso, dez contas viram 500 VVC.
+- **Quem entra começa com zero.** O convite dá **entrada**, não dinheiro. Houve
+  uma fase em que o resgate sacava 50 do Banco Central; foi removido por decisão
+  do dono. O convite continua sendo por pessoa e de uso único — o que ele carrega
+  agora é acesso, não valor.
+- **Todo VVC que entra em circulação passa por um ajuste do Banco Central**, com
+  motivo escrito. A entrada de dinheiro deixou de ser automática e virou decisão
+  explícita, uma a uma. Mais controle e mais rastro; também mais trabalho para
+  quem administra — ninguém tem nada até o BC dar.
+- **Quantas pessoas cabem virou decisão, não divisão.** Enquanto havia saque
+  inicial de 50, o supply comportava 100 pessoas por aritmética. Hoje o limite é
+  o supply e a vontade do BC.
 - **Todo movimento de dinheiro passa por um único caminho** (`mover()`): trava a
   linha, conserva massa, crédito igual a débito. Nenhum caminho paralelo.
 - **A emissão é o ramo sem origem do `mover()`**, não um desvio dele: aceita só
@@ -218,9 +226,14 @@ antes e depois.
 Isso faz do reset o mecanismo real contra a concentração, no lugar da temporada
 que foi descartada: o dinheiro acumula até alguém decidir que já chega.
 
-**Os 50 são redistribuídos a quem tem convite resgatado**, não a quem tem conta.
-Se fosse por conta, criar conta depois do reset viraria jeito de sacar de novo,
-e o reset viraria faucet.
+**O reset só recolhe; não redistribui nada por padrão.** Com o fim do saque
+inicial deixou de existir um valor óbvio para devolver. O parâmetro continua lá,
+então o BC pode redistribuir um valor se quiser — mas é um número que ele
+escolhe na hora, não uma constante escondida no código.
+
+Se um dia voltar a redistribuir, que seja **a quem tem convite resgatado** e não
+a quem tem conta: por conta, criar conta depois do reset viraria jeito de sacar
+de novo, e o reset viraria faucet.
 
 ## Governança
 

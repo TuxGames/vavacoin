@@ -75,3 +75,31 @@ class MotivoObrigatorio(ErroMonetario):
     O motivo é o que transforma um saldo que mudou sozinho numa decisão que
     alguém tomou. Sem ele, o diário do god mode não responde nada.
     """
+
+
+class ErroDeJogo(ErroMonetario):
+    """Base do que impede uma rodada de começar ou de continuar."""
+
+
+class CasaIndisponivel(ErroDeJogo):
+    """A conta da casa ainda não existe (falta `flask criar-cassino`)."""
+
+
+class ApostaAlta(ErroDeJogo):
+    """O prêmio máximo desta aposta passa do que a casa aguenta.
+
+    Recusada **antes** de cobrar. Cobrar e falhar no prêmio é o pior dos
+    mundos: o jogador perde o dinheiro e não tem o jogo.
+    """
+
+
+class RodadaEmAndamento(ErroDeJogo):
+    """Já existe uma rodada ativa. Uma por vez."""
+
+
+class SemRodadaAtiva(ErroDeJogo):
+    """Não há rodada para revelar ou retirar.
+
+    É o que responde ao clique duplo e ao recarregar depois do fim: a segunda
+    tentativa não encontra rodada ativa, então não cobra nem paga de novo.
+    """
