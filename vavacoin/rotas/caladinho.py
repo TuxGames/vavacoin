@@ -30,7 +30,11 @@ from ..caladinho import (
     abrir_porta,
     expirar_torres_abandonadas,
     historico_crash,
+    historico_dados,
     historico_torre,
+    jogar_dados,
+    ultima_rodada_dados,
+    visao_da_rodada_dados,
     rodada_torre_ativa,
     sacar_torre,
     ultima_rodada_torre,
@@ -68,6 +72,15 @@ from ..crash import (
     SEGUNDOS_PARA_DOBRAR,
     TETO_DO_MULTIPLICADOR as TETO_CRASH,
 )
+from ..dados import (
+    MENOR,
+    SENTIDOS,
+    chance as chance_dos_dados,
+    limites_do_alvo,
+    multiplicador_pagavel as multiplicador_pagavel_dados,
+    tabela_de_multiplicadores as tabela_dos_dados,
+)
+from ..dinheiro import quantizar_para_baixo
 from ..torre import (
     MAX_PORTAS,
     MIN_PORTAS,
@@ -77,6 +90,7 @@ from ..torre import (
 from ..modelos import (
     CHAVE_CAIXA_VISIVEL,
     RodadaCrash,
+    RodadaDados,
     RodadaMines,
     RodadaTorre,
     config_ligada,
@@ -488,3 +502,70 @@ def torre_sacar():
         db.session.rollback()
         flash(str(erro), "erro")
     return redirect(url_for("caladinho.torre", rodada=encerrada))
+
+
+@bp.route("/dados")
+def dados():
+    """O formulário e o resultado da última rolagem.
+
+    Não existe rodada ativa aqui: a rodada nasce resolvida. O que a tela
+    precisa é conseguir reler o último resultado depois de um refresh, e é o
+    que ``ultima_rodada_dados`` faz — a mesma lição do tabuleiro em branco.
+    """
+    rodada = None
+    encerrada_id = request.args.get("rodada", type=int)
+    if encerrada_id is not None:
+        encerrada = db.session.get(RodadaDados, encerrada_id)
+        if encerrada is None or encerrada.jogador_id != current_user.id:
+            abort(404)
+        rodada = encerrada
+    elif not request.args.get("nova"):
+        rodada = ultima_rodada_dados(current_user)
+
+    vantagem = vantagem_do_jogo("dados")
+    fator = fator_de(vantagem)
+
+    sentido = request.args.get("sentido") or (rodada.sentido if rodada else MENOR)
+    if sentido not in SENTIDOS:
+        sentido = MENOR
+    minimo, maximo = limites_do_alvo(sentido, fator)
+
+    alvo = request.args.get("alvo", type=int)
+    if alvo is None:
+        alvo = rodada.alvo if rodada else 50
+    alvo = min(max(alvo, minimo), maximo)
+
+    return render_template(
+        "dados.html",
+        rodada=visao_da_rodada_dados(rodada),
+        sentido=sentido,
+        sentidos=SENTIDOS,
+        alvo=alvo,
+        alvo_min=minimo,
+        alvo_max=maximo,
+        multiplicador=multiplicador_pagavel_dados(sentido, alvo, fator),
+        chance=quantizar_para_baixo(chance_dos_dados(sentido, alvo) * 100),
+        vantagem=vantagem,
+        tabela=tabela_dos_dados(sentido, fator),
+        aposta_max=limite_de_aposta(),
+        caixa=_caixa_visivel(),
+        historico=historico_dados(current_user),
+    )
+
+
+@bp.route("/dados/jogar", methods=["POST"])
+def dados_jogar():
+    rodada_id = None
+    try:
+        rodada = jogar_dados(
+            current_user,
+            (request.form.get("aposta") or "").strip().replace(",", "."),
+            request.form.get("sentido"),
+            request.form.get("alvo"),
+        )
+        db.session.commit()
+        rodada_id = rodada.id
+    except (ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.dados", rodada=rodada_id))

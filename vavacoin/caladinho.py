@@ -57,6 +57,13 @@ from .crash import (
     sortear_ponto_de_estouro,
     validar_alvo,
 )
+from .dados import (
+    ganhou as ganhou_nos_dados,
+    multiplicador_pagavel as multiplicador_pagavel_dados,
+    rolar,
+    validar_alvo as validar_alvo_dos_dados,
+    validar_sentido,
+)
 from .torre import (
     altura as altura_da_torre,
     bateu_o_teto as bateu_o_teto_torre,
@@ -77,6 +84,7 @@ from .mines import (
 )
 from .modelos import (
     RodadaCrash,
+    RodadaDados,
     RodadaMines,
     RodadaTorre,
     Transacao,
@@ -95,11 +103,24 @@ TIPO_PREMIO_CRASH = "premio_crash"
 TIPO_APOSTA_TORRE = "aposta_torre"
 TIPO_PREMIO_TORRE = "premio_torre"
 
+TIPO_APOSTA_DADOS = "aposta_dados"
+TIPO_PREMIO_DADOS = "premio_dados"
+
 #: Tudo que é aposta e tudo que é prêmio, de qualquer jogo. O lucro do dono
 #: soma por aqui — assim um jogo novo entra na conta ao ser acrescentado nesta
 #: tupla, e não ao alguém lembrar de mexer no ``lucro_do_dono``.
-TIPOS_DE_APOSTA = (TIPO_APOSTA, TIPO_APOSTA_CRASH, TIPO_APOSTA_TORRE)
-TIPOS_DE_PREMIO = (TIPO_PREMIO, TIPO_PREMIO_CRASH, TIPO_PREMIO_TORRE)
+TIPOS_DE_APOSTA = (
+    TIPO_APOSTA,
+    TIPO_APOSTA_CRASH,
+    TIPO_APOSTA_TORRE,
+    TIPO_APOSTA_DADOS,
+)
+TIPOS_DE_PREMIO = (
+    TIPO_PREMIO,
+    TIPO_PREMIO_CRASH,
+    TIPO_PREMIO_TORRE,
+    TIPO_PREMIO_DADOS,
+)
 
 #: Dinheiro do dono entrando e saindo da casa. É capital, não lucro — por
 #: isso não entra na conta do :func:`lucro_do_dono`.
@@ -1275,4 +1296,159 @@ def visao_da_rodada_torre(rodada):
         "andar_estourado": rodada.andar_estourado,
         "armadilhas": rodada.armadilha_por_andar if rodada.encerrada else None,
         "tabela": tabela_da_torre(rodada.portas, fator_da_rodada),
+    }
+
+
+# --- dados ------------------------------------------------------------------
+#
+# O jogo mais simples dos quatro, e o único que resolve inteiro dentro de uma
+# transação: cobra, rola, paga. Não existe rodada ativa, então não existem as
+# duas dores que os outros têm — nem liquidação para acontecer depois, nem
+# rodada abandonada segurando o caixa da casa.
+#
+# O que continua igual: a rolagem é do servidor, o teto de banca é conferido
+# antes de cobrar E o caixa é conferido antes de pagar, e aposta e prêmio são
+# dois lançamentos por `mover()`.
+
+
+def jogar_dados(jogador, aposta, sentido, alvo, sessao=None, aleatorio=None):
+    """Cobra, rola e paga, tudo de uma vez. Devolve a rodada já resolvida.
+
+    ``aleatorio`` existe para o teste poder fixar a rolagem; em produção é o
+    ``secrets.SystemRandom()``, e o padrão é ele justamente para que esquecer
+    o argumento não vire um dado previsível.
+    """
+    sessao = sessao or db.session
+    aleatorio = aleatorio or secrets.SystemRandom()
+    conta_da_casa = exigir_casa(sessao, travada=True)
+
+    if jogador.eh_conta_de_sistema:
+        raise ValorInvalido("conta de sistema não joga")
+
+    vantagem_da_rodada = vantagem_vigente("dados", sessao)
+    fator = fator_de(vantagem_da_rodada)
+
+    try:
+        sentido = validar_sentido(sentido)
+        alvo = validar_alvo_dos_dados(sentido, alvo, fator)
+    except ValueError as erro:
+        raise ValorInvalido(str(erro)) from erro
+
+    try:
+        aposta = para_decimal(aposta)
+    except TypeError as erro:
+        raise ValorInvalido(str(erro)) from erro
+    if aposta <= ZERO:
+        raise ValorInvalido("a aposta precisa ser maior que zero")
+
+    travado = sessao.execute(
+        select(Usuario).where(Usuario.id == jogador.id).with_for_update()
+    ).scalar_one()
+    if travado.saldo < aposta:
+        raise ValorInvalido(f"você tem {travado.saldo} VVC")
+
+    maximo = limite_de_aposta(sessao)
+    if aposta > maximo:
+        raise ApostaAlta(f"aposta máxima para o caixa de agora: {maximo} VVC")
+
+    fator_pago = multiplicador_pagavel_dados(sentido, alvo, fator)
+    premio_possivel = quantizar_para_baixo(aposta * fator_pago)
+
+    # O caixa é conferido ANTES de cobrar, e não só antes de pagar: aqui as
+    # duas coisas acontecem no mesmo instante, então cobrar sem poder pagar
+    # seria cobrar e devolver — barulho no extrato por nada.
+    if conta_da_casa.saldo + aposta < premio_possivel:
+        raise CaixaComprometido(
+            f"a casa não tem {premio_possivel} VVC agora; procure o dono do cassino"
+        )
+
+    resultado = rolar(aleatorio)
+    venceu = ganhou_nos_dados(sentido, alvo, resultado)
+
+    rodada = RodadaDados(
+        jogador_id=jogador.id,
+        aposta=aposta,
+        vantagem=vantagem_da_rodada,
+        sentido=sentido,
+        alvo=alvo,
+        resultado=resultado,
+        estado=RodadaDados.GANHA if venceu else RodadaDados.PERDIDA,
+        multiplicador=fator_pago if venceu else ZERO,
+        premio=premio_possivel if venceu else ZERO,
+    )
+    sessao.add(rodada)
+    sessao.flush()
+
+    transacao = mover(
+        jogador,
+        conta_da_casa,
+        aposta,
+        tipo=TIPO_APOSTA_DADOS,
+        motivo=f"dados #{rodada.id}",
+        sessao=sessao,
+    )
+    rodada.transacao_aposta_id = transacao.id
+
+    if venceu and premio_possivel > ZERO:
+        premio = mover(
+            conta_da_casa,
+            jogador.id,
+            premio_possivel,
+            tipo=TIPO_PREMIO_DADOS,
+            motivo=f"dados #{rodada.id} · {fator_pago}x",
+            sessao=sessao,
+        )
+        rodada.transacao_premio_id = premio.id
+    sessao.flush()
+    return rodada
+
+
+def ultima_rodada_dados(jogador, sessao=None):
+    """A rodada de dados mais recente, para a tela ter o que mostrar.
+
+    Mesma lição dos outros: o resultado não pode viver só no ``?rodada=`` que
+    o redirect carrega.
+    """
+    sessao = sessao or db.session
+    jogador_id = jogador.id if isinstance(jogador, Usuario) else jogador
+    return (
+        sessao.execute(
+            select(RodadaDados)
+            .where(RodadaDados.jogador_id == jogador_id)
+            .order_by(RodadaDados.id.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def historico_dados(jogador, limite=15, sessao=None):
+    """Rodadas de dados, da mais recente para a mais antiga."""
+    sessao = sessao or db.session
+    return list(
+        sessao.execute(
+            select(RodadaDados)
+            .where(RodadaDados.jogador_id == jogador.id)
+            .order_by(RodadaDados.id.desc())
+            .limit(limite)
+        ).scalars()
+    )
+
+
+def visao_da_rodada_dados(rodada):
+    """O que a tela mostra. Aqui não há segredo a esconder: a rodada já acabou."""
+    if rodada is None:
+        return None
+    return {
+        "id": rodada.id,
+        "estado": rodada.estado,
+        "ganhou": rodada.ganhou,
+        "aposta": rodada.aposta,
+        "vantagem": rodada.vantagem,
+        "sentido": rodada.sentido,
+        "alvo": rodada.alvo,
+        "resultado": rodada.resultado,
+        "multiplicador": rodada.multiplicador,
+        "premio": rodada.premio,
     }

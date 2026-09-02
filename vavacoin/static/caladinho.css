@@ -295,3 +295,26 @@ button.cal-porta-aberta:active { transform: scale(.96); }
     .cal-andar-num { flex-basis: 3.6rem; font-size: 12px; }
     .cal-porta { min-height: 40px; font-size: 17px; }
 }
+
+/* ── Dados ──
+   O número que saiu, grande, verde quando ganhou e vermelho quando perdeu.
+   Mesmo peso do visor do crash: nos dois jogos o número É o resultado. */
+.cal-dado {
+    display: flex; align-items: center; justify-content: center;
+    padding: 32px 16px; margin-bottom: 12px;
+    background: var(--cal-bg-2);
+    border: 1px solid var(--cal-borda);
+    border-radius: 12px;
+    color: var(--cal-txt-mut);
+}
+.cal-dado-numero {
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(2.6rem, 14vw, 4rem);
+    font-weight: 800; letter-spacing: -.03em; line-height: 1;
+}
+.cal-dado-ganhou { color: var(--cal-verde); border-color: var(--cal-verde); }
+.cal-dado-perdeu { color: var(--cal-vermelho); border-color: var(--cal-vermelho); }
+
+/* O <select> herda a caixa do .cal-entrada, mas o Chrome desenha a seta com
+   a cor do sistema se a gente não pedir o contrário. */
+select.cal-entrada { appearance: none; -webkit-appearance: none; }

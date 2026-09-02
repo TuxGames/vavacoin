@@ -718,6 +718,83 @@ class RodadaTorre(db.Model):
         return f"<RodadaTorre {self.id} {self.estado} aposta={self.aposta}>"
 
 
+class RodadaDados(db.Model):
+    """Uma rodada de dados. Nasce **já resolvida**.
+
+    É o único jogo do Caladinho sem estado intermediário: a rolagem, o
+    resultado e os dois lançamentos acontecem dentro da mesma transação do
+    POST da aposta. Não existe rodada ativa, e por isso não existe rodada
+    abandonada prendendo o caixa da casa nem liquidação para acontecer depois.
+
+    A linha continua sendo gravada — e não só o lançamento no ledger — porque
+    é ela que responde "que número saiu?" quando alguém contestar, e porque é
+    dela que a tela relê o resultado depois de um refresh. A lição do
+    tabuleiro em branco vale aqui igual: resultado que só vive no redirect
+    some quando a rede falha.
+    """
+
+    __tablename__ = "rodada_dados"
+
+    GANHA = "ganha"
+    PERDIDA = "perdida"
+
+    id = db.Column(db.Integer, primary_key=True)
+    jogador_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    aposta = db.Column(Dinheiro, nullable=False)
+    #: A vantagem no instante da aposta, em pontos percentuais. Aqui ela não
+    #: precisa proteger rodada aberta — não existe rodada aberta —, mas fica
+    #: gravada porque é o que explica o multiplicador desta linha seis meses
+    #: depois, quando a vantagem vigente já for outra.
+    vantagem = db.Column(Dinheiro, nullable=False, default=Decimal("2.00"))
+
+    #: "menor" ou "maior".
+    sentido = db.Column(db.String(6), nullable=False)
+    alvo = db.Column(db.Integer, nullable=False)
+    #: O que o servidor rolou, de 1 a 100.
+    resultado = db.Column(db.Integer, nullable=False)
+
+    estado = db.Column(db.String(8), nullable=False, index=True)
+    multiplicador = db.Column(Dinheiro, nullable=False, default=ZERO)
+    premio = db.Column(Dinheiro, nullable=False, default=ZERO)
+
+    transacao_aposta_id = db.Column(
+        db.Integer, db.ForeignKey("transacao.id"), nullable=True
+    )
+    transacao_premio_id = db.Column(
+        db.Integer, db.ForeignKey("transacao.id"), nullable=True
+    )
+
+    criada_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
+
+    jogador = db.relationship("Usuario", foreign_keys=[jogador_id])
+
+    __table_args__ = (
+        CheckConstraint("aposta > 0", name="ck_dados_aposta_positiva"),
+        CheckConstraint("alvo >= 1 AND alvo <= 99", name="ck_dados_alvo"),
+        CheckConstraint(
+            "resultado >= 1 AND resultado <= 100", name="ck_dados_resultado"
+        ),
+        CheckConstraint("sentido IN ('menor', 'maior')", name="ck_dados_sentido"),
+        CheckConstraint("estado IN ('ganha', 'perdida')", name="ck_dados_estado"),
+    )
+
+    @property
+    def ganhou(self):
+        return self.estado == self.GANHA
+
+    @property
+    def encerrada(self):
+        """Sempre. Existe para a tela tratar os quatro jogos do mesmo jeito."""
+        return True
+
+    def __repr__(self):
+        return f"<RodadaDados {self.id} {self.estado} aposta={self.aposta}>"
+
+
 def buscar_usuario(nome, sessao=None):
     """Acha a conta pelo nome, comparando a forma normalizada.
 

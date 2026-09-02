@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block titulo %}Dados — VavaCoin{% endblock %}
+{% block estilos %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='caladinho.css') }}">
+{% endblock %}
+{% block conteudo %}
+<div class="caladinho">
+<div class="cal-grid">
+
+  {# ---------------- Coluna esquerda: a aposta ---------------- #}
+  <div class="cal-card">
+    <h1>🎲 Dados</h1>
+
+    <form method="post" action="{{ url_for('caladinho.dados_jogar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="cal-campo">
+        <label for="aposta">Aposta (VVC)</label>
+        <input class="cal-entrada" id="aposta" name="aposta" type="number"
+               inputmode="decimal" step="0.01" min="0.01" max="{{ aposta_max }}"
+               placeholder="0.00" required>
+      </div>
+      <div class="cal-campo">
+        <label for="sentido">Sentido</label>
+        <select class="cal-entrada" id="sentido" name="sentido">
+          {% for s in sentidos %}
+          <option value="{{ s }}" {% if s == sentido %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="cal-campo">
+        <label for="alvo">Alvo</label>
+        <input class="cal-entrada" id="alvo" name="alvo" type="number"
+               inputmode="numeric" step="1"
+               min="{{ alvo_min }}" max="{{ alvo_max }}" value="{{ alvo }}" required>
+      </div>
+      <button type="submit" class="cal-btn cal-btn-verde">Rolar</button>
+    </form>
+
+    <div class="cal-stats">
+      <div>Aposta máxima: <b>{{ aposta_max }}</b> VVC</div>
+      <div>Vantagem: <b>{{ vantagem }}%</b></div>
+      {% if caixa is not none %}
+      <div>Caixa da casa: <b>{{ caixa }}</b> VVC</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ---------------- Coluna direita: o dado ---------------- #}
+  <div class="cal-card">
+    {% if rodada %}
+      <div class="cal-dado {{ 'cal-dado-ganhou' if rodada.ganhou else 'cal-dado-perdeu' }}">
+        <span class="cal-dado-numero">{{ rodada.resultado }}</span>
+      </div>
+      <div class="cal-stats">
+        <div>Aposta: <b>{{ rodada.aposta }}</b> VVC</div>
+        <div>{{ rodada.sentido }} que <b>{{ rodada.alvo }}</b></div>
+        <div>Vantagem: <b>{{ rodada.vantagem }}%</b></div>
+        <div>Multiplicador: <b>{{ rodada.multiplicador }}×</b></div>
+        <div>Prêmio:
+          <b class="{{ 'cal-ganhou' if rodada.ganhou else 'cal-perdeu' }}">{{ rodada.premio }}</b> VVC</div>
+      </div>
+    {% else %}
+      <div class="cal-dado">
+        <span class="cal-dado-numero">?</span>
+      </div>
+    {% endif %}
+
+    {# A tabela é a mesma ideia do mines: o que cada alvo paga, à vista, antes
+       de apostar. Recarrega ao trocar de sentido porque a faixa muda junto. #}
+    <div class="cal-rolagem">
+      <table class="cal-tabela">
+        <thead>
+          <tr><th>{{ sentido }}</th><th class="cal-num">chance</th><th class="cal-num">paga</th></tr>
+        </thead>
+        <tbody>
+          {% for a, ch, mult in tabela %}
+          <tr>
+            <td><a href="{{ url_for('caladinho.dados', sentido=sentido, alvo=a, nova=1) }}">{{ a }}</a></td>
+            <td class="cal-num">{{ ch }}%</td>
+            <td class="cal-num">{{ mult }}×</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ---------------- Histórico ---------------- #}
+  <div class="cal-card">
+    <h2>Últimas</h2>
+    {% if historico %}
+      {% for r in historico %}
+      <div class="cal-linha">
+        <div>
+          <div>{{ r.aposta }} VVC · {{ r.sentido }} que {{ r.alvo }}</div>
+          <div class="cal-linha-sub">saiu {{ r.resultado }} · {{ r.multiplicador }}×</div>
+        </div>
+        <div class="{{ 'cal-ganhou' if r.ganhou else 'cal-perdeu' }}">
+          {{ '+' if r.ganhou else '−' }}{{ r.premio if r.ganhou else r.aposta }}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="cal-vazio">Nenhuma rodada ainda.</div>
+    {% endif %}
+  </div>
+
+</div>
+</div>
+{% endblock %}
