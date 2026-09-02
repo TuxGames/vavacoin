@@ -130,6 +130,21 @@ def test_comprovante_inexistente_responde_igual_a_um_negado(app, cena):
     assert "Comprovante não encontrado." in inexistente.get_data(as_text=True)
 
 
+def test_inexistente_nao_quebra_nem_para_o_banco_central(app, cena):
+    """O god mode passa pelo gate de acesso, então precisa do de existência.
+
+    Enquanto a checagem de acesso e a de existência eram a mesma expressão, o
+    Banco Central era o único que a atravessava com a transação em ``None`` —
+    e o número que ninguém usou virava erro 500 só para ele.
+    """
+    resposta = _entrar(app, "banco_central", SENHA_BC).get(
+        "/comprovante/999999", follow_redirects=True
+    )
+
+    assert resposta.status_code == 200
+    assert "Comprovante não encontrado." in resposta.get_data(as_text=True)
+
+
 # --- o comprovante não é uma operação ---------------------------------------
 
 
