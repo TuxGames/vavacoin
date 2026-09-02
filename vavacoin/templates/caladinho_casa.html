@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titulo %}Casa — VavaCoin{% endblock %}
+{% block estilos %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='caladinho.css') }}">
+{% endblock %}
+{% block conteudo %}
+<div class="caladinho">
+  <h1>Casa</h1>
+
+  <div class="cal-card">
+    <div class="cal-stats">
+      <div>Caixa: <b>{{ caixa }}</b> VVC</div>
+      <div>Comprometido: <b>{{ comprometido }}</b> VVC</div>
+      <div>Livre: <b>{{ livre }}</b> VVC</div>
+      <div>
+        Lucro desde {{ desde.strftime("%d/%m/%Y") }}:
+        <b class="{{ 'cal-ganhou' if lucro > 0 else ('cal-perdeu' if lucro < 0 else '') }}">{{ lucro }}</b> VVC
+      </div>
+    </div>
+  </div>
+
+  <div class="cal-card">
+    <h2>Aportar</h2>
+    <form method="post" action="{{ url_for('caladinho.casa_aportar') }}">
+      {{ formulario.hidden_tag() }}
+      <div class="cal-campo">
+        {{ formulario.valor(class="cal-entrada", type="number", min="0.01",
+                            step="0.01", placeholder="0.00", required=true) }}
+      </div>
+      <button type="submit" class="cal-btn cal-btn-verde">Aportar</button>
+    </form>
+  </div>
+
+  <div class="cal-card">
+    <h2>Retirar</h2>
+    <form method="post" action="{{ url_for('caladinho.casa_retirar') }}">
+      {{ formulario.hidden_tag() }}
+      <div class="cal-campo">
+        <input class="cal-entrada" name="valor" type="number" min="0.01"
+               step="0.01" max="{{ livre }}" placeholder="0.00" required>
+      </div>
+      <button type="submit" class="cal-btn cal-btn-amarelo"
+              {% if livre <= 0 %}disabled{% endif %}>Retirar (máx. {{ livre }})</button>
+    </form>
+  </div>
+
+  <a class="cal-btn cal-btn-neutro" href="{{ url_for('caladinho.lobby') }}">Voltar</a>
+</div>
+{% endblock %}

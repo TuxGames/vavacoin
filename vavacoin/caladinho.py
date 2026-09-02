@@ -32,8 +32,10 @@ from .constantes import USUARIO_CASSINO
 from .dinheiro import ZERO, para_decimal, quantizar_para_baixo
 from .erros import (
     ApostaAlta,
+    CaixaComprometido,
     CasaIndisponivel,
     RodadaEmAndamento,
+    SemAutoridade,
     SemRodadaAtiva,
     ValorInvalido,
 )
@@ -47,11 +49,16 @@ from .mines import (
     premio_maximo,
     validar_minas,
 )
-from .modelos import RodadaMines, Usuario, agora
+from .modelos import RodadaMines, Transacao, Usuario, agora
 from .moeda import mover
 
 TIPO_APOSTA = "aposta_mines"
 TIPO_PREMIO = "premio_mines"
+
+#: Dinheiro do dono entrando e saindo da casa. É capital, não lucro — por
+#: isso não entra na conta do :func:`lucro_do_dono`.
+TIPO_APORTE = "aporte_caladinho"
+TIPO_RETIRADA = "retirada_caladinho"
 
 
 # --- a casa -----------------------------------------------------------------
@@ -93,6 +100,145 @@ def criar_casa(autoridade=None, sessao=None):
     sessao.flush()
     registrar_acao(bc, "cassino", alvo=conta.nome_usuario, sessao=sessao)
     return conta
+
+
+# --- posse ------------------------------------------------------------------
+
+
+def dono(sessao=None):
+    """A conta de quem é a casa, ou ``None`` se ninguém assumiu."""
+    sessao = sessao or db.session
+    conta = casa(sessao)
+    if conta is None or conta.dono_id is None:
+        return None
+    return sessao.get(Usuario, conta.dono_id)
+
+
+def definir_dono(alvo, autoridade=None, sessao=None):
+    """Aponta o dono da casa. Poder do Banco Central.
+
+    Marca também **desde quando**, que é a data de onde o lucro passa a ser
+    somado. Trocar de dono é só chamar de novo: a posse é fixa por decisão do
+    projeto, não por o código não saber fazer outra coisa.
+    """
+    from .autoridade import exigir_banco_central
+    from .modelos import registrar_acao
+
+    sessao = sessao or db.session
+    bc = exigir_banco_central(autoridade, sessao)
+    conta = exigir_casa(sessao)
+
+    if alvo is not None and alvo.eh_conta_de_sistema:
+        raise ValorInvalido("conta de sistema não é dona do cassino")
+
+    conta.dono_id = alvo.id if alvo is not None else None
+    conta.dono_desde = agora() if alvo is not None else None
+    sessao.flush()
+    registrar_acao(
+        bc,
+        "cassino",
+        alvo=alvo.nome_usuario if alvo is not None else None,
+        detalhe="dono do Caladinho",
+        sessao=sessao,
+    )
+    return conta
+
+
+def lucro_do_dono(sessao=None):
+    """Quanto a casa ganhou desde que o dono assumiu.
+
+    Apostas recebidas menos prêmios pagos, somados do ledger a partir de
+    ``dono_desde``. Aporte e retirada ficam de fora de propósito: mexer no
+    próprio caixa não é lucro nem prejuízo.
+
+    Somado do ledger, e não guardado: um contador à parte diverge do que de
+    fato aconteceu, e ninguém percebe até alguém conferir.
+    """
+    sessao = sessao or db.session
+    conta = casa(sessao)
+    if conta is None or conta.dono_desde is None:
+        return ZERO
+
+    total = ZERO
+    for transacao in sessao.execute(
+        select(Transacao).where(
+            Transacao.criado_em >= conta.dono_desde,
+            Transacao.tipo.in_((TIPO_APOSTA, TIPO_PREMIO)),
+        )
+    ).scalars():
+        if transacao.destino_id == conta.id:
+            total += transacao.valor
+        elif transacao.origem_id == conta.id:
+            total -= transacao.valor
+    return total
+
+
+def livre_para_retirar(sessao=None):
+    """Quanto do caixa o dono pode tirar sem deixar rodada aberta a descoberto.
+
+    Caixa menos o comprometido. Se há rodada aberta que pode pagar 500, esses
+    500 estão presos — senão o dono esvazia a casa no meio de uma jogada e o
+    jogador não recebe ao sacar.
+    """
+    sessao = sessao or db.session
+    conta = casa(sessao)
+    if conta is None:
+        return ZERO
+    livre = conta.saldo - exposicao_comprometida(sessao)
+    return livre if livre > ZERO else ZERO
+
+
+def aportar(pessoa, valor, sessao=None):
+    """Põe dinheiro do dono na casa. Aparece no extrato dos dois lados."""
+    sessao = sessao or db.session
+    conta = exigir_casa(sessao)
+    if dono(sessao) is None or pessoa.id != conta.dono_id:
+        raise SemAutoridade("só o dono aporta no caixa")
+
+    return mover(
+        pessoa,
+        conta,
+        valor,
+        tipo=TIPO_APORTE,
+        motivo="aporte do dono",
+        sessao=sessao,
+    )
+
+
+def retirar_do_caixa(pessoa, valor, sessao=None):
+    """Tira dinheiro da casa para o dono, até o que estiver livre.
+
+    O limite é conferido **antes** de mover: o comprometido pelas rodadas
+    abertas fica preso, e é isso que garante que quem está jogando recebe se
+    ganhar.
+    """
+    sessao = sessao or db.session
+    conta = exigir_casa(sessao, travada=True)
+    if dono(sessao) is None or pessoa.id != conta.dono_id:
+        raise SemAutoridade("só o dono retira do caixa")
+
+    try:
+        valor = para_decimal(valor)
+    except TypeError as erro:
+        raise ValorInvalido(str(erro)) from erro
+    if valor <= ZERO:
+        raise ValorInvalido("o valor precisa ser maior que zero")
+
+    livre = livre_para_retirar(sessao)
+    if valor > livre:
+        raise CaixaComprometido(
+            f"livre para retirar agora: {livre} VVC "
+            f"(o resto está preso em rodada aberta)"
+        )
+
+    return mover(
+        conta,
+        pessoa,
+        valor,
+        tipo=TIPO_RETIRADA,
+        motivo="retirada do dono",
+        sessao=sessao,
+    )
 
 
 # --- teto de banca ----------------------------------------------------------

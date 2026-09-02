@@ -67,6 +67,13 @@ class Usuario(db.Model, UserMixin):
     #: emite) nem a conta pessoal do dono (que joga). Nasce sem senha, então
     #: não entra pelo site.
     eh_cassino = db.Column(db.Boolean, nullable=False, default=False)
+    #: De quem é esta conta, quando ela é de uma casa de jogo. Anulável de
+    #: propósito: "sem dono" é um estado, não um caso especial — e é por aqui
+    #: que uma transferência de posse entra depois, sem reescrever nada.
+    dono_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=True)
+    #: Desde quando. O lucro do dono é somado do ledger a partir desta data,
+    #: e não guardado num contador — contador diverge e ninguém percebe.
+    dono_desde = db.Column(db.DateTime(timezone=True), nullable=True)
     saldo = db.Column(Dinheiro, nullable=False, default=ZERO)
     criado_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
 
@@ -80,6 +87,8 @@ class Usuario(db.Model, UserMixin):
         # senha (por CLI, com hash), o freio de tentativas, e o fato de tudo
         # que ele faz passar pelo ledger com ator e motivo.
     )
+
+    dono = db.relationship("Usuario", remote_side=[id], foreign_keys=[dono_id])
 
     def definir_nome(self, nome_usuario):
         """Guarda as duas formas de uma vez.

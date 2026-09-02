@@ -46,6 +46,7 @@ e por `flask auditoria`, na CLI.
 | `/painel/` | god mode do Banco Central: contas editáveis na linha, convites, reset, diário, Caladinho |
 | `/caladinho/` | o cassino |
 | `/caladinho/mines` | mines: rodada ativa ou resultado da última |
+| `/caladinho/casa` | só do dono: caixa, comprometido, livre, lucro, aportar e retirar |
 
 ## Testes
 
@@ -149,6 +150,31 @@ O que é diferente aqui:
 
 A visibilidade do caixa para os jogadores é um **interruptor no painel do
 Banco Central**, guardado no banco — trocar de ideia não exige deploy.
+
+### A casa tem dono
+
+`flask dono-cassino <usuario>` aponta de quem ela é; `--sem-dono` tira. O nome
+nunca fica no código: trocar de posse não pode exigir deploy. Sem argumento, o
+comando diz quem é o dono hoje.
+
+`dono_id` é anulável — "sem dono" é um estado, não um caso especial, e é por
+onde uma transferência de posse entra depois sem reescrever nada.
+
+O dono **aporta** e **retira** pelo `mover()`, aparecendo no extrato dos dois
+lados, e vê o **lucro desde que assumiu**: apostas menos prêmios somados do
+ledger a partir de `dono_desde`. Aporte e retirada não contam como lucro —
+mexer no próprio caixa não é ganhar nem perder. Nada de contador guardado, que
+diverge sem ninguém perceber.
+
+**Retirar é limitado a `caixa − comprometido`.** O que as rodadas abertas podem
+vir a pagar fica preso: sem isso o dono esvazia a casa no meio de uma jogada e
+quem ganha não recebe. O teste que sustenta a regra retira todo o livre com
+rodada aberta e leva essa rodada até o teto de 25× — a casa paga até o último
+centavo.
+
+O dono joga no próprio cassino sem tratamento especial: a aposta sai da conta
+dele e entra na casa, o prêmio faz o inverso, e a auditoria fecha. O Banco
+Central continua ajustando o caixa pelo painel; god mode não some.
 
 ## O painel edita na linha
 

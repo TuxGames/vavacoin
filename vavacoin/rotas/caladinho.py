@@ -22,16 +22,23 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ..caladinho import (
+    aportar,
     casa,
     criar_rodada,
+    dono,
+    exposicao_comprometida,
     historico,
     limite_de_aposta,
+    livre_para_retirar,
+    lucro_do_dono,
     retirar,
+    retirar_do_caixa,
     revelar_casa,
     rodada_ativa,
     visao_da_rodada,
 )
 from ..erros import ErroDeJogo, ErroMonetario
+from ..formularios import FormularioCaixaDoDono
 from ..extensoes import db
 from ..mines import (
     CASAS,
@@ -61,9 +68,72 @@ def _caixa_visivel():
     return conta.saldo
 
 
+def _eh_dono():
+    conta = dono()
+    return conta is not None and conta.id == current_user.id
+
+
 @bp.route("/")
 def lobby():
-    return render_template("caladinho.html", caixa=_caixa_visivel())
+    return render_template(
+        "caladinho.html", caixa=_caixa_visivel(), eh_dono=_eh_dono()
+    )
+
+
+@bp.route("/casa")
+def painel_da_casa():
+    """A tela do dono: caixa, comprometido, livre e lucro."""
+    if not _eh_dono():
+        abort(403)
+
+    conta = casa()
+    return render_template(
+        "caladinho_casa.html",
+        caixa=conta.saldo,
+        comprometido=exposicao_comprometida(),
+        livre=livre_para_retirar(),
+        lucro=lucro_do_dono(),
+        desde=conta.dono_desde,
+        formulario=FormularioCaixaDoDono(),
+    )
+
+
+@bp.route("/casa/aportar", methods=["POST"])
+def casa_aportar():
+    formulario = FormularioCaixaDoDono()
+    if not _eh_dono():
+        abort(403)
+    if not formulario.validate_on_submit():
+        flash(" ".join(m for c in formulario for m in c.errors), "erro")
+        return redirect(url_for("caladinho.painel_da_casa"))
+
+    try:
+        aportar(current_user, formulario.valor.decimal)
+        db.session.commit()
+        flash(f"Aportou {formulario.valor.decimal} VVC.", "ok")
+    except (ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.painel_da_casa"))
+
+
+@bp.route("/casa/retirar", methods=["POST"])
+def casa_retirar():
+    formulario = FormularioCaixaDoDono()
+    if not _eh_dono():
+        abort(403)
+    if not formulario.validate_on_submit():
+        flash(" ".join(m for c in formulario for m in c.errors), "erro")
+        return redirect(url_for("caladinho.painel_da_casa"))
+
+    try:
+        retirar_do_caixa(current_user, formulario.valor.decimal)
+        db.session.commit()
+        flash(f"Retirou {formulario.valor.decimal} VVC.", "ok")
+    except (ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.painel_da_casa"))
 
 
 @bp.route("/mines")

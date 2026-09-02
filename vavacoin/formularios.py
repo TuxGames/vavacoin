@@ -192,3 +192,19 @@ class FormularioVisibilidadeDoCaixa(FlaskForm):
 
     visivel = BooleanField("Mostrar o caixa da casa para os jogadores")
     enviar = SubmitField("Salvar")
+
+
+class FormularioCaixaDoDono(FlaskForm):
+    """Aportar ou retirar do caixa da casa. Só o dono vê."""
+
+    valor = StringField("Valor (VVC)", validators=[DataRequired()])
+    enviar = SubmitField("Confirmar")
+
+    def validate_valor(self, campo):
+        try:
+            valor = para_decimal(campo.data.strip().replace(",", "."))
+        except TypeError as erro:
+            raise ValidationError("Valor inválido; use até dois decimais.") from erro
+        if valor <= ZERO:
+            raise ValidationError("O valor precisa ser maior que zero.")
+        campo.decimal = valor

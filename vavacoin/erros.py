@@ -102,6 +102,14 @@ class ApostaAlta(ErroDeJogo):
     """
 
 
+class CaixaComprometido(ErroDeJogo):
+    """A retirada deixaria a casa sem como pagar uma rodada aberta.
+
+    O comprometido fica preso até a rodada encerrar. Sem isso o dono esvazia
+    a casa no meio de uma jogada e quem ganha não recebe.
+    """
+
+
 class RodadaEmAndamento(ErroDeJogo):
     """Já existe uma rodada ativa. Uma por vez."""
 

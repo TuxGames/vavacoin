@@ -157,6 +157,48 @@ def comando_criar_cassino():
     click.echo(f"Casa do Caladinho: {conta.nome_usuario} — caixa {conta.saldo} VVC")
 
 
+@click.command("dono-cassino")
+@click.argument("nome_usuario", required=False)
+@click.option(
+    "--sem-dono", is_flag=True, help="Tira o dono; a casa fica sem ninguém."
+)
+@with_appcontext
+def comando_dono_cassino(nome_usuario, sem_dono):
+    """Aponta de quem é a casa do Caladinho.
+
+    O nome vem por argumento, nunca no código: quem é o dono é decisão de
+    quem opera, e amarrar isso num literal transformaria uma troca de posse
+    em deploy.
+    """
+    from .caladinho import definir_dono, dono
+
+    if sem_dono:
+        definir_dono(None, autoridade=_autoridade())
+        db.session.commit()
+        click.echo("A casa do Caladinho ficou sem dono.")
+        return
+
+    if not nome_usuario:
+        atual = dono()
+        if atual is None:
+            raise click.ClickException(
+                "diga o nome da conta, ou use --sem-dono; hoje não há dono"
+            )
+        click.echo(f"Dono atual: {atual.nome_usuario}")
+        return
+
+    alvo = buscar_usuario(nome_usuario)
+    if alvo is None:
+        raise click.ClickException(f"conta inexistente: {nome_usuario}")
+
+    try:
+        definir_dono(alvo, autoridade=_autoridade())
+    except ErroMonetario as erro:
+        raise click.ClickException(str(erro)) from erro
+    db.session.commit()
+    click.echo(f"O Caladinho agora é de {alvo.nome_usuario}.")
+
+
 @click.command("conservacao")
 @with_appcontext
 def comando_conservacao():
@@ -181,7 +223,9 @@ def comando_auditoria():
     click.echo(f"supply atual       {economia['supply_atual']} VVC")
     click.echo(f"supply máximo      {economia['supply_maximo']} VVC")
     click.echo(f"ainda cabe emitir  {economia['cabe_emitir']} VVC")
-    click.echo(f"cunhado − queimado {economia['cunhado_depois']} VVC")
+    # Hífen comum, não o menos tipográfico: o console do Windows é cp1252 e
+    # estoura com U+2212. A tela pode ter o sinal bonito; a CLI, não.
+    click.echo(f"cunhado - queimado {economia['cunhado_depois']} VVC")
     click.echo(f"soma dos saldos    {economia['soma_dos_saldos']} VVC")
     click.echo(f"diferença          {economia['diferenca']} VVC")
     click.echo(f"não emitido (BC)   {economia['nao_emitido']} VVC")
@@ -244,6 +288,7 @@ def registrar_comandos(app):
     app.cli.add_command(comando_genese)
     app.cli.add_command(comando_senha_bc)
     app.cli.add_command(comando_criar_cassino)
+    app.cli.add_command(comando_dono_cassino)
     app.cli.add_command(comando_emitir)
     app.cli.add_command(comando_convite)
     app.cli.add_command(comando_criar_conta)
