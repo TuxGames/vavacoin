@@ -1,13 +1,21 @@
 {% extends "base.html" %}
 {% block titulo %}Confirmar — VavaCoin{% endblock %}
 {% block conteudo %}
-<h1>Confirmar transferência</h1>
+<h1>Confirmar</h1>
 
 <div class="card">
-  <dl class="numeros">
-    <div class="numero"><dt>Para</dt><dd>{{ pendente.destino_nome }}</dd></div>
-    <div class="numero"><dt>Valor</dt><dd class="text-gold">{{ pendente.valor }} VVC</dd></div>
-  </dl>
+  {# Recibo: o valor grande no meio, e para quem vai logo abaixo. É a última
+     tela antes do dinheiro sair — o que ela precisa fazer é deixar o número
+     grande o bastante para conferir sem esforço. #}
+  <div class="recibo">
+    <div class="recibo-valor">{{ pendente.valor }}</div>
+    <div class="recibo-moeda">VavaCoin &middot; VVC</div>
+    <div class="recibo-para">
+      <span class="moeda avatar-mono moeda-sm" aria-hidden="true">{{ pendente.destino_nome[0]|upper }}</span>
+      <span class="nome">{{ pendente.destino_nome }}</span>
+    </div>
+  </div>
+
   <div class="row row-evt">
     <div class="row-main">Usuário</div>
     <div class="row-val"><code>{{ pendente.destino_usuario }}</code></div>
@@ -19,12 +27,13 @@
   </div>
   {% endif %}
 
+  <hr>
   <form method="post">
     {{ formulario.hidden_tag() }}
     {{ formulario.token(type="hidden") }}
     {{ formulario.enviar(class="btn btn-gold btn-full") }}
   </form>
   <hr>
-  <a href="{{ url_for('carteira.transferir_passo1') }}">Cancelar</a>
+  <a class="link-fim" href="{{ url_for('carteira.transferir_passo1') }}">Cancelar</a>
 </div>
 {% endblock %}

@@ -22,6 +22,11 @@
     <div class="numero"><dt>Não emitido</dt><dd>{{ estado.nao_emitido }}</dd></div>
     <div class="numero"><dt>Contas / com convite</dt><dd>{{ estado.contas }} / {{ estado.participantes }}</dd></div>
   </dl>
+  {# Quanto do teto já foi emitido, numa barra. É <progress> e não uma <div>
+     com largura porque a CSP proíbe `style=""` — e de quebra o número fica
+     no DOM em vez de virar pixel. #}
+  <progress class="medidor" max="{{ estado.supply_maximo }}" value="{{ estado.supply_atual }}"
+            aria-label="Supply emitido sobre o teto"></progress>
   <a class="btn btn-outline btn-sm" href="{{ url_for('admin.auditoria') }}">Rodar auditoria</a>
 </div>
 
@@ -30,7 +35,8 @@
   {% if contas %}
   {# Cada linha é um formulário. O <form> não pode ser filho de <tr>, então
      ele mora fora da tabela e os campos apontam para ele por `form=` — é o
-     jeito padrão de fazer isso sem JavaScript. #}
+     jeito padrão de fazer isso sem JavaScript. Editar na célula e apertar
+     Salvar: nenhum passo a mais. #}
   {% for conta in contas %}
     <form id="linha-{{ conta.id }}" method="post"
           action="{{ url_for('admin.salvar_conta', conta_id=conta.id) }}"
@@ -113,10 +119,9 @@
   </dl>
   {# O caixa é uma conta como outra qualquer: quem põe dinheiro nele é a mesma
      linha da tabela acima. O link só evita procurar. #}
-  <p>
-    <a class="btn btn-outline btn-sm"
-       href="{{ url_for('admin.painel') }}#conta-{{ casa.id }}">Pôr dinheiro no caixa</a>
-  </p>
+  <a class="btn btn-outline btn-sm"
+     href="{{ url_for('admin.painel') }}#conta-{{ casa.id }}">Pôr dinheiro no caixa</a>
+  <hr>
   {% endif %}
   <form method="post" action="{{ url_for('admin.cassino') }}">
     {{ form_caixa.hidden_tag() }}
@@ -150,6 +155,7 @@
   <div class="section-label">Ainda não usados</div>
   {% for convite in convites_livres %}
   <div class="row row-evt">
+    <span class="row-chip" aria-hidden="true">{{ (convite.destinatario or "?")[0]|upper }}</span>
     <div class="row-main">{{ convite.destinatario or "sem nome" }}</div>
     <div class="row-val"><code>{{ convite.codigo }}</code></div>
   </div>
@@ -169,7 +175,7 @@
 </div>
 
 <div class="card">
-  <div class="section-title"><i class="ti ti-shield" aria-hidden="true"></i>Resetar economia</div>
+  <div class="section-title"><i class="ti ti-flame" aria-hidden="true"></i>Resetar economia</div>
   <form method="post" action="{{ url_for('admin.reset') }}">
     {{ form_reset.hidden_tag() }}
     {{ campo(form_reset.motivo) }}
@@ -198,7 +204,7 @@
     </table>
   </div>
   <hr>
-  <a href="{{ url_for('admin.registros') }}">Ver o diário inteiro</a>
+  <a class="link-fim" href="{{ url_for('admin.registros') }}">Ver o diário inteiro</a>
   {% else %}
   <p class="vazio">Nada registrado ainda.</p>
   {% endif %}

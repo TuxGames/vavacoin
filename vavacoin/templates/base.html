@@ -8,7 +8,11 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
   {% block estilos %}{% endblock %}
 </head>
-<body>
+{# O Caladinho não entra no design do resto do site: a estética dele é a do
+   cassino original. O conteúdo já era isolado (tudo `cal-*` dentro de
+   `.caladinho`), mas o casco e o fundo vêm do base.css — esta classe devolve
+   a eles a paleta antiga. Ver o bloco "ISOLAMENTO DO CALADINHO" lá. #}
+<body{% if request.blueprint == 'caladinho' %} class="tema-caladinho"{% endif %}>
 
 {# NAV ÚNICA (fonte de verdade dos links): o macro emite os mesmos hrefs nos
    DOIS containers — as pills do desktop e o menu off-canvas do mobile. Só a
@@ -44,7 +48,9 @@
 {% if current_user.is_authenticated %}
 <aside class="sidebar" id="sidebar" aria-label="Menu de navegação">
   <div class="sidebar-top">
-    <div class="sidebar-logo">VavaCoin</div>
+    <div class="sidebar-logo">
+      <span class="moeda moeda-sm" aria-hidden="true">V</span>VavaCoin
+    </div>
     <button class="sidebar-close" type="button" aria-label="Fechar menu">&#10005;</button>
   </div>
   <nav class="sidebar-nav">
@@ -61,13 +67,15 @@
 <header class="topbar">
   <div class="topbar-left">
     {% if current_user.is_authenticated %}
-      <span class="avatar-mono" aria-hidden="true">{{ current_user.nome_exibicao[0]|upper }}</span>
+      <span class="moeda avatar-mono" aria-hidden="true">{{ current_user.nome_exibicao[0]|upper }}</span>
       <div class="topbar-ident">
         <div class="nome">{{ current_user.nome_exibicao }}</div>
         <div class="sub">{{ current_user.saldo }} VVC</div>
       </div>
     {% else %}
-      <a class="marca" href="{{ url_for('publico.inicio') }}">VavaCoin</a>
+      <a class="marca" href="{{ url_for('publico.inicio') }}">
+        <span class="moeda moeda-sm" aria-hidden="true">V</span>VavaCoin
+      </a>
     {% endif %}
   </div>
   <div class="topbar-right">
@@ -99,7 +107,7 @@
 </main>
 
 <footer class="rodape">
-  <p>VavaCoin (VVC)</p>
+  <p>VavaCoin &middot; VVC</p>
 </footer>
 
 <script src="{{ url_for('static', filename='menu.js') }}" defer></script>

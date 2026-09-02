@@ -7,44 +7,44 @@
     <div class="hero-orb"></div>
     <div class="hero-label">Seu saldo</div>
     <div class="hero-num">{{ current_user.saldo }}</div>
-    <div class="hero-sub">VavaCoin (VVC)</div>
+    <div class="hero-sub">VavaCoin &middot; VVC</div>
     <div class="hero-acoes">
       <a href="{{ url_for('carteira.minha_carteira') }}" class="btn btn-outline btn-sm">Extrato completo</a>
     </div>
   </div>
 
   <div class="card">
-  <div class="section-title"><i class="ti ti-send" aria-hidden="true"></i>Transferência</div>
-  <form method="post" action="{{ url_for('carteira.transferir_passo1') }}">
-    {{ formulario.hidden_tag() }}
-    <div class="campo">
-      {{ formulario.destinatario(class="form-control", placeholder="usuário (ex: joao)", required=true) }}
-      {% if formulario.destinatario.errors %}
-        <span class="erro-campo">{{ formulario.destinatario.errors|join(" ") }}</span>
-      {% endif %}
-    </div>
-    <div class="campo">
-      {{ formulario.valor(class="form-control", type="number", min="0.01", step="0.01", placeholder="0.00", required=true) }}
-      {% if formulario.valor.errors %}
-        <span class="erro-campo">{{ formulario.valor.errors|join(" ") }}</span>
-      {% endif %}
-    </div>
-    <div class="campo">
-      {{ formulario.motivo(class="form-control", placeholder="por quê") }}
-      {% if formulario.motivo.errors %}
-        <span class="erro-campo">{{ formulario.motivo.errors|join(" ") }}</span>
-      {% endif %}
-    </div>
-    <button type="submit" class="btn btn-gold btn-full">Enviar VavaCoin</button>
-  </form>
-</div>
+    <div class="section-title"><i class="ti ti-send" aria-hidden="true"></i>Transferência</div>
+    <form method="post" action="{{ url_for('carteira.transferir_passo1') }}">
+      {{ formulario.hidden_tag() }}
+      <div class="campo">
+        {{ formulario.destinatario(class="form-control", placeholder="usuário (ex: joao)", required=true) }}
+        {% if formulario.destinatario.errors %}
+          <span class="erro-campo">{{ formulario.destinatario.errors|join(" ") }}</span>
+        {% endif %}
+      </div>
+      <div class="campo">
+        {{ formulario.valor(class="form-control", type="number", min="0.01", step="0.01", placeholder="0.00", required=true) }}
+        {% if formulario.valor.errors %}
+          <span class="erro-campo">{{ formulario.valor.errors|join(" ") }}</span>
+        {% endif %}
+      </div>
+      <div class="campo">
+        {{ formulario.motivo(class="form-control", placeholder="por quê") }}
+        {% if formulario.motivo.errors %}
+          <span class="erro-campo">{{ formulario.motivo.errors|join(" ") }}</span>
+        {% endif %}
+      </div>
+      <button type="submit" class="btn btn-gold btn-full">Enviar VavaCoin</button>
+    </form>
+  </div>
 
   <div class="card">
     <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Extrato</div>
     {% if linhas %}
       {% for linha in linhas %}{{ linha_extrato(linha) }}{% endfor %}
       <hr>
-      <a href="{{ url_for('carteira.minha_carteira') }}">Ver o extrato inteiro</a>
+      <a class="link-fim" href="{{ url_for('carteira.minha_carteira') }}">Ver o extrato inteiro</a>
     {% else %}
       <p class="vazio">Nenhuma transação ainda.</p>
     {% endif %}
@@ -52,10 +52,15 @@
 
 {% else %}
   <div class="centro">
+    <div class="centro-marca">
+      <span class="moeda moeda-xl" aria-hidden="true">V</span>
+      <span class="nome-marca">VavaCoin</span>
+    </div>
     <div class="card">
-      <h1>VavaCoin</h1>
-      <p><a class="btn btn-gold btn-full" href="{{ url_for('auth.cadastro') }}">Tenho um convite</a></p>
-      <p><a class="btn btn-outline btn-full" href="{{ url_for('auth.login') }}">Entrar</a></p>
+      <div class="pilha">
+        <a class="btn btn-gold btn-full" href="{{ url_for('auth.cadastro') }}">Tenho um convite</a>
+        <a class="btn btn-outline btn-full" href="{{ url_for('auth.login') }}">Entrar</a>
+      </div>
     </div>
   </div>
 {% endif %}

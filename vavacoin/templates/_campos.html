@@ -14,17 +14,23 @@
 </div>
 {% endmacro %}
 
-{# Uma linha de extrato, na disposição do Benbals: descrição em cima, e
-   embaixo "para/de fulano · data". Barra lateral verde para o que entrou,
-   vermelha para o que saiu, e o valor à direita com sinal explícito. Sem
-   badge de texto — o tipo já está na descrição.
+{# Uma linha de extrato: ficha com a inicial da contraparte, descrição em
+   cima, "para/de fulano · data · saldo" embaixo, e o valor à direita com
+   sinal explícito.
 
-   Diferença nossa: o saldo resultante entra na linha de baixo. O Benbals não
-   mostra, mas aqui o ledger grava, e é a informação que responde sozinha
-   "quanto eu tinha depois disso". #}
+   A ficha entrou no lugar da barra lateral colorida que veio do Benbals:
+   duas marcas de cor na mesma linha competiam, e a ficha carrega a mesma
+   informação (verde entrou, vermelho saiu) já dizendo COM QUEM foi. Quando
+   não há contraparte — emissão do Banco Central, queima — a inicial é o
+   travessão que o extrato já usava.
+
+   O saldo resultante entra na linha de baixo. O Benbals não mostra, mas aqui
+   o ledger grava, e é a informação que responde sozinha "quanto eu tinha
+   depois disso". #}
 {% macro linha_extrato(linha) %}
 {% set saida = linha.valor_com_sinal < 0 %}
 <div class="row {{ 'row-out' if saida else 'row-in' }}">
+  <span class="row-chip" aria-hidden="true">{{ (linha.contraparte or "—")[0]|upper }}</span>
   <div class="row-main">
     <div>{{ linha.motivo or linha.tipo|replace("_", " ") }}</div>
     <div class="ei-sub">

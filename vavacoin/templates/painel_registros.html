@@ -22,12 +22,14 @@
     </table>
   </div>
   <hr>
-  {% if pagina > 1 %}
-    <a href="{{ url_for('admin.registros', pagina=pagina - 1) }}">anteriores</a>
-  {% endif %}
-  {% if registros|length == 100 %}
-    <a href="{{ url_for('admin.registros', pagina=pagina + 1) }}">mais antigos</a>
-  {% endif %}
+  <div class="acoes-linha">
+    {% if pagina > 1 %}
+      <a href="{{ url_for('admin.registros', pagina=pagina - 1) }}">anteriores</a>
+    {% endif %}
+    {% if registros|length == 100 %}
+      <a href="{{ url_for('admin.registros', pagina=pagina + 1) }}">mais antigos</a>
+    {% endif %}
+  </div>
   {% else %}
   <p class="vazio">Nada registrado ainda.</p>
   {% endif %}

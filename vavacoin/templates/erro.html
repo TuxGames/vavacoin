@@ -2,10 +2,14 @@
 {% block titulo %}{{ codigo }} — VavaCoin{% endblock %}
 {% block conteudo %}
 <div class="centro">
+  <div class="centro-marca">
+    <span class="moeda moeda-lg" aria-hidden="true">V</span>
+  </div>
   <div class="card">
     <h1>{{ codigo }}</h1>
     <p class="text-muted">{{ mensagem }}</p>
-    <a class="btn btn-outline" href="{{ url_for('publico.inicio') }}">Voltar ao começo</a>
+    <hr>
+    <a class="btn btn-outline btn-full" href="{{ url_for('publico.inicio') }}">Voltar ao começo</a>
   </div>
 </div>
 {% endblock %}

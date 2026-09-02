@@ -1,312 +1,496 @@
 /* ─────────────────────────────────────────
-   VavaCoin — CSS base
+   VavaCoin — folha de estilo do site
 
-   Herdado do Benbals (static/base.css), que tem quatro anos de tela ajustada
-   com usuários reais no celular. A paleta, o espaçamento, os tamanhos de
-   toque e a estrutura de cards vieram de lá inteiros; o que dependia de
-   funcionalidade que aqui não existe (títulos, empresas, chat, ranking,
-   lootbox) foi podado.
+   A versão anterior era o `base.css` do Benbals portado às pressas, para
+   resolver uma reclamação de navegabilidade. Nunca houve decisão de design.
+   Esta passada dá identidade própria ao VavaCoin, sem regredir nada do que
+   já funcionava no celular: mobile-first, alvos de toque grandes, e o mesmo
+   menu off-canvas (mesmo HTML, mesmo `menu.js`).
 
-   Duas coisas mudaram de lugar de propósito:
+   O que define a identidade:
 
-   1. O Benbals guarda o CSS da topbar e do menu off-canvas dentro de um
-      <style> no dashboard.html. Aqui isso é proibido pela CSP, então desceu
-      para este arquivo — que é onde deveria estar de qualquer jeito, já que
-      o shell é de todas as páginas.
-   2. Não há Bootstrap. O Benbals carrega por CDN; a CSP deste projeto é
-      `default-src 'self'` e não deixa. O punhado de classes do Bootstrap que
-      as telas usavam de fato (.card, .btn, .form-control, .alert) já existia
-      no base.css do Benbals com estilo próprio — foi só parar de depender do
-      resto.
+   - **A moeda é o logo.** `.moeda` é uma ficha dourada desenhada só com CSS
+     (gradiente cônico + anel interno + monograma). Ela aparece na barra de
+     cima, nas telas de entrada, no card de saldo e no avatar das pessoas —
+     o mesmo objeto em quatro tamanhos, que é o que faz uma marca grudar.
+   - **Números são o conteúdo.** Tudo que é dinheiro usa `tabular-nums` e
+     `letter-spacing` negativo: as colunas de valor alinham na vírgula e o
+     saldo grande lê como painel, não como texto.
+   - **Fundo frio, tinta quente.** Ink azulado quase preto contra um branco
+     levemente creme e o dourado da moeda. É o par que separa o VavaCoin do
+     cinza-azulado genérico de onde ele veio.
+   - **Rótulo curto em versalete.** Nada de frase explicando a tela: o que
+     sobra é rótulo, número e botão.
+
+   Fonte: pilha do sistema. A CSP é `default-src 'self'` — nada de Google
+   Fonts, nada de CDN e nada de folha puxada de fora.
+
+   ── O CALADINHO NÃO ENTRA NESTA PASSADA ──
+   O cassino tem estética própria (`caladinho.css`, herdada do
+   `cassino_benbal`) e foi deixado de fora de propósito. Como o casco — barra
+   de cima, menu, rodapé — é compartilhado, `base.html` marca o `<body>` das
+   páginas do cassino com `.tema-caladinho`, e o bloco no fim deste arquivo
+   devolve a elas os tokens antigos. Resultado: o cassino continua com a cara
+   de ontem mesmo com o resto do site redesenhado.
    ───────────────────────────────────────── */
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* Precisa vencer QUALQUER classe utilitária que declare `display` — já houve
+   um bug em que um `display: flex` deixou visível um botão que devia sumir.
+   Fica no topo e com `!important`; nenhuma regra abaixo tenta contorná-lo. */
+[hidden] { display: none !important; }
+
 :root {
-    /* Superfícies (do fundo da página ao card elevado) */
-    --bg:        #12141c;
-    --card:      #181b25;
-    --card-2:    #1c1f2a;
-    --input:     #0f1119;
-    --border:    #262a38;
-    --border-soft:#21242f;
+    /* ── Superfícies: ink azulado, do fundo da página ao card elevado ── */
+    --bg:         #0b0d14;
+    --bg-2:       #0f1119;
+    --card:       #151824;
+    --card-2:     #1b1f2d;
+    --input:      #0a0c13;
+    --border:     #262b3b;
+    --border-soft:#1c2030;
 
-    /* Texto */
-    --text:      #e3e5eb;
-    --text-hi:   #f2f0ea;
-    --text-2:    #c9cbd4;
-    --muted:     #6b6f7d;
-    --muted-2:   #5b5f6c;
+    /* ── Texto: branco levemente creme, quente contra o fundo frio ── */
+    --text:      #dcdde4;
+    --text-hi:   #f4f1ea;
+    --text-2:    #b9bcc8;
+    --muted:     #767b8c;
+    --muted-2:   #5c6274;
 
-    /* Marca (dourado) + texto sobre dourado */
-    --gold:      #f5c451;
-    --gold-lt:   #f7cd6c;
-    --gold-dk:   #dc9f31;
-    --on-gold:   #2b1d02;
-    --on-gold-2: #6b4d0f;
+    /* ── Marca: o dourado da moeda ── */
+    --gold:      #f2c14e;
+    --gold-lt:   #ffd97a;
+    --gold-dk:   #c9922a;
+    --on-gold:   #2a1c00;
+    --on-gold-2: #6d4f10;
 
-    /* Semânticas */
+    /* ── Semânticas ── */
     --green:     #4fb572;
     --red:       #e2574c;
-    --blue:      #4f8fd0;
 
-    /* Gradientes (profundidade sutil — hero e botões) */
-    --grad-gold:     linear-gradient(150deg, #f7cd6c 0%, #eeb64a 55%, #dc9f31 100%);
-    --grad-gold-btn: linear-gradient(135deg, #f7cd6c, #dc9f31);
+    /* ── Gradientes ── */
+    --grad-gold:     linear-gradient(150deg, #ffd97a 0%, #f2c14e 48%, #d3a134 100%);
+    --grad-gold-btn: linear-gradient(135deg, #ffd97a, #d3a134);
+    /* Aurora dourada: brilho fraco no canto de um card escuro. Usado nos
+       cabeçalhos de perfil e nas telas de entrada. */
+    --grad-aurora:   radial-gradient(120% 90% at 0% 0%, rgba(242,193,78,.10), transparent 60%);
 
-    --radius:    14px;
-    --shadow:    0 6px 22px rgba(0,0,0,.28);
+    --radius:    16px;
+    --radius-sm: 10px;
+    --shadow:    0 8px 26px rgba(0,0,0,.34);
+    --shadow-sm: 0 2px 10px rgba(0,0,0,.24);
+
+    /* Uma tipografia só para número, com dígitos de largura fixa. */
+    --num: ui-monospace, "SF Mono", "Segoe UI Mono", "Roboto Mono", Menlo, monospace;
 }
 
 body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+                 "Segoe UI", Roboto, Inter, system-ui, sans-serif;
     font-size: 16px;
-    line-height: 1.55;
+    line-height: 1.5;
     overflow-x: hidden;
     -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
 }
 
 a { color: var(--gold-lt); text-decoration: none; }
 a:hover { text-decoration: underline; }
+/* Anel de foco visível em tudo que se navega por teclado. Um só, no topo,
+   em vez de espalhado por componente. */
+:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
 
-h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-hi); }
-h2 { font-size: 17px; margin: 22px 0 10px; color: var(--text-hi); }
+h1 {
+    font-size: 26px; line-height: 1.15; margin: 0 0 14px;
+    color: var(--text-hi); font-weight: 700; letter-spacing: -.02em;
+}
+h2 {
+    font-size: 18px; margin: 24px 0 10px;
+    color: var(--text-hi); font-weight: 650; letter-spacing: -.01em;
+}
+@media (max-width: 767px) { h1 { font-size: 23px; } }
 
 /* ── LAYOUT ──
-   Uma coluna no celular; no desktop uma faixa central com largura de leitura.
-   O Benbals usa grade de duas colunas porque tem muita seção; aqui não tem. */
-.page-wrap { padding: 10px; max-width: 720px; margin: 0 auto; }
+   Uma coluna no celular; no desktop uma faixa central com largura de leitura. */
+.page-wrap { padding: 14px 12px 28px; max-width: 760px; margin: 0 auto; }
 @media (min-width: 768px) {
-    .page-wrap { padding: 16px; }
+    .page-wrap { padding: 26px 20px 40px; }
     body { font-size: 15px; }
 }
+
+/* ── A MOEDA ──
+   O logo do site, feito só com CSS. Disco dourado com um anel interno e o
+   monograma no meio; a `::after` é o brilho especular que faz parecer metal
+   em vez de círculo colorido.
+
+   O mesmo objeto serve de logo, de avatar (com a inicial da pessoa dentro) e
+   de marca-d'água no card de saldo — só muda `--moeda-tam`. */
+.moeda {
+    --moeda-tam: 38px;
+    position: relative;
+    width: var(--moeda-tam); height: var(--moeda-tam);
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--grad-gold);
+    box-shadow: inset 0 0 0 2px rgba(42,28,0,.22), 0 2px 8px rgba(0,0,0,.35);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--on-gold);
+    font-weight: 800;
+    font-size: calc(var(--moeda-tam) * .42);
+    letter-spacing: -.02em;
+    line-height: 1;
+    text-decoration: none;
+    user-select: none;
+}
+.moeda::after {
+    content: "";
+    position: absolute; inset: 8%;
+    border-radius: 50%;
+    background: linear-gradient(160deg, rgba(255,255,255,.28), transparent 45%);
+    pointer-events: none;
+}
+.moeda-sm { --moeda-tam: 26px; }
+.moeda-lg { --moeda-tam: 64px; }
+.moeda-xl { --moeda-tam: 86px; }
+/* Avatar: mesma ficha, mas em canto arredondado, para não confundir pessoa
+   com dinheiro na mesma tela. */
+.avatar-mono { border-radius: 30%; }
+.avatar-grande { --moeda-tam: 58px; border-radius: 26%; }
 
 /* ── CARDS ── */
 .card {
     background: var(--card);
     border-radius: var(--radius);
-    padding: 18px 20px;
+    padding: 20px;
     margin-bottom: 14px;
     border: 1px solid var(--border);
     box-shadow: var(--shadow);
 }
 @media (max-width: 767px) {
-    .card { padding: 16px; border-radius: 10px; }
+    .card { padding: 16px; border-radius: 14px; }
 }
 
-/* ── TÍTULO DE SEÇÃO (com ícone outline fino) ── */
+/* ── RÓTULO DE SEÇÃO ──
+   Versalete estreito com o ícone dourado na frente. O título de seção do
+   Benbals era quase do tamanho do conteúdo; aqui ele desce a peso de rótulo
+   e a hierarquia dentro do card volta a ser o dado. */
 .section-title {
     display: flex; align-items: center; gap: 8px;
-    font-size: 14px; font-weight: 600;
-    color: var(--text-2);
-    margin: 0 0 12px;
+    font-size: 11.5px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 14px;
 }
-.section-title > .ti { font-size: 16px; color: var(--gold); line-height: 1; flex-shrink: 0; }
+.section-title > .ti { font-size: 15px; color: var(--gold); line-height: 1; flex-shrink: 0; }
 .section-label {
     display: flex; align-items: center; gap: 7px;
-    font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
-    color: var(--muted); margin-bottom: 10px;
+    font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted-2); margin: 0 0 10px;
 }
 .section-label > .ti { font-size: 14px; color: var(--gold); }
 
-/* ── PILLS DE NAV ── */
+/* ── NAV: PILLS DO DESKTOP ── */
 .pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: var(--card-2);
-    color: #9a9eab;
-    font-size: 12.5px; font-weight: 500;
-    padding: 7px 13px; border-radius: 9px;
+    display: inline-flex; align-items: center; gap: 7px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px; font-weight: 600;
+    padding: 8px 12px; border-radius: var(--radius-sm);
     white-space: nowrap; text-decoration: none;
     border: 1px solid transparent;
     transition: background .15s, color .15s, border-color .15s;
 }
-.pill:hover { color: var(--text-hi); border-color: var(--border); text-decoration: none; }
-.pill.active, .pill[aria-current="page"] {
-    background: rgba(245,196,81,.14);
+.pill:hover { color: var(--text-hi); background: var(--card-2); text-decoration: none; }
+.pill[aria-current="page"] {
+    background: rgba(242,193,78,.12);
+    border-color: rgba(242,193,78,.28);
     color: var(--gold);
-    font-weight: 600;
 }
-.pill .ti { font-size: 14px; }
+.pill .ti { font-size: 15px; }
 
-/* ── HERO (card de saldo) ── */
+/* ── CARD DE SALDO ──
+   O momento de dinheiro da tela. Ficha dourada inteira, com a moeda gigante
+   vazando pelo canto como marca-d'água e o número em dígitos de largura fixa
+   para não dançar quando o saldo muda. */
 .hero {
     position: relative; overflow: hidden;
     background: var(--grad-gold);
-    border-radius: 18px;
+    border-radius: 20px;
     padding: 22px 24px;
     margin-bottom: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.34);
 }
+/* Marca-d'água: a mesma moeda, gigante e quase apagada, saindo pela borda. */
 .hero-orb {
-    position: absolute; top: -40px; right: -30px;
-    width: 140px; height: 140px; border-radius: 50%;
-    background: rgba(255,255,255,.08); pointer-events: none;
+    position: absolute; top: -46px; right: -38px;
+    width: 168px; height: 168px; border-radius: 50%;
+    background: rgba(255,255,255,.10);
+    box-shadow: inset 0 0 0 10px rgba(255,255,255,.08);
+    pointer-events: none;
 }
 .hero-label {
-    color: var(--on-gold-2); font-size: 12px; font-weight: 600;
-    letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px;
+    position: relative;
+    color: var(--on-gold-2); font-size: 11px; font-weight: 700;
+    letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px;
 }
 .hero-num {
-    color: var(--on-gold); font-weight: 700; letter-spacing: -.01em;
-    font-size: clamp(2.1rem, 8vw, 2.6rem); line-height: 1.05; margin-bottom: 4px;
+    position: relative;
+    font-family: var(--num);
+    color: var(--on-gold); font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.035em;
+    font-size: clamp(2.4rem, 11vw, 3.2rem); line-height: 1; margin-bottom: 6px;
 }
-.hero-sub { color: var(--on-gold-2); font-size: 13px; font-weight: 500; margin-bottom: 14px; }
-.hero-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
-.hero .btn-outline { border-color: rgba(43,29,2,.28); color: var(--on-gold); }
+.hero-sub {
+    position: relative;
+    color: var(--on-gold-2); font-size: 12.5px; font-weight: 600;
+    letter-spacing: .02em; margin-bottom: 16px;
+}
+.hero-acoes { position: relative; display: flex; gap: 8px; flex-wrap: wrap; }
+.hero .btn-outline {
+    border-color: rgba(42,28,0,.30); color: var(--on-gold);
+    background: rgba(255,255,255,.16);
+}
+.hero .btn-outline:hover { background: rgba(255,255,255,.28); }
 
-/* ── LISTAS COM BARRA LATERAL COLORIDA (extrato) ──
-   Verde = entrou, vermelho = saiu, âmbar = evento. Sem badge de texto. */
+/* ── EXTRATO ──
+   Cada lançamento é: ficha com a inicial da contraparte, descrição, linha de
+   contexto e o valor à direita com sinal. A cor mora na ficha e no valor —
+   a barra lateral saiu porque duas marcas de cor na mesma linha competiam. */
 .row {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 11px 0 11px 12px;
-    margin-left: -2px;
-    border-left: 2.5px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0;
     border-bottom: 1px solid var(--border-soft);
 }
 .row:last-child { border-bottom: none; }
-.row-in  { border-left-color: var(--green); }
-.row-out { border-left-color: var(--red); }
-.row-evt { border-left-color: var(--gold); }
-.row-main  { color: var(--text); font-size: 13.5px; font-weight: 500; min-width: 0; }
-.row-sub   { color: var(--muted-2); font-size: 11.5px; margin-top: 2px; }
-/* Linha de baixo do extrato: "para fulano · 01/09 14:20 · saldo 58.75". Corta
-   com reticências em vez de quebrar — igual ao .ei-sub do Benbals. */
+/* A ficha da linha: círculo com a inicial, tingido pelo sentido do valor. */
+.row-chip {
+    flex: 0 0 auto;
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; line-height: 1;
+    background: var(--card-2); color: var(--muted);
+    border: 1px solid var(--border);
+}
+.row-in  .row-chip { background: rgba(79,181,114,.14); border-color: rgba(79,181,114,.34); color: var(--green); }
+.row-out .row-chip { background: rgba(226,87,76,.14);  border-color: rgba(226,87,76,.34);  color: var(--red); }
+.row-evt .row-chip { background: rgba(242,193,78,.14); border-color: rgba(242,193,78,.34); color: var(--gold); }
+.row-main  { flex: 1 1 auto; min-width: 0; color: var(--text); font-size: 14px; font-weight: 550; }
+.row-sub   { color: var(--muted-2); font-size: 12px; margin-top: 2px; }
+/* "para fulano · 01/09 14:20 · saldo 58.75" — corta com reticências em vez
+   de quebrar em duas linhas e desalinhar a lista inteira. */
 .ei-sub {
-    color: var(--muted-2); font-size: 11.5px; margin-top: 2px;
+    color: var(--muted-2); font-size: 12px; margin-top: 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.row-val   { font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.row-val {
+    flex: 0 0 auto;
+    font-family: var(--num);
+    font-size: 14.5px; font-weight: 700;
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+    white-space: nowrap; text-align: right;
+    color: var(--text-hi);
+}
 .row-val.pos { color: var(--green); }
 .row-val.neg { color: var(--red); }
 @media (max-width: 767px) {
     .row-main { font-size: 15px; }
-    .row-sub, .ei-sub { font-size: 13px; }
+    .row-sub, .ei-sub { font-size: 12.5px; }
     .row-val  { font-size: 16px; }
+    .row-chip { width: 36px; height: 36px; }
 }
 
 /* ── UTILITÁRIOS ── */
-.text-green { color: var(--green); font-weight: 600; }
-.text-red   { color: var(--red); font-weight: 600; }
-.text-gold  { color: var(--gold-lt); font-weight: 600; }
+.text-green { color: var(--green); font-weight: 700; }
+.text-red   { color: var(--red); font-weight: 700; }
+.text-gold  { color: var(--gold-lt); font-weight: 700; }
 .text-muted { color: var(--muted); }
 .text-right { text-align: right; }
 .btn-full   { width: 100%; }
-/* Estado vazio: centralizado e com respiro, como no Benbals. */
-.vazio      { color: var(--muted); font-size: 14px; text-align: center; padding: 30px 0; }
-/* Ajuda logo abaixo de um campo, sem label acima (padrão do Benbals). */
+.vazio      { color: var(--muted-2); font-size: 14px; text-align: center; padding: 34px 0; margin: 0; }
 .ajuda-campo { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; }
-.acoes-linha { display: flex; gap: 10px; white-space: nowrap; }
-hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.acoes-linha { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+hr { border: none; border-top: 1px solid var(--border-soft); margin: 16px 0; }
 code {
+    font-family: var(--num);
     background: var(--input); border: 1px solid var(--border);
-    border-radius: 6px; padding: 1px 6px; font-size: 13px; color: var(--gold-lt);
+    border-radius: 6px; padding: 2px 7px; font-size: 12.5px;
+    color: var(--gold-lt); letter-spacing: .02em;
 }
+/* Link discreto de fim de card ("Ver o extrato inteiro", "Cancelar"). */
+.link-fim {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13.5px; font-weight: 600; color: var(--text-2);
+}
+.link-fim:hover { color: var(--gold-lt); text-decoration: none; }
+.link-fim::after { content: "\2192"; color: var(--gold); }
 
-/* ── FORM CONTROLS ── */
-.campo { display: block; margin: 0 0 12px; }
+/* ── FORMULÁRIOS ── */
+.campo { display: block; margin: 0 0 14px; }
 .form-control {
     display: block; width: 100%;
     background: var(--input);
     border: 1px solid var(--border);
     color: var(--text-hi);
-    border-radius: 10px;
+    border-radius: 12px;
+    font-family: inherit;
     font-size: 16px;       /* 16px+ evita o zoom automático do iOS ao focar */
-    padding: 12px 14px;
-    min-height: 48px;      /* alvo de toque confortável */
+    padding: 13px 15px;
+    min-height: 50px;      /* alvo de toque confortável */
     height: auto;
+    transition: border-color .15s, box-shadow .15s, background .15s;
 }
 .form-control::placeholder { color: var(--muted-2); }
 .form-control:focus {
     border-color: var(--gold);
-    box-shadow: 0 0 0 2px rgba(245,196,81,.15);
+    box-shadow: 0 0 0 3px rgba(242,193,78,.14);
+    background: var(--bg-2);
     outline: none;
 }
-label { font-size: 14px; color: var(--muted); margin-bottom: 5px; display: block; }
-.ajuda { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
-.erro-campo { display: block; color: var(--red); font-size: 13px; margin-top: 4px; }
+/* Dinheiro digitado também alinha em dígito de largura fixa. */
+input[type="number"].form-control { font-family: var(--num); letter-spacing: -.01em; }
+label {
+    font-size: 11.5px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+    margin-bottom: 7px; display: block;
+}
+.ajuda { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }
+.erro-campo { display: block; color: var(--red); font-size: 13px; margin-top: 5px; font-weight: 600; }
+/* Caixa de seleção não é campo de texto: fica na linha do próprio rótulo. */
+.campo input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--gold); vertical-align: -3px; }
+.campo input[type="checkbox"] + label {
+    display: inline; text-transform: none; letter-spacing: 0;
+    font-size: 14px; font-weight: 600; color: var(--text-2); margin-left: 8px;
+}
 
 /* ── BOTÕES ── */
 .btn {
-    border-radius: 10px;
+    border-radius: 12px;
+    font-family: inherit;
     font-size: 15px;
     font-weight: 700;
-    padding: 12px 18px;
-    min-height: 48px; /* toque confortável (WCAG >= 44px) */
+    letter-spacing: -.01em;
+    padding: 13px 20px;
+    min-height: 50px; /* toque confortável (WCAG >= 44px) */
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 7px;
     border: none;
     cursor: pointer;
     text-decoration: none;
-    transition: filter .15s, transform .1s, opacity .15s;
+    transition: filter .15s, transform .1s, opacity .15s, background .15s;
 }
-.btn:hover { filter: brightness(1.05); text-decoration: none; }
-.btn:active { transform: scale(.97); opacity: .92; }
-.btn-gold   { background: var(--grad-gold-btn); color: var(--on-gold); }
-.btn-danger { background: var(--red); color: #fff; }
-.btn-outline{ background: transparent; border: 1px solid var(--border); color: var(--text); }
-.btn-sm     { min-height: 40px; padding: 8px 14px; font-size: 14px; font-weight: 600; }
+.btn:hover { filter: brightness(1.06); text-decoration: none; }
+.btn:active { transform: scale(.98); opacity: .94; }
+.btn-gold   { background: var(--grad-gold-btn); color: var(--on-gold); box-shadow: 0 4px 14px rgba(242,193,78,.18); }
+.btn-danger { background: transparent; border: 1px solid rgba(226,87,76,.5); color: var(--red); }
+.btn-danger:hover { background: rgba(226,87,76,.12); }
+.btn-outline{ background: var(--card-2); border: 1px solid var(--border); color: var(--text); }
+.btn-outline:hover { background: var(--border-soft); border-color: var(--muted-2); }
+.btn-sm     { min-height: 40px; padding: 9px 15px; font-size: 13.5px; border-radius: var(--radius-sm); }
 
-/* ── ALERTAS (mensagens flash) ── */
-.avisos { list-style: none; padding: 0; margin: 0 0 12px; }
+/* ── MENSAGENS FLASH ──
+   Faixa com barra colorida à esquerda. É a única coisa que fala em frase na
+   tela, e só porque é resposta a uma ação que a pessoa acabou de fazer. */
+.avisos { list-style: none; padding: 0; margin: 0 0 16px; }
 .alert {
-    border-radius: 10px; padding: 12px 16px; font-size: 14px;
-    margin-bottom: 12px; border: 1px solid transparent;
+    border-radius: 12px; padding: 13px 16px; font-size: 14px; font-weight: 550;
+    margin-bottom: 10px;
+    border: 1px solid transparent; border-left-width: 3px;
 }
-.alert-ok   { background: rgba(79,181,114,.12); border-color: rgba(79,181,114,.4); color: #bfe9cd; }
-.alert-erro { background: rgba(226,87,76,.12); border-color: rgba(226,87,76,.4); color: #f4b8b2; }
+.alert:last-child { margin-bottom: 0; }
+.alert-ok   { background: rgba(79,181,114,.10); border-color: rgba(79,181,114,.30); border-left-color: var(--green); color: #c4ebd1; }
+.alert-erro { background: rgba(226,87,76,.10);  border-color: rgba(226,87,76,.30);  border-left-color: var(--red);   color: #f5bdb7; }
 
-/* ── TOPO ──
-   Vinha do <style> embutido no dashboard.html do Benbals. */
+/* ── BARRA DE CIMA ── */
 .topbar {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 16px;
-    background: var(--card);
-    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    min-height: 62px;
+    background: rgba(15,17,25,.88);
+    backdrop-filter: saturate(160%) blur(12px);
+    -webkit-backdrop-filter: saturate(160%) blur(12px);
+    border-bottom: 1px solid var(--border-soft);
     position: sticky; top: 0; z-index: 100;
     gap: 10px;
 }
-.topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.topbar-left { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .topbar-ident { min-width: 0; }
-.topbar-ident .nome { margin: 0; font-size: 16px; font-weight: 600; color: var(--text-hi); }
-.topbar-ident .sub { font-size: 12px; color: var(--muted); }
-.topbar-right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.marca { font-size: 18px; font-weight: 800; color: var(--gold); text-decoration: none; }
-.marca:hover { text-decoration: none; }
-
-/* Avatar-monograma (1ª letra do nome) — decorativo. */
-.avatar-mono {
-    width: 38px; height: 38px; flex-shrink: 0;
-    border-radius: 10px; background: var(--grad-gold-btn);
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 700; color: var(--on-gold); font-size: 15px;
-    text-decoration: none;
+.topbar-ident .nome { margin: 0; font-size: 15px; font-weight: 650; color: var(--text-hi); line-height: 1.2; }
+.topbar-ident .sub {
+    font-family: var(--num); font-variant-numeric: tabular-nums;
+    font-size: 12px; font-weight: 600; color: var(--gold); letter-spacing: -.01em;
 }
-.avatar-grande { width: 56px; height: 56px; font-size: 22px; border-radius: 14px; }
+.topbar-right { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+/* A marca deslogada: moeda + nome, do mesmo tamanho da identidade logada. */
+.marca {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-size: 17px; font-weight: 800; letter-spacing: -.02em;
+    color: var(--text-hi); text-decoration: none;
+}
+.marca:hover { text-decoration: none; color: var(--gold-lt); }
 
-/* ── NAV / MENU OFF-CANVAS ──
-   DESKTOP: a nav é uma grade de pills dentro da topbar (display:contents faz o
-   wrapper sumir e as pills fluírem no flex). Hambúrguer, sidebar e backdrop
-   ficam escondidos e só ligam abaixo de 768px. */
+/* ── MENU OFF-CANVAS ──
+   DESKTOP: a nav é uma grade de pills dentro da topbar (`display: contents`
+   faz o wrapper sumir e as pills fluírem no flex). Hambúrguer, sidebar e
+   backdrop ficam escondidos e só ligam abaixo de 768px.
+
+   Nada aqui mudou de comportamento nesta passada: o `menu.js` é o mesmo e
+   continua alternando `body.sidebar-aberta`. */
 .topbar-nav { display: contents; }
 .hamburguer { display: none; }
 .sidebar, .backdrop, .sidebar-close { display: none; }
 
-.sidebar-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.sidebar-logo { font-size: 18px; font-weight: 800; color: var(--gold); }
-.sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
-.sidebar-link {
-    display: flex; align-items: center; gap: 10px;
-    padding: 12px 14px; border-radius: 8px;
-    color: var(--text); text-decoration: none; font-weight: 600;
-    font-size: 15px; min-height: 48px; border: 1px solid transparent;
+.sidebar-top {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding-bottom: 14px; margin-bottom: 12px;
+    border-bottom: 1px solid var(--border-soft);
 }
-.sidebar-link:hover, .sidebar-link:focus { background: var(--bg); border-color: var(--border); outline: none; text-decoration: none; }
+.sidebar-logo {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-size: 17px; font-weight: 800; letter-spacing: -.02em; color: var(--text-hi);
+}
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-link {
+    position: relative;
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 14px; border-radius: var(--radius-sm);
+    color: var(--text-2); text-decoration: none; font-weight: 600;
+    font-size: 15px; min-height: 50px; border: 1px solid transparent;
+}
+.sidebar-link .ti { font-size: 19px; color: var(--muted); flex-shrink: 0; }
+.sidebar-link:hover, .sidebar-link:focus {
+    background: var(--card-2); color: var(--text-hi); text-decoration: none;
+}
+/* Página atual: fundo dourado fraco e um traço na borda esquerda. */
+.sidebar-link[aria-current="page"] {
+    background: rgba(242,193,78,.10);
+    color: var(--gold); font-weight: 700;
+}
+.sidebar-link[aria-current="page"] .ti { color: var(--gold); }
+.sidebar-link[aria-current="page"]::before {
+    content: ""; position: absolute; left: 0; top: 12px; bottom: 12px;
+    width: 3px; border-radius: 0 3px 3px 0; background: var(--gold);
+}
 .sidebar-link-gold { color: var(--gold-lt); }
-.sidebar-link-sair { margin-top: 8px; border-top: 1px solid var(--border); border-radius: 0; color: var(--red); }
+.sidebar-link-gold .ti { color: var(--gold-lt); }
+.sidebar-link-sair {
+    margin-top: 10px; padding-top: 18px;
+    border-top: 1px solid var(--border-soft); border-radius: 0;
+    color: var(--red);
+    /* Sair não tem ícone; a margem esquerda repõe o espaço dele (ícone de
+       19px + o gap de 12px) para o texto alinhar com o dos outros itens. */
+    padding-left: 45px;
+}
 .forma-sair { margin: 0; }
 /* Sair é um POST (link de logout é CSRF de brincadeira, mas é CSRF), então é
    um <button> dentro de <form>. Esta classe faz o botão parecer o item de
@@ -319,27 +503,27 @@ label { font-size: 14px; color: var(--muted); margin-bottom: 5px; display: block
 @media (max-width: 767px) {
     .topbar-nav { display: none; }   /* nav vira o menu hambúrguer */
     .topbar-sair { display: none; }  /* "Sair" mora dentro do menu */
-    .topbar { flex-wrap: nowrap; }
+    .topbar { flex-wrap: nowrap; padding: 10px 14px; }
     .topbar-ident .nome { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .topbar-ident .sub { font-size: 13px; }
 
     .hamburguer {
         display: inline-flex; align-items: center; justify-content: center;
-        width: 44px; height: 44px; flex: 0 0 auto;
-        background: var(--bg); color: var(--text);
-        border: 1px solid var(--border); border-radius: 8px;
+        width: 46px; height: 46px; flex: 0 0 auto;
+        background: var(--card-2); color: var(--text);
+        border: 1px solid var(--border); border-radius: 12px;
         font-size: 20px; cursor: pointer;
     }
-    .hamburguer:hover { filter: brightness(1.15); }
+    .hamburguer:hover { filter: brightness(1.2); }
 
     /* Painel: começa FORA da tela (translateX + visibility) — sem flicker no
        load; visibility evita foco em item off-screen. */
     .sidebar {
         display: flex; flex-direction: column;
         position: fixed; top: 0; left: 0; bottom: 0;
-        width: min(82%, 300px);
+        width: min(84%, 310px);
         background: var(--card); border-right: 1px solid var(--border);
-        padding: 16px 14px; z-index: 200; overflow-y: auto;
+        padding: 18px 14px; z-index: 200; overflow-y: auto;
         transform: translateX(-100%); visibility: hidden;
         transition: transform .25s ease, visibility 0s linear .25s;
     }
@@ -349,16 +533,16 @@ label { font-size: 14px; color: var(--muted); margin-bottom: 5px; display: block
     }
     .sidebar-close {
         display: inline-flex; align-items: center; justify-content: center;
-        width: 40px; height: 40px; flex: 0 0 auto;
+        width: 42px; height: 42px; flex: 0 0 auto;
         background: transparent; color: var(--muted);
-        border: 1px solid var(--border); border-radius: 8px;
-        font-size: 18px; cursor: pointer;
+        border: 1px solid var(--border); border-radius: 12px;
+        font-size: 17px; cursor: pointer;
     }
-    .sidebar-close:hover { color: var(--text); }
+    .sidebar-close:hover { color: var(--text-hi); }
 
     .backdrop {
         display: block; position: fixed; inset: 0;
-        background: rgba(0,0,0,.55); z-index: 150;
+        background: rgba(4,5,9,.62); z-index: 150;
         opacity: 0; pointer-events: none; transition: opacity .25s ease;
     }
     body.sidebar-aberta .backdrop { opacity: 1; pointer-events: auto; }
@@ -367,122 +551,156 @@ label { font-size: 14px; color: var(--muted); margin-bottom: 5px; display: block
 
 /* ── RODAPÉ ── */
 .rodape {
-    border-top: 1px solid var(--border);
-    padding: 14px 16px 28px;
+    border-top: 1px solid var(--border-soft);
+    padding: 18px 16px 30px;
     color: var(--muted-2);
-    font-size: 12.5px;
+    font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase;
     text-align: center;
 }
+.rodape p { margin: 0; }
 
-/* ── PERFIL ── */
+/* ── TELA CENTRADA (entrar / cadastro / erro) ──
+   A moeda grande fica acima do card, sozinha. É a única coisa decorativa do
+   site e ganha lugar justamente onde não há dado nenhum para mostrar. */
+.centro { max-width: 420px; margin: 0 auto; }
+.centro-marca {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    margin: 18px 0 22px;
+}
+.centro-marca .nome-marca {
+    font-size: 21px; font-weight: 800; letter-spacing: -.02em; color: var(--text-hi);
+}
+.centro .card {
+    background: var(--grad-aurora), var(--card);
+}
+.centro h1 { text-align: center; }
+/* Ações empilhadas da tela de boas-vindas. */
+.pilha { display: flex; flex-direction: column; gap: 10px; }
+
+/* ── CABEÇALHO DE PERFIL ── */
 .perfil-head {
     border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 18px 20px; margin-bottom: 14px;
-    background: linear-gradient(160deg, rgba(245,196,81,.10), var(--card));
-    display: flex; align-items: center; gap: 14px;
+    padding: 20px; margin-bottom: 14px;
+    background: var(--grad-aurora), var(--card);
+    display: flex; align-items: center; gap: 15px;
 }
 .perfil-ident { min-width: 0; }
-.perfil-nome { font-size: 19px; font-weight: 700; color: var(--text-hi); }
+.perfil-nome { font-size: 20px; font-weight: 700; color: var(--text-hi); letter-spacing: -.02em; }
 .perfil-user { color: var(--muted); font-size: 13px; }
 
-/* Grade de números (perfil e painel) */
-.numeros { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 10px; margin: 0 0 14px; }
-.numero { padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--card-2); }
-.numero dt { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.numero dd { margin: 3px 0 0; font-size: 18px; font-weight: 700; color: var(--text-hi); }
+/* ── GRADE DE NÚMEROS (perfil e painel) ── */
+.numeros {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: 10px; margin: 0 0 14px;
+}
+.numero {
+    padding: 13px 15px;
+    border: 1px solid var(--border); border-radius: 12px;
+    background: var(--card-2);
+}
+.numero dt {
+    font-size: 10.5px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .09em; font-weight: 700;
+}
+.numero dd {
+    margin: 5px 0 0;
+    font-family: var(--num); font-variant-numeric: tabular-nums;
+    font-size: 19px; font-weight: 700; letter-spacing: -.03em; color: var(--text-hi);
+}
+
+/* ── MEDIDOR DE SUPPLY (painel) ──
+   `<progress>` em vez de <div> com largura: a largura vem do atributo
+   `value`, e a CSP proíbe `style=""`. De quebra, o valor fica no DOM. */
+.medidor {
+    -webkit-appearance: none; appearance: none;
+    display: block; width: 100%; height: 8px;
+    border: none; border-radius: 999px;
+    background: var(--input);
+    margin: 2px 0 16px;
+    overflow: hidden;
+}
+.medidor::-webkit-progress-bar { background: var(--input); border-radius: 999px; }
+.medidor::-webkit-progress-value { background: var(--grad-gold-btn); border-radius: 999px; }
+.medidor::-moz-progress-bar { background: var(--gold); border-radius: 999px; }
 
 /* ── TABELAS (painel) ── */
 .tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .tabela th, .tabela td {
-    padding: 9px 8px; border-bottom: 1px solid var(--border-soft);
+    padding: 10px 9px; border-bottom: 1px solid var(--border-soft);
     text-align: left; vertical-align: top;
 }
-.tabela th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
-.tabela .numerico { text-align: right; white-space: nowrap; }
-.rolagem { overflow-x: auto; }
+.tabela tbody tr:last-child td { border-bottom: none; }
+.tabela th {
+    color: var(--muted); font-weight: 700; font-size: 10.5px;
+    text-transform: uppercase; letter-spacing: .09em;
+    border-bottom-color: var(--border);
+    position: sticky; top: 0; background: var(--card); z-index: 1;
+    white-space: nowrap;
+}
+.tabela .numerico { text-align: right; white-space: nowrap; font-family: var(--num); font-variant-numeric: tabular-nums; }
+.tabela th.numerico { font-family: inherit; }
+.rolagem { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
 
 /* ── TABELA COM EDIÇÃO NA LINHA (painel) ──
-   Campos pequenos dentro da célula: digita o número novo, salva, acabou. */
+   Digita o valor novo na célula, aperta Salvar, acabou. Sem modal, sem
+   confirmação, sem passo extra — a reclamação que originou esta tela foi
+   exatamente "mudar o dinheiro de alguém dá trabalho demais". Esta passada
+   só mexeu na aparência dos campos; o caminho é o mesmo. */
 .forma-linha { display: none; }
-.tabela-edicao td { vertical-align: middle; }
-.tabela-edicao .col-id { color: var(--muted); font-variant-numeric: tabular-nums; }
+.tabela-edicao td { vertical-align: middle; padding-top: 7px; padding-bottom: 7px; }
+.tabela-edicao tbody tr:hover td { background: rgba(255,255,255,.018); }
+.tabela-edicao .col-id {
+    color: var(--muted-2); font-family: var(--num);
+    font-variant-numeric: tabular-nums; font-size: 12px;
+}
 .entrada-linha {
     width: 100%; min-width: 6rem;
     background: var(--input);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--text-hi);
-    font: inherit; font-size: 14px;
-    padding: 7px 9px;
-    min-height: 38px;
+    font-family: inherit; font-size: 14px;
+    padding: 8px 10px;
+    min-height: 40px;
+    transition: border-color .15s, box-shadow .15s;
 }
 .entrada-linha::placeholder { color: var(--muted-2); }
 .entrada-linha:focus {
     outline: none;
     border-color: var(--gold);
-    box-shadow: 0 0 0 2px rgba(245,196,81,.15);
+    box-shadow: 0 0 0 3px rgba(242,193,78,.14);
 }
-.entrada-numero { text-align: right; min-width: 7rem; }
+.entrada-numero {
+    text-align: right; min-width: 7rem;
+    font-family: var(--num); font-variant-numeric: tabular-nums;
+    color: var(--gold-lt); font-weight: 600;
+}
 .linha-erro td {
-    color: var(--red); font-size: 13px;
+    color: var(--red); font-size: 12.5px; font-weight: 600;
     padding-top: 0; border-bottom: 1px solid var(--border-soft);
 }
 
-/* ── CENTRALIZADO (entrar / cadastro) ── */
-.centro { max-width: 420px; margin: 0 auto; }
-
-/* ── TABULEIRO DO MINES ──
-   Cinco colunas quadradas. Cada casa fechada é um <button> dentro do seu
-   próprio <form>: sem JavaScript, o clique é um POST e o servidor decide. */
-.tabuleiro {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 6px;
-    margin-bottom: 16px;
+/* ── RECIBO (confirmar transferência) ──
+   Quem paga, para quem, quanto. O valor no meio, grande, para a pessoa
+   conferir o número antes de apertar. */
+.recibo { text-align: center; padding: 6px 0 18px; }
+.recibo-valor {
+    font-family: var(--num); font-variant-numeric: tabular-nums;
+    font-size: clamp(2.2rem, 10vw, 2.8rem); font-weight: 700;
+    letter-spacing: -.04em; line-height: 1;
+    color: var(--gold-lt);
 }
-.casa-forma { margin: 0; display: contents; }
-.casa {
-    aspect-ratio: 1;
-    width: 100%;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--card-2);
-    color: var(--text-hi);
-    font-size: 20px; font-weight: 700;
-    cursor: default;
+.recibo-moeda {
+    font-size: 11px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted); margin-top: 8px;
 }
-.casa-fechada { cursor: pointer; transition: filter .12s, transform .08s; }
-.casa-fechada:hover { filter: brightness(1.35); }
-.casa-fechada:active { transform: scale(.95); }
-.casa-segura { background: rgba(79,181,114,.18); border-color: rgba(79,181,114,.45); color: var(--green); }
-.casa-mina   { background: rgba(226,87,76,.18);  border-color: rgba(226,87,76,.45);  color: var(--red); }
-
-.linha-form { display: flex; gap: 8px; align-items: center; }
-.linha-form .form-control { max-width: 8rem; }
-
-/* ── BLOCO QUE ABRE E FECHA (<details>) ──
-   Sem JavaScript. O <summary> vira um botão discreto; o triângulo padrão sai
-   e entra um sinal de mais/menos, que não muda de forma entre navegadores. */
-.revelavel { padding: 0; }
-.revelavel-botao {
-    display: flex; align-items: center; gap: 8px;
-    padding: 14px 16px;
-    font-size: 13.5px; font-weight: 600; color: var(--muted);
-    cursor: pointer; list-style: none;
-    border-radius: var(--radius);
+.recibo-para {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-top: 18px; padding: 9px 16px 9px 9px;
+    background: var(--card-2); border: 1px solid var(--border);
+    border-radius: 999px;
 }
-.revelavel-botao::-webkit-details-marker { display: none; }
-.revelavel-botao::after {
-    content: "+"; margin-left: auto;
-    font-size: 17px; line-height: 1; color: var(--gold);
-}
-.revelavel[open] > .revelavel-botao::after { content: "\2212"; }
-.revelavel-botao:hover { color: var(--text-hi); }
-.revelavel-botao > .ti { color: var(--gold); font-size: 15px; }
-.revelavel[open] > .revelavel-botao { border-bottom: 1px solid var(--border-soft); }
-.revelavel > *:not(.revelavel-botao) { margin-left: 16px; margin-right: 16px; }
-.revelavel > *:last-child { margin-bottom: 16px; }
+.recibo-para .nome { font-size: 15px; font-weight: 650; color: var(--text-hi); }
 
 /* ── ÍCONES OUTLINE (SVG via CSS mask; tingido por currentColor) ──
    Self-contained, sem CDN nem fonte externa: sempre renderiza, e passa na CSP
@@ -505,3 +723,49 @@ label { font-size: 14px; color: var(--muted); margin-bottom: 5px; display: block
 .ti-pencil { --ti: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h4l10.5 -10.5a1.5 1.5 0 0 0 -4 -4l-10.5 10.5v4'/%3E%3Cpath d='M13.5 6.5l4 4'/%3E%3C/svg%3E"); }
 .ti-dice { --ti: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='3'/%3E%3Ccircle cx='8.5' cy='8.5' r='1'/%3E%3Ccircle cx='15.5' cy='15.5' r='1'/%3E%3Ccircle cx='12' cy='12' r='1'/%3E%3C/svg%3E"); }
 .ti-ticket { --ti: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 5v2M15 11v2M15 17v2'/%3E%3Cpath d='M5 5h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-3a2 2 0 0 0 0 -4v-3a2 2 0 0 1 2 -2'/%3E%3C/svg%3E"); }
+.ti-flame { --ti: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 12c2 -2.96 0 -7 -1 -8c0 3.038 -1.773 4.741 -3 6c-1.226 1.26 -2 3.24 -2 5a6 6 0 1 0 12 0c0 -1.532 -1.056 -3.94 -2 -5c-1.786 2 -2.791 2 -4 2'/%3E%3C/svg%3E"); }
+
+/* ─────────────────────────────────────────
+   ISOLAMENTO DO CALADINHO
+
+   O cassino ficou de fora desta passada de design de propósito: a estética
+   dele é a do `cassino_benbal` e não deve mudar por efeito colateral. O
+   conteúdo já estava isolado — tudo lá é `cal-*` dentro de `.caladinho`, num
+   arquivo próprio — mas o casco (barra de cima, menu, rodapé, alertas) e o
+   fundo da página vêm daqui.
+
+   `base.html` marca o `<body>` das rotas do cassino com `.tema-caladinho`, e
+   este bloco devolve a elas os tokens antigos. É uma remarcação de variáveis,
+   não uma cópia de regras: se amanhã o casco mudar de estrutura, o cassino
+   acompanha a estrutura mas continua com a paleta dele.
+
+   Para tirar o cassino desta exceção um dia, basta apagar este bloco e a
+   condição no `<body>` do `base.html`.
+   ───────────────────────────────────────── */
+.tema-caladinho {
+    --bg:        #12141c;
+    --bg-2:      #12141c;
+    --card:      #181b25;
+    --card-2:    #1c1f2a;
+    --input:     #0f1119;
+    --border:    #262a38;
+    --border-soft:#21242f;
+    --text:      #e3e5eb;
+    --text-hi:   #f2f0ea;
+    --text-2:    #c9cbd4;
+    --muted:     #6b6f7d;
+    --muted-2:   #5b5f6c;
+    --gold:      #f5c451;
+    --gold-lt:   #f7cd6c;
+    --gold-dk:   #dc9f31;
+    --on-gold:   #2b1d02;
+    --on-gold-2: #6b4d0f;
+    --grad-gold:     linear-gradient(150deg, #f7cd6c 0%, #eeb64a 55%, #dc9f31 100%);
+    --grad-gold-btn: linear-gradient(135deg, #f7cd6c, #dc9f31);
+    --radius:    14px;
+    --shadow:    0 6px 22px rgba(0,0,0,.28);
+}
+/* A barra de cima do cassino volta a ser opaca, sem o desfoque do resto. */
+.tema-caladinho .topbar { background: var(--card); border-bottom-color: var(--border); }
+/* E o casco do cassino usa a tipografia dele, não a do site. */
+.tema-caladinho { font-family: "Segoe UI", system-ui, Roboto, Arial, sans-serif; }

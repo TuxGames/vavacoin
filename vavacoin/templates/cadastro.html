@@ -3,6 +3,10 @@
 {% block titulo %}Cadastro — VavaCoin{% endblock %}
 {% block conteudo %}
 <div class="centro">
+  <div class="centro-marca">
+    <span class="moeda moeda-lg" aria-hidden="true">V</span>
+    <span class="nome-marca">VavaCoin</span>
+  </div>
   <div class="card">
     <h1>Criar conta</h1>
     <form method="post">
@@ -15,7 +19,7 @@
       {{ formulario.enviar(class="btn btn-gold btn-full") }}
     </form>
     <hr>
-    <a href="{{ url_for('auth.login') }}">Já tenho conta</a>
+    <a class="link-fim" href="{{ url_for('auth.login') }}">Já tenho conta</a>
   </div>
 </div>
 {% endblock %}
