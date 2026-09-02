@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block titulo %}Torre — VavaCoin{% endblock %}
+{% block estilos %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='caladinho.css') }}">
+{% endblock %}
+{% block conteudo %}
+<div class="caladinho">
+<div class="cal-grid">
+
+  {# ---------------- Coluna esquerda: controles ---------------- #}
+  <div class="cal-card">
+    <h1>🗼 Torre</h1>
+
+    {% if rodada %}
+      <div class="cal-stats">
+        <div>Aposta: <b>{{ rodada.aposta }}</b> VVC</div>
+        <div>Portas: <b>{{ rodada.portas }}</b></div>
+        {# A vantagem congelada nesta rodada. #}
+        <div>Vantagem: <b>{{ rodada.vantagem }}%</b></div>
+        <div>Andar: <b>{{ rodada.andares_subidos }}</b>
+          <span class="cal-teto">/ {{ rodada.andares }}</span></div>
+        <div>Multiplicador: <b>{{ rodada.multiplicador }}×</b>
+          <span class="cal-teto">/ {{ teto }}×</span></div>
+        <div>
+          {% if rodada.encerrada %}Prêmio{% else %}Prêmio atual{% endif %}:
+          <b class="{{ 'cal-ganhou' if rodada.premio > 0 else ('cal-perdeu' if rodada.encerrada) }}">{% if rodada.encerrada %}{{ rodada.premio }}{% else %}{{ rodada.premio_atual }}{% endif %}</b> VVC
+        </div>
+      </div>
+
+      {% if rodada.encerrada %}
+        <a class="cal-btn cal-btn-amarelo" href="{{ url_for('caladinho.torre', nova=1) }}">Jogar de novo</a>
+      {% else %}
+        <form method="post" action="{{ url_for('caladinho.torre_sacar') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="cal-btn cal-btn-verde"
+                  {% if not rodada.andares_subidos %}disabled{% endif %}>
+            Sacar {{ rodada.premio_atual }} VVC</button>
+        </form>
+      {% endif %}
+
+    {% else %}
+      <form method="post" action="{{ url_for('caladinho.torre_comecar') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="cal-campo">
+          <label for="aposta">Aposta (VVC)</label>
+          <input class="cal-entrada" id="aposta" name="aposta" type="number"
+                 inputmode="decimal" step="0.01" min="0.01" max="{{ aposta_max }}"
+                 placeholder="0.00" required>
+        </div>
+        <div class="cal-campo">
+          <label for="portas">Portas por andar</label>
+          <input class="cal-entrada" id="portas" name="portas" type="number"
+                 inputmode="numeric" step="1"
+                 min="{{ min_portas }}" max="{{ max_portas }}"
+                 value="{{ portas }}" required>
+        </div>
+        <button type="submit" class="cal-btn cal-btn-verde">Começar</button>
+      </form>
+
+      <div class="cal-stats">
+        <div>Aposta máxima: <b>{{ aposta_max }}</b> VVC</div>
+        <div>Vantagem: <b>{{ vantagem }}%</b></div>
+        {% if caixa is not none %}
+        <div>Caixa da casa: <b>{{ caixa }}</b> VVC</div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {# ---------------- Coluna direita: a torre ----------------
+       Do topo para o térreo, como uma torre é. Cada porta do andar atual é um
+       <button> dentro do próprio <form>: sem JavaScript, o clique é um POST e
+       o servidor decide o que havia atrás. #}
+  <div class="cal-card">
+    {% if rodada %}
+      <div class="cal-torre">
+        {% for andar in range(rodada.andares - 1, -1, -1) %}
+        {% set subido = andar < rodada.andares_subidos %}
+        {% set atual = andar == rodada.andar_atual and not rodada.encerrada %}
+        <div class="cal-andar {{ 'cal-andar-atual' if atual }}">
+          <span class="cal-andar-num">{{ rodada.tabela[andar][1] }}×</span>
+          <div class="cal-portas" data-portas="{{ rodada.portas }}">
+            {% for porta in range(rodada.portas) %}
+            {% set escolhida = subido or (rodada.andar_estourado == andar) %}
+            {% set foi_esta = escolhida and rodada.escolhas[andar] == porta %}
+            {% set era_armadilha = rodada.armadilhas and rodada.armadilhas[andar] == porta %}
+            {% if atual %}
+              <form class="cal-porta-forma" method="post"
+                    action="{{ url_for('caladinho.torre_abrir') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="porta" value="{{ porta }}">
+                <button type="submit" class="cal-porta cal-porta-aberta"
+                        aria-label="Abrir a porta {{ porta + 1 }} do andar {{ andar + 1 }}">🚪</button>
+              </form>
+            {% else %}
+              <span class="cal-porta
+                          {{ 'cal-porta-certa' if foi_esta and subido }}
+                          {{ 'cal-porta-armadilha' if era_armadilha }}
+                          {{ 'cal-porta-estourou' if foi_esta and rodada.andar_estourado == andar }}">
+                {%- if foi_esta and subido %}✅{% elif era_armadilha %}💥{% elif foi_esta %}💥{% else %}🚪{% endif -%}
+              </span>
+            {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="cal-torre">
+        {% for andar, valor in tabela|reverse %}
+        <div class="cal-andar">
+          <span class="cal-andar-num">{{ valor }}×</span>
+          <div class="cal-portas" data-portas="{{ portas }}">
+            {% for _ in range(portas) %}<span class="cal-porta">🚪</span>{% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  {# ---------------- Histórico ---------------- #}
+  <div class="cal-card">
+    <h2>Últimas</h2>
+    {% if historico %}
+      {% for r in historico %}
+      <div class="cal-linha">
+        <div>
+          <div>{{ r.aposta }} VVC · {{ r.portas }} portas</div>
+          <div class="cal-linha-sub">
+            {{ r.andares_subidos }} andar{{ '' if r.andares_subidos == 1 else 'es' }}
+            · {{ r.multiplicador }}×
+          </div>
+        </div>
+        <div class="{{ 'cal-ganhou' if r.premio > 0 else 'cal-perdeu' }}">
+          {{ '+' if r.premio > 0 else '−' }}{{ r.premio if r.premio > 0 else r.aposta }}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="cal-vazio">Nenhuma rodada ainda.</div>
+    {% endif %}
+  </div>
+
+</div>
+</div>
+{% endblock %}

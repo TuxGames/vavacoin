@@ -600,6 +600,124 @@ class RodadaCrash(db.Model):
         return f"<RodadaCrash {self.id} {self.estado} aposta={self.aposta}>"
 
 
+class RodadaTorre(db.Model):
+    """Uma rodada de torre. Fonte da verdade do servidor.
+
+    **A torre inteira é sorteada na aposta**, como o tabuleiro do mines:
+    ``armadilhas`` guarda a porta armadilhada de cada andar, em CSV, e é
+    SEGREDO DO SERVIDOR enquanto a rodada vive. Sortear andar a andar não
+    daria nenhuma garantia a mais e abriria a porta para o sorteio depender de
+    quando a requisição chega — a mesma classe de erro que o tabuleiro em
+    branco nos custou.
+
+    ``escolhas`` guarda a porta que a pessoa abriu em cada andar, na ordem.
+    O tamanho dela É o andar em que a pessoa está.
+
+    Estados: ``ativa``, ``estourada`` (abriu a armadilha) e ``retirada``
+    (parou e recebeu, ou bateu o teto, ou a rodada expirou).
+
+    "No máximo uma rodada ativa por jogador" tem as duas defesas de sempre: o
+    ``FOR UPDATE`` mais a checagem na criação, e um índice único parcial no
+    banco para a corrida entre processos.
+    """
+
+    __tablename__ = "rodada_torre"
+
+    ATIVA = "ativa"
+    ESTOURADA = "estourada"
+    RETIRADA = "retirada"
+
+    id = db.Column(db.Integer, primary_key=True)
+    jogador_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    aposta = db.Column(Dinheiro, nullable=False)
+    #: A vantagem da casa no instante da aposta, em pontos percentuais.
+    #: Congelada pela mesma razão dos outros jogos: rodada aberta não muda de
+    #: tabela no meio, nem para melhor nem para pior.
+    vantagem = db.Column(Dinheiro, nullable=False, default=Decimal("2.00"))
+    #: Quantas portas por andar. É a dificuldade escolhida pelo jogador.
+    portas = db.Column(db.Integer, nullable=False)
+
+    #: A porta armadilhada de cada andar (0..portas-1), em CSV, do térreo ao
+    #: topo. SEGREDO DO SERVIDOR enquanto ``ativa``.
+    armadilhas = db.Column(db.String(200), nullable=False)
+    #: As portas abertas pela pessoa, na ordem. O tamanho é o andar atual.
+    escolhas = db.Column(db.String(200), nullable=False, default="")
+
+    estado = db.Column(db.String(12), nullable=False, default=ATIVA, index=True)
+    #: Em que andar a pessoa pisou na armadilha. Serve para a tela marcar o
+    #: andar que estourou e para responder "onde foi que eu errei?" depois.
+    andar_estourado = db.Column(db.Integer, nullable=True)
+    multiplicador = db.Column(Dinheiro, nullable=False, default=ZERO)
+    premio = db.Column(Dinheiro, nullable=False, default=ZERO)
+
+    transacao_aposta_id = db.Column(
+        db.Integer, db.ForeignKey("transacao.id"), nullable=True
+    )
+    transacao_premio_id = db.Column(
+        db.Integer, db.ForeignKey("transacao.id"), nullable=True
+    )
+
+    criada_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
+    #: Quando a pessoa mexeu pela última vez. É por aqui que a rodada
+    #: abandonada expira, em vez de prender o caixa da casa para sempre.
+    mexida_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
+    encerrada_em = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    jogador = db.relationship("Usuario", foreign_keys=[jogador_id])
+
+    __table_args__ = (
+        CheckConstraint("aposta > 0", name="ck_torre_aposta_positiva"),
+        CheckConstraint("portas >= 2 AND portas <= 4", name="ck_torre_portas"),
+        CheckConstraint(
+            "estado IN ('ativa', 'estourada', 'retirada')", name="ck_torre_estado"
+        ),
+        db.Index(
+            "uq_uma_rodada_torre_ativa_por_jogador",
+            "jogador_id",
+            unique=True,
+            sqlite_where=db.text("estado = 'ativa'"),
+            postgresql_where=db.text("estado = 'ativa'"),
+        ),
+    )
+
+    @staticmethod
+    def _lista(texto):
+        if not texto:
+            return []
+        return [int(p) for p in texto.split(",") if p != ""]
+
+    @property
+    def armadilha_por_andar(self):
+        return self._lista(self.armadilhas)
+
+    @property
+    def portas_abertas(self):
+        return self._lista(self.escolhas)
+
+    @property
+    def andares_subidos(self):
+        """Quantos andares a pessoa venceu.
+
+        Na rodada estourada o último andar aberto é justamente o que a
+        derrubou, e ele não conta como subido.
+        """
+        subidos = len(self.portas_abertas)
+        return subidos - 1 if self.andar_estourado is not None else subidos
+
+    @property
+    def encerrada(self):
+        return self.estado != self.ATIVA
+
+    def __repr__(self):
+        return f"<RodadaTorre {self.id} {self.estado} aposta={self.aposta}>"
+
+
 def buscar_usuario(nome, sessao=None):
     """Acha a conta pelo nome, comparando a forma normalizada.
 

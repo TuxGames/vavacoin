@@ -237,3 +237,61 @@
 }
 .cal-crash-x { font-size: 1.4rem; font-weight: 700; opacity: .7; }
 .cal-crash-parado { color: var(--cal-vermelho); }
+
+/* ── Torre ──
+   Do topo para o térreo. Cada andar é uma faixa com o multiplicador à
+   esquerda e as portas à direita; o andar atual fica aceso e os outros
+   apagados, para o olho achar sozinho onde clicar. */
+.cal-torre { display: grid; gap: 6px; }
+.cal-andar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 10px;
+    border: 1px solid transparent; border-radius: 10px;
+    opacity: .55;
+}
+.cal-andar-atual {
+    opacity: 1;
+    border-color: var(--cal-amarelo);
+    background: rgba(255, 176, 32, .07);
+}
+.cal-andar-num {
+    flex: 0 0 4.5rem;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px; font-weight: 700; color: var(--cal-amarelo);
+    text-align: right;
+}
+/* As portas dividem a largura do andar em partes iguais; `--portas` vem do
+   template porque a dificuldade muda a contagem. */
+.cal-portas {
+    flex: 1 1 auto;
+    display: grid; gap: 6px;
+    grid-template-columns: repeat(var(--portas, 3), 1fr);
+}
+.cal-portas[data-portas="2"] { --portas: 2; }
+.cal-portas[data-portas="3"] { --portas: 3; }
+.cal-portas[data-portas="4"] { --portas: 4; }
+.cal-porta-forma { display: contents; margin: 0; }
+.cal-porta {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 44px; padding: 0;
+    border: 1px solid var(--cal-borda); border-radius: 8px;
+    background: var(--cal-card-2); color: var(--cal-txt);
+    font-size: 19px; line-height: 1;
+    cursor: default;
+}
+button.cal-porta-aberta { cursor: pointer; transition: transform .06s ease, background .12s ease; }
+button.cal-porta-aberta:hover { background: #2c4054; transform: translateY(-2px); }
+button.cal-porta-aberta:active { transform: scale(.96); }
+.cal-porta-certa {
+    background: rgba(31, 199, 125, .18);
+    border-color: var(--cal-verde);
+}
+.cal-porta-armadilha { border-color: var(--cal-vermelho); }
+.cal-porta-estourou {
+    background: rgba(255, 91, 102, .25);
+    border-color: var(--cal-vermelho);
+}
+@media (max-width: 759px) {
+    .cal-andar-num { flex-basis: 3.6rem; font-size: 12px; }
+    .cal-porta { min-height: 40px; font-size: 17px; }
+}

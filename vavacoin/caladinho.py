@@ -29,7 +29,7 @@ Três coisas que este módulo não deixa acontecer:
 """
 
 import secrets
-from datetime import timezone
+from datetime import timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select, update
@@ -57,6 +57,15 @@ from .crash import (
     sortear_ponto_de_estouro,
     validar_alvo,
 )
+from .torre import (
+    altura as altura_da_torre,
+    bateu_o_teto as bateu_o_teto_torre,
+    multiplicador as multiplicador_torre,
+    multiplicador_pagavel as multiplicador_pagavel_torre,
+    premio_maximo as premio_maximo_torre,
+    tabela_de_multiplicadores as tabela_da_torre,
+    validar_portas,
+)
 from .mines import (
     CASAS,
     aposta_maxima,
@@ -66,7 +75,14 @@ from .mines import (
     premio_maximo,
     validar_minas,
 )
-from .modelos import RodadaCrash, RodadaMines, Transacao, Usuario, agora
+from .modelos import (
+    RodadaCrash,
+    RodadaMines,
+    RodadaTorre,
+    Transacao,
+    Usuario,
+    agora,
+)
 from .moeda import mover
 from .vantagem import fator_de, vantagem as vantagem_vigente
 
@@ -76,11 +92,14 @@ TIPO_PREMIO = "premio_mines"
 TIPO_APOSTA_CRASH = "aposta_crash"
 TIPO_PREMIO_CRASH = "premio_crash"
 
+TIPO_APOSTA_TORRE = "aposta_torre"
+TIPO_PREMIO_TORRE = "premio_torre"
+
 #: Tudo que é aposta e tudo que é prêmio, de qualquer jogo. O lucro do dono
 #: soma por aqui — assim um jogo novo entra na conta ao ser acrescentado nesta
 #: tupla, e não ao alguém lembrar de mexer no ``lucro_do_dono``.
-TIPOS_DE_APOSTA = (TIPO_APOSTA, TIPO_APOSTA_CRASH)
-TIPOS_DE_PREMIO = (TIPO_PREMIO, TIPO_PREMIO_CRASH)
+TIPOS_DE_APOSTA = (TIPO_APOSTA, TIPO_APOSTA_CRASH, TIPO_APOSTA_TORRE)
+TIPOS_DE_PREMIO = (TIPO_PREMIO, TIPO_PREMIO_CRASH, TIPO_PREMIO_TORRE)
 
 #: Dinheiro do dono entrando e saindo da casa. É capital, não lucro — por
 #: isso não entra na conta do :func:`lucro_do_dono`.
@@ -291,6 +310,10 @@ def exposicao_comprometida(sessao=None):
         select(RodadaCrash.aposta).where(RodadaCrash.estado == RodadaCrash.ATIVA)
     ).scalars():
         total += premio_maximo_crash(aposta)
+    for aposta in sessao.execute(
+        select(RodadaTorre.aposta).where(RodadaTorre.estado == RodadaTorre.ATIVA)
+    ).scalars():
+        total += premio_maximo_torre(aposta)
     return total
 
 
@@ -889,4 +912,367 @@ def visao_da_rodada_crash(rodada, momento=None):
         "premio": rodada.premio,
         "decorridos": segundos_decorridos(rodada, momento),
         "ponto_de_estouro": rodada.ponto_de_estouro if rodada.encerrada else None,
+    }
+
+
+# --- torre ------------------------------------------------------------------
+#
+# A torre é o mines com a forma trocada: em vez de um tabuleiro de 25 casas,
+# uma pilha de andares com uma armadilha cada. A disciplina é a mesma, e de
+# propósito — sorteio no servidor na hora da aposta, segredo enquanto a rodada
+# vive, transição por UPDATE condicional, aposta e prêmio como dois
+# lançamentos.
+#
+# O que ela ganhou e o mines ainda não tem: **expiração**. Rodada de torre
+# esquecida não fica presa para sempre segurando o caixa da casa na exposição
+# comprometida. Depois de `VALIDADE_DA_TORRE` sem ninguém mexer, ela é sacada
+# pelo multiplicador já conquistado — que em zero andares é 1,00×, ou seja, a
+# aposta de volta. Nem punição nem presente: devolve exatamente o que a pessoa
+# tinha na mão quando parou.
+
+
+#: Quanto tempo uma rodada de torre sobrevive sem ninguém mexer.
+VALIDADE_DA_TORRE = timedelta(minutes=30)
+
+
+def rodada_torre_ativa(jogador, sessao=None, travada=False):
+    """A rodada de torre em andamento do jogador, se houver."""
+    sessao = sessao or db.session
+    jogador_id = jogador.id if isinstance(jogador, Usuario) else jogador
+    consulta = (
+        select(RodadaTorre)
+        .where(
+            RodadaTorre.jogador_id == jogador_id,
+            RodadaTorre.estado == RodadaTorre.ATIVA,
+        )
+        .order_by(RodadaTorre.id.desc())
+    )
+    if travada:
+        consulta = consulta.with_for_update()
+    return sessao.execute(consulta).scalars().first()
+
+
+def ultima_rodada_torre(jogador, sessao=None):
+    """A rodada de torre encerrada mais recente.
+
+    Existe pela lição que o mines já pagou: resultado que só vive no
+    ``?rodada=`` do redirect some quando o POST é reenviado ou a página é
+    recarregada, e a tela volta a parecer rodada nova.
+    """
+    sessao = sessao or db.session
+    jogador_id = jogador.id if isinstance(jogador, Usuario) else jogador
+    return (
+        sessao.execute(
+            select(RodadaTorre)
+            .where(
+                RodadaTorre.jogador_id == jogador_id,
+                RodadaTorre.estado != RodadaTorre.ATIVA,
+            )
+            .order_by(RodadaTorre.id.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def criar_rodada_torre(jogador, aposta, portas, sessao=None):
+    """Começa a rodada, sorteia a torre inteira e cobra a aposta.
+
+    A ordem importa: tudo que pode recusar é conferido **antes** de o dinheiro
+    sair. As armadilhas são sorteadas aqui, com ``secrets``, uma por andar até
+    o topo, e não vão para o cliente enquanto a rodada viver.
+    """
+    sessao = sessao or db.session
+    conta_da_casa = exigir_casa(sessao)
+
+    if jogador.eh_conta_de_sistema:
+        raise ValorInvalido("conta de sistema não joga")
+
+    try:
+        portas = validar_portas(portas)
+    except ValueError as erro:
+        raise ValorInvalido(str(erro)) from erro
+
+    try:
+        aposta = para_decimal(aposta)
+    except TypeError as erro:
+        raise ValorInvalido(str(erro)) from erro
+    if aposta <= ZERO:
+        raise ValorInvalido("a aposta precisa ser maior que zero")
+
+    # Varre as abandonadas ANTES de medir a exposição: é aqui que o caixa
+    # preso por rodada esquecida faria diferença, recusando aposta boa.
+    expirar_torres_abandonadas(sessao)
+
+    travado = sessao.execute(
+        select(Usuario).where(Usuario.id == jogador.id).with_for_update()
+    ).scalar_one()
+
+    if rodada_torre_ativa(jogador, sessao) is not None:
+        raise RodadaEmAndamento("você já tem uma rodada em andamento")
+
+    if travado.saldo < aposta:
+        raise ValorInvalido(f"você tem {travado.saldo} VVC")
+
+    maximo = limite_de_aposta(sessao)
+    if aposta > maximo:
+        raise ApostaAlta(f"aposta máxima para o caixa de agora: {maximo} VVC")
+
+    vantagem_da_rodada = vantagem_vigente("torre", sessao)
+    sorteio = secrets.SystemRandom()
+    andares = altura_da_torre(portas, fator_de(vantagem_da_rodada))
+    armadilhas = [sorteio.randrange(portas) for _ in range(andares)]
+
+    rodada = RodadaTorre(
+        jogador_id=jogador.id,
+        aposta=aposta,
+        vantagem=vantagem_da_rodada,
+        portas=portas,
+        armadilhas=",".join(str(a) for a in armadilhas),
+        escolhas="",
+        estado=RodadaTorre.ATIVA,
+        multiplicador=para_decimal("1.00"),
+        premio=ZERO,
+        mexida_em=agora(),
+    )
+    sessao.add(rodada)
+    try:
+        sessao.flush()
+    except IntegrityError as erro:
+        sessao.rollback()
+        raise RodadaEmAndamento("você já tem uma rodada em andamento") from erro
+
+    transacao = mover(
+        jogador,
+        conta_da_casa,
+        aposta,
+        tipo=TIPO_APOSTA_TORRE,
+        motivo=f"torre #{rodada.id}",
+        sessao=sessao,
+    )
+    rodada.transacao_aposta_id = transacao.id
+    sessao.flush()
+    return rodada
+
+
+def abrir_porta(jogador, porta, sessao=None):
+    """Abre uma porta do andar atual. O servidor decide o que havia atrás.
+
+    Reenviar o mesmo POST não abre duas portas: o ``UPDATE`` condicional exige
+    que ``escolhas`` ainda seja o que era quando a decisão foi tomada.
+    """
+    sessao = sessao or db.session
+
+    rodada = rodada_torre_ativa(jogador, sessao, travada=True)
+    if rodada is None:
+        raise SemRodadaAtiva("nenhuma rodada em andamento")
+
+    try:
+        porta = int(porta)
+    except (TypeError, ValueError):
+        raise ValorInvalido("porta inválida")
+    if not 0 <= porta < rodada.portas:
+        raise ValorInvalido("porta fora do andar")
+
+    escolhas = rodada.portas_abertas
+    andar = len(escolhas)
+    armadilhas = rodada.armadilha_por_andar
+    if andar >= len(armadilhas):
+        # Já está no topo: não há andar para abrir. Encerra pagando.
+        return sacar_torre(jogador, sessao=sessao)
+
+    escolhas.append(porta)
+    novo_texto = ",".join(str(p) for p in escolhas)
+
+    if porta == armadilhas[andar]:
+        return _estourar_torre(rodada, novo_texto, andar, sessao)
+
+    fator_da_rodada = fator_de(rodada.vantagem)
+    subidos = len(escolhas)
+    novo_multiplicador = multiplicador_torre(rodada.portas, subidos, fator_da_rodada)
+
+    aplicado = sessao.execute(
+        update(RodadaTorre)
+        .where(
+            RodadaTorre.id == rodada.id,
+            RodadaTorre.estado == RodadaTorre.ATIVA,
+            RodadaTorre.escolhas == rodada.escolhas,
+        )
+        .values(
+            escolhas=novo_texto,
+            multiplicador=novo_multiplicador,
+            mexida_em=agora(),
+        )
+    )
+    if aplicado.rowcount != 1:
+        raise SemRodadaAtiva("a rodada mudou; recarregue a página")
+    sessao.expire(rodada)
+
+    # No topo não há mais o que ganhar subindo: a rodada encerra e paga
+    # sozinha, como o mines faz ao bater o teto.
+    if bateu_o_teto_torre(rodada.portas, subidos, fator_da_rodada):
+        return sacar_torre(jogador, sessao=sessao)
+
+    return rodada
+
+
+def _estourar_torre(rodada, escolhas, andar, sessao):
+    """Pisou na armadilha. A aposta já está com a casa; perder é fechar."""
+    aplicado = sessao.execute(
+        update(RodadaTorre)
+        .where(RodadaTorre.id == rodada.id, RodadaTorre.estado == RodadaTorre.ATIVA)
+        .values(
+            estado=RodadaTorre.ESTOURADA,
+            escolhas=escolhas,
+            andar_estourado=andar,
+            premio=ZERO,
+            mexida_em=agora(),
+            encerrada_em=agora(),
+        )
+    )
+    if aplicado.rowcount != 1:
+        raise SemRodadaAtiva("esta rodada já acabou")
+    sessao.expire(rodada)
+    return rodada
+
+
+def sacar_torre(jogador, sessao=None, rodada=None):
+    """Encerra ganhando e paga o acumulado. Idempotente.
+
+    O estado vira ``retirada`` **antes** do pagamento, por ``UPDATE``
+    condicional: se duas requisições chegarem juntas, só uma passa da trava, e
+    só ela paga.
+    """
+    sessao = sessao or db.session
+    conta_da_casa = exigir_casa(sessao, travada=True)
+
+    if rodada is None:
+        rodada = rodada_torre_ativa(jogador, sessao, travada=True)
+    if rodada is None:
+        raise SemRodadaAtiva("nenhuma rodada em andamento para retirar")
+
+    subidos = rodada.andares_subidos
+    fator = multiplicador_pagavel_torre(
+        rodada.portas, subidos, fator_de(rodada.vantagem)
+    )
+    premio = quantizar_para_baixo(rodada.aposta * fator)
+
+    aplicado = sessao.execute(
+        update(RodadaTorre)
+        .where(RodadaTorre.id == rodada.id, RodadaTorre.estado == RodadaTorre.ATIVA)
+        .values(
+            estado=RodadaTorre.RETIRADA,
+            multiplicador=fator,
+            premio=premio,
+            mexida_em=agora(),
+            encerrada_em=agora(),
+        )
+    )
+    if aplicado.rowcount != 1:
+        raise SemRodadaAtiva("esta rodada já acabou")
+    sessao.expire(rodada)
+
+    if premio > ZERO:
+        # O teto de banca de novo, contra o caixa DESTE instante: entre a
+        # aposta e o pagamento pode ter entrado outra rodada.
+        if conta_da_casa.saldo < premio:
+            raise CaixaComprometido(
+                f"a casa não tem {premio} VVC agora; procure o dono do cassino"
+            )
+        transacao = mover(
+            conta_da_casa,
+            rodada.jogador_id,
+            premio,
+            tipo=TIPO_PREMIO_TORRE,
+            motivo=f"torre #{rodada.id} · {fator}x",
+            sessao=sessao,
+        )
+        rodada.transacao_premio_id = transacao.id
+        sessao.flush()
+    return rodada
+
+
+def expirar_torres_abandonadas(sessao=None, momento=None):
+    """Fecha as rodadas de torre esquecidas, pagando o já conquistado.
+
+    Rodada aberta segura ``premio_maximo`` na exposição comprometida. Sem
+    isto, quem fecha a aba com rodada aberta congela um pedaço do caixa da
+    casa para sempre — e dez pessoas fazendo isso travam o cassino inteiro
+    sem que ninguém esteja jogando.
+
+    Paga o multiplicador já conquistado, que em zero andares é 1,00×: a
+    aposta de volta. Não é presente nem punição, é devolver o que a pessoa
+    tinha na mão. Rodada expirada aparece como ``retirada``, porque foi
+    exatamente isso que aconteceu.
+    """
+    sessao = sessao or db.session
+    limite = (momento or agora()) - VALIDADE_DA_TORRE
+
+    abandonadas = list(
+        sessao.execute(
+            select(RodadaTorre)
+            .where(
+                RodadaTorre.estado == RodadaTorre.ATIVA,
+                RodadaTorre.mexida_em < limite,
+            )
+            .with_for_update()
+        ).scalars()
+    )
+    for rodada in abandonadas:
+        try:
+            sacar_torre(rodada.jogador_id, sessao=sessao, rodada=rodada)
+        except (SemRodadaAtiva, CaixaComprometido):
+            # Outra requisição chegou primeiro, ou a casa não cobre agora.
+            # Nenhum dos dois é motivo para derrubar quem só passava por aqui.
+            continue
+    return abandonadas
+
+
+def historico_torre(jogador, limite=15, sessao=None):
+    """Rodadas de torre encerradas, da mais recente para a mais antiga."""
+    sessao = sessao or db.session
+    return list(
+        sessao.execute(
+            select(RodadaTorre)
+            .where(
+                RodadaTorre.jogador_id == jogador.id,
+                RodadaTorre.estado != RodadaTorre.ATIVA,
+            )
+            .order_by(RodadaTorre.id.desc())
+            .limit(limite)
+        ).scalars()
+    )
+
+
+def visao_da_rodada_torre(rodada):
+    """O que a tela pode mostrar.
+
+    Enquanto a rodada vive, ``armadilhas`` é ``None``: a torre só aparece
+    quando ela encerra. É a projeção segura, e é o ponto em que um descuido
+    entregaria o jogo inteiro.
+    """
+    if rodada is None:
+        return None
+    fator_da_rodada = fator_de(rodada.vantagem)
+    subidos = rodada.andares_subidos
+    andares = len(rodada.armadilha_por_andar)
+    atual = multiplicador_pagavel_torre(rodada.portas, subidos, fator_da_rodada)
+    return {
+        "id": rodada.id,
+        "estado": rodada.estado,
+        "encerrada": rodada.encerrada,
+        "aposta": rodada.aposta,
+        "vantagem": rodada.vantagem,
+        "portas": rodada.portas,
+        "andares": andares,
+        "andar_atual": len(rodada.portas_abertas),
+        "andares_subidos": subidos,
+        "escolhas": rodada.portas_abertas,
+        "multiplicador": atual if subidos else ZERO,
+        "premio_atual": quantizar_para_baixo(rodada.aposta * atual) if subidos else ZERO,
+        "premio": rodada.premio,
+        "andar_estourado": rodada.andar_estourado,
+        "armadilhas": rodada.armadilha_por_andar if rodada.encerrada else None,
+        "tabela": tabela_da_torre(rodada.portas, fator_da_rodada),
     }

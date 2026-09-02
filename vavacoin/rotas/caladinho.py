@@ -26,7 +26,15 @@ from ..caladinho import (
     casa,
     criar_rodada,
     criar_rodada_crash,
+    criar_rodada_torre,
+    abrir_porta,
+    expirar_torres_abandonadas,
     historico_crash,
+    historico_torre,
+    rodada_torre_ativa,
+    sacar_torre,
+    ultima_rodada_torre,
+    visao_da_rodada_torre,
     resolver_crash,
     rodada_crash_ativa,
     sacar_crash,
@@ -60,7 +68,19 @@ from ..crash import (
     SEGUNDOS_PARA_DOBRAR,
     TETO_DO_MULTIPLICADOR as TETO_CRASH,
 )
-from ..modelos import CHAVE_CAIXA_VISIVEL, RodadaCrash, RodadaMines, config_ligada
+from ..torre import (
+    MAX_PORTAS,
+    MIN_PORTAS,
+    TETO_DO_MULTIPLICADOR as TETO_TORRE,
+    tabela_de_multiplicadores as tabela_da_torre,
+)
+from ..modelos import (
+    CHAVE_CAIXA_VISIVEL,
+    RodadaCrash,
+    RodadaMines,
+    RodadaTorre,
+    config_ligada,
+)
 from ..vantagem import (
     JOGOS,
     MAXIMA,
@@ -365,3 +385,106 @@ def crash_sacar():
         db.session.rollback()
         flash(str(erro), "erro")
     return redirect(url_for("caladinho.crash", rodada=encerrada))
+
+
+@bp.route("/torre")
+def torre():
+    """A rodada ativa, o resultado da última encerrada, ou o formulário.
+
+    Mesma ordem do mines e do crash, pela mesma lição: o resultado não pode
+    depender de o navegador ter chegado com o ``?rodada=`` do redirect.
+
+    O GET varre as rodadas abandonadas de todo mundo antes de desenhar. Não é
+    sortear nem decidir nada — é fechar rodada que já passou da validade,
+    pagando o que ela tinha conquistado, para que o caixa da casa não fique
+    preso por quem fechou a aba.
+    """
+    try:
+        expirar_torres_abandonadas()
+        db.session.commit()
+    except (ErroDeJogo, ErroMonetario):
+        db.session.rollback()
+
+    rodada = rodada_torre_ativa(current_user)
+
+    encerrada_id = request.args.get("rodada", type=int)
+    if rodada is None and encerrada_id is not None:
+        encerrada = db.session.get(RodadaTorre, encerrada_id)
+        if encerrada is None or encerrada.jogador_id != current_user.id:
+            abort(404)
+        rodada = encerrada
+    elif rodada is None and not request.args.get("nova"):
+        rodada = ultima_rodada_torre(current_user)
+
+    portas = request.args.get("portas", type=int) or 3
+    portas = min(max(portas, MIN_PORTAS), MAX_PORTAS)
+    if rodada is not None:
+        portas = rodada.portas
+
+    vantagem = rodada.vantagem if rodada is not None else vantagem_do_jogo("torre")
+
+    return render_template(
+        "torre.html",
+        rodada=visao_da_rodada_torre(rodada),
+        portas=portas,
+        min_portas=MIN_PORTAS,
+        max_portas=MAX_PORTAS,
+        teto=TETO_TORRE,
+        vantagem=vantagem,
+        tabela=tabela_da_torre(portas, fator_de(vantagem)),
+        aposta_max=limite_de_aposta(),
+        caixa=_caixa_visivel(),
+        historico=historico_torre(current_user),
+    )
+
+
+@bp.route("/torre/comecar", methods=["POST"])
+def torre_comecar():
+    try:
+        criar_rodada_torre(
+            current_user,
+            (request.form.get("aposta") or "").strip().replace(",", "."),
+            request.form.get("portas"),
+        )
+        db.session.commit()
+    except (ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.torre"))
+
+
+@bp.route("/torre/abrir", methods=["POST"])
+def torre_abrir():
+    encerrada = None
+    try:
+        rodada = abrir_porta(current_user, request.form.get("porta"))
+        db.session.commit()
+        if rodada.encerrada:
+            # Leva para a tela do resultado: quem perdeu tem que poder ver
+            # onde estavam as armadilhas.
+            encerrada = rodada.id
+    except SemRodadaAtiva:
+        # O mesmo clique chegou duas vezes — toque duplo, ou o navegador
+        # reenviando o POST cuja resposta se perdeu. A rodada já foi
+        # resolvida; reclamar seria acusar a pessoa de um erro que é da rede.
+        db.session.rollback()
+    except (ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.torre", rodada=encerrada))
+
+
+@bp.route("/torre/sacar", methods=["POST"])
+def torre_sacar():
+    encerrada = None
+    try:
+        rodada = sacar_torre(current_user)
+        db.session.commit()
+        encerrada = rodada.id
+        flash(f"Retirou {rodada.premio} VVC.", "ok")
+    except SemRodadaAtiva:
+        db.session.rollback()
+    except (ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.torre", rodada=encerrada))
