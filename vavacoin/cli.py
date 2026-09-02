@@ -231,10 +231,10 @@ def comando_extrato(nome_usuario, limite):
 
 
 @click.command("resetar")
-@click.confirmation_option(prompt="Recolher todo o dinheiro e redistribuir os 50?")
+@click.confirmation_option(prompt="Recolher o saldo de todos para o Banco Central?")
 @with_appcontext
 def comando_resetar():
-    """Reset da economia: recolhe de todos e redistribui o saque inicial."""
+    """Reset da economia: recolhe o saldo de todos para o Banco Central."""
     quantos = resetar_economia(autoridade=_autoridade())
     db.session.commit()
     click.echo(f"Reset concluído para {quantos} participantes. Soma: {soma_saldos()}")

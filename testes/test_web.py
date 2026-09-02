@@ -61,6 +61,18 @@ def _cadastrar(cliente, bc, usuario="ana", senha=SENHA, codigo=None, saldo="50.0
     return resposta
 
 
+def _texto_visivel(html):
+    """Só o que a pessoa lê: sem tags nem atributos.
+
+    Existe porque procurar "50" no HTML cru bate no `maxlength` do campo de
+    usuário — o teste precisa olhar a tela, não o markup.
+    """
+    import re
+
+    sem_tags = re.sub(r"<[^>]+>", " ", html)
+    return re.sub(r"\s+", " ", sem_tags).strip()
+
+
 def _entrar(cliente, usuario="ana", senha=SENHA):
     return cliente.post(
         "/entrar",
@@ -120,6 +132,43 @@ def test_cadastro_por_convite_cria_conta_com_zero(app, bc, cliente):
 
     # Já entra logado.
     assert cliente.get("/carteira").status_code == 200
+
+
+def test_a_tela_de_cadastro_nao_promete_dinheiro(app, bc, cliente):
+    """O texto é parte do comportamento, não acabamento.
+
+    Quando o saque inicial saiu do código, o botão continuou dizendo "criar
+    conta e sacar os 50" e a mensagem de sucesso continuou dizendo que a
+    pessoa tinha recebido 50 VVC. A tela mentia para quem se cadastrava.
+    """
+    codigo = criar_convite(destinatario="Ana", autoridade=bc).codigo
+    db.session.commit()
+
+    # Só o texto que a pessoa lê: o HTML cru tem "50" no maxlength do campo.
+    formulario = _texto_visivel(cliente.get("/cadastro").get_data(as_text=True))
+    assert "sacar" not in formulario.lower()
+    assert "50" not in formulario
+
+    resposta = cliente.post(
+        "/cadastro",
+        data={
+            "codigo": codigo,
+            "nome_usuario": "ana",
+            "nome_exibicao": "Ana",
+            "senha": SENHA,
+            "confirmacao": SENHA,
+        },
+        follow_redirects=True,
+    )
+    corpo = _texto_visivel(resposta.get_data(as_text=True))
+
+    assert "Conta criada." in corpo
+    assert "50" not in corpo
+    assert "já estão com você" not in corpo
+
+    ana = buscar_usuario("ana")
+    assert ana.saldo == Decimal("0.00"), "a tela e o saldo têm que concordar"
+    conservacao()
 
 
 def test_cadastro_sem_convite_valido_nao_cria_conta(app, bc, cliente):

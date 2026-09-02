@@ -62,7 +62,7 @@ class FormularioCadastro(FlaskForm):
         "Repita a senha",
         validators=[DataRequired(), EqualTo("senha", message="As senhas não batem.")],
     )
-    enviar = SubmitField("Criar conta e sacar os 50")
+    enviar = SubmitField("Criar conta")
 
 
 class FormularioTransferencia(FlaskForm):

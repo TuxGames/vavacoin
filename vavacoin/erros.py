@@ -39,7 +39,7 @@ class ConviteInvalido(ErroMonetario):
 
 
 class ConviteJaResgatado(ErroMonetario):
-    """O código já foi usado. Os 50 são da pessoa, e a pessoa já sacou."""
+    """O código já foi usado. O convite é da pessoa, e ela já entrou."""
 
 
 class UsuarioJaResgatou(ErroMonetario):

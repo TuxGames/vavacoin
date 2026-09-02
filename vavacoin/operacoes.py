@@ -63,10 +63,10 @@ def criar_usuario(
 
 
 def criar_convite(codigo=None, destinatario=None, autoridade=None, sessao=None):
-    """Cria um convite — o direito de uma pessoa sacar os 50 iniciais.
+    """Cria um convite — o direito de uma pessoa entrar na economia.
 
     Poder do Banco Central. Um convite por aluno; quantos convites existem é
-    o que controla quantas pessoas entram, e o supply não cresce com eles.
+    o que controla quantas pessoas entram.
     """
     sessao = sessao or db.session
     bc = exigir_banco_central(autoridade, sessao)
@@ -178,7 +178,7 @@ def transferir(origem, destino, valor, motivo=None, sessao=None):
 def resetar_economia(
     autoridade=None, sessao=None, saque=ZERO, motivo="reset da economia"
 ):
-    """Recolhe tudo ao Banco Central e redistribui os 50 por pessoa.
+    """Recolhe o saldo de todos para o Banco Central.
 
     Poder do Banco Central. Recolhe de **todo mundo, sem exceção — inclusive
     o dono do cassino**: sem temporada, o reset é o único mecanismo contra a
@@ -218,7 +218,7 @@ def resetar_economia(
     if necessario > disponivel:
         raise SupplyInsuficiente(
             f"{len(participantes)} participantes a {saque} exigem {necessario}, "
-            f"acima do supply de {disponivel}; reduza o saque inicial"
+            f"acima do supply de {disponivel}; escolha um valor menor"
         )
 
     with sessao.begin_nested():

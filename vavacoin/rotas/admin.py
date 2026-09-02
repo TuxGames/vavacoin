@@ -286,7 +286,7 @@ def extrato_de(nome_usuario):
 
 @bp.route("/reset", methods=["POST"])
 def reset():
-    """Recolhe de todos e redistribui os 50. Exige digitar a palavra."""
+    """Recolhe o saldo de todos para o Banco Central. Exige digitar a palavra."""
     formulario = FormularioReset()
     if not formulario.validate_on_submit():
         flash("Para resetar, digite RESETAR na confirmação.", "erro")

@@ -89,10 +89,11 @@ def logout():
 
 @bp.route("/cadastro", methods=["GET", "POST"])
 def cadastro():
-    """Cria a conta e saca os 50 do Banco Central, num passo só.
+    """Cria a conta. É a única porta de entrada.
 
-    Não existe cadastro sem convite: é o que garante que os 50 são da pessoa
-    e que ninguém entra sem ter pedido.
+    A conta nasce com **saldo zero**: o convite dá entrada na economia, não
+    dinheiro. Não existe cadastro sem convite — é o que garante que ninguém
+    entra sem ter pedido.
     """
     if current_user.is_authenticated:
         return redirect(url_for("publico.inicio"))
@@ -122,7 +123,7 @@ def cadastro():
             return render_template("cadastro.html", formulario=formulario), 400
 
         login_user(usuario)
-        flash("Conta criada. Os 50 VVC já estão com você.", "ok")
+        flash("Conta criada.", "ok")
         return redirect(url_for("publico.inicio"))
 
     return render_template("cadastro.html", formulario=formulario)

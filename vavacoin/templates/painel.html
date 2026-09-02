@@ -20,7 +20,7 @@
     </div>
     <div class="numero"><dt>Em circulação</dt><dd>{{ estado.em_circulacao }}</dd></div>
     <div class="numero"><dt>Não emitido</dt><dd>{{ estado.nao_emitido }}</dd></div>
-    <div class="numero"><dt>Contas / sacaram</dt><dd>{{ estado.contas }} / {{ estado.participantes }}</dd></div>
+    <div class="numero"><dt>Contas / com convite</dt><dd>{{ estado.contas }} / {{ estado.participantes }}</dd></div>
   </dl>
   <a class="btn btn-outline btn-sm" href="{{ url_for('admin.auditoria') }}">Rodar auditoria</a>
 </div>

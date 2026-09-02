@@ -1,7 +1,7 @@
 """Modelos do núcleo monetário.
 
 Três tabelas e nada mais nesta fatia: quem tem dinheiro (``Usuario``), o que
-autoriza uma pessoa a sacar os 50 (``Convite``) e o registro imutável de todo
+autoriza uma pessoa a entrar (``Convite``) e o registro imutável de todo
 centavo que se moveu (``Transacao``).
 """
 
@@ -141,11 +141,11 @@ class Usuario(db.Model, UserMixin):
 
 
 class Convite(db.Model):
-    """O direito de uma pessoa sacar os 50 iniciais.
+    """O direito de uma pessoa entrar na economia.
 
-    O convite é da **pessoa**, não da conta: é o código que carrega o saque,
-    e ele só serve uma vez. Sem isso, dez cadastros da mesma pessoa virariam
-    500 VVC e o supply passaria a crescer com o número de contas.
+    O convite é da **pessoa**, não da conta, e só serve uma vez. Ele já
+    carregou um saque de 50 VVC; hoje carrega só o acesso, e o dinheiro chega
+    depois por transferência ou por ajuste do Banco Central.
     """
 
     __tablename__ = "convite"
