@@ -692,6 +692,25 @@ label {
     border-color: var(--gold);
     box-shadow: 0 0 0 3px rgba(242,193,78,.14);
 }
+/* Apagar e encerrar: texto, não botão cheio. São ações raras e destrutivas,
+   e um botão vermelho grande na linha convida o dedo errado — o vermelho
+   entra no hover, quando a intenção já existe. */
+.botao-perigo {
+    background: none; border: 0; padding: 0;
+    font: inherit; font-size: 13.5px; font-weight: 600;
+    color: var(--muted); cursor: pointer;
+}
+.botao-perigo:hover { color: var(--red); }
+
+/* O nome público embaixo do usuário, na tabela do painel. Pequeno porque é
+   informação de conferência — serve para o Banco Central não confundir duas
+   pessoas de usuário parecido, não para ser lido a cada linha. */
+.nome-publico {
+    color: var(--muted); font-size: 11.5px;
+    margin-top: 3px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 12rem;
+}
+
 .entrada-numero {
     text-align: right; min-width: 7rem;
     font-family: var(--num); font-variant-numeric: tabular-nums;

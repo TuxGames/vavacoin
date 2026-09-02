@@ -42,6 +42,10 @@ TIPO_QUEIMA = "queima"
 TIPO_SAQUE_INICIAL = "saque_inicial"
 TIPO_TRANSFERENCIA = "transferencia"
 TIPO_AJUSTE = "ajuste"
+#: Saldo voltando ao Banco Central porque a conta foi encerrada. É uma
+#: devolução como a do reset, mas de uma conta só — e tem tipo próprio para
+#: o extrato dizer o que aconteceu em vez de parecer um ajuste qualquer.
+TIPO_ENCERRAMENTO = "encerramento"
 TIPO_RESET_RECOLHIMENTO = "reset_recolhimento"
 TIPO_RESET_REDISTRIBUICAO = "reset_redistribuicao"
 

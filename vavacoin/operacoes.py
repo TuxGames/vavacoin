@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from .autoridade import exigir_banco_central
 from .dinheiro import ZERO, para_decimal
 from .erros import (
+    ContaComHistorico,
     ConviteInvalido,
     ConviteJaResgatado,
     MotivoObrigatorio,
@@ -31,6 +32,7 @@ from .extensoes import db
 from .moeda import (
     TIPO_AJUSTE,
     TIPO_EMISSAO,
+    TIPO_ENCERRAMENTO,
     TIPO_QUEIMA,
     TIPO_RESET_RECOLHIMENTO,
     TIPO_RESET_REDISTRIBUICAO,
@@ -159,6 +161,34 @@ def cadastrar_por_convite(
         sessao.add(usuario)
         sessao.flush()
         resgatar_convite(usuario, codigo, sessao=sessao)
+
+    return usuario
+
+
+def cadastrar_sem_convite(nome_usuario, senha, nome_exibicao=None, sessao=None):
+    """Cria a conta sem código, quando o cadastro está aberto.
+
+    Decisão do dono: como quem entra começa com **saldo zero**, o convite
+    deixou de ser o que segura a porta — ele segurava dinheiro numa época em
+    que resgatar valia 50 VVC, e essa época acabou.
+
+    O que **não** mudou: o convite continua existindo inteiro, continua sendo
+    de uso único e continua queimando quando alguém entra por ele. Quem chega
+    pelo link do Banco Central passa por :func:`cadastrar_por_convite` como
+    sempre. Este caminho é o de quem chega sem código nenhum, e existir ou não
+    é o que o interruptor ``cadastro_aberto`` decide.
+
+    A conta nasce com saldo zero aqui também. Não há caminho de entrada que
+    dê dinheiro a ninguém — nem com convite, nem sem.
+    """
+    sessao = sessao or db.session
+
+    with sessao.begin_nested():
+        usuario = Usuario(nome_exibicao=nome_exibicao or nome_usuario, saldo=ZERO)
+        usuario.definir_nome(nome_usuario)
+        usuario.definir_senha(senha)
+        sessao.add(usuario)
+        sessao.flush()
 
     return usuario
 
@@ -369,3 +399,205 @@ def ajustar_saldo(alvo, novo_saldo, motivo, autoridade=None, sessao=None):
         sessao=sessao,
     )
     return transacao
+
+
+# --- apagar e encerrar conta ------------------------------------------------
+#
+# O `delete_user` do Benbals é o bug que este bloco existe para não repetir:
+# lá, apagar uma pessoa **faz o saldo dela sumir**, o que quebra o invariante
+# de supply, e só não estoura na prática porque falha antes em erro de chave
+# estrangeira, em dezoito tabelas. Quem "consertar" as FKs sem olhar isso
+# destrava o vazamento.
+#
+# Aqui a auditoria reconstrói cada saldo somando o ledger. Apagar uma conta
+# que tem lançamentos deixaria linhas apontando para ninguém e a auditoria
+# passaria a acusar **para sempre** — um alarme que dispara à toa é um alarme
+# que se aprende a ignorar.
+#
+# Por isso são duas operações e não uma, e qual delas vale não é escolha de
+# quem clica:
+#
+# - **Conta virgem** (saldo zero e nenhum rastro): apaga de verdade. Apagar
+#   não mente sobre nada, porque não há nada que ela explique.
+# - **Conta com história**: não apaga. Encerra — o saldo volta ao Banco
+#   Central por `mover()`, com motivo, e as linhas do ledger ficam. O extrato
+#   de quem transacionou com ela continua fazendo sentido.
+
+
+def _conta_tem_rastro(alvo, sessao):
+    """A conta aparece em alguma linha que precisaria explicá-la depois?
+
+    Varre TODAS as pontas: o ledger nas três (origem, destino e ator), o
+    diário do god mode, e as rodadas dos quatro jogos. É de propósito que a
+    lista seja explícita em vez de esperta — quando entrar o quinto jogo,
+    esta função tem de falhar em revisão de código, não em produção.
+    """
+    from .modelos import (
+        RegistroAdministrativo,
+        RodadaCrash,
+        RodadaDados,
+        RodadaMines,
+        RodadaTorre,
+        Transacao,
+    )
+
+    alvo_id = alvo.id
+    tem_lancamento = sessao.execute(
+        select(Transacao.id)
+        .where(
+            (Transacao.origem_id == alvo_id)
+            | (Transacao.destino_id == alvo_id)
+            | (Transacao.ator_id == alvo_id)
+        )
+        .limit(1)
+    ).first()
+    if tem_lancamento:
+        return True
+
+    tem_registro = sessao.execute(
+        select(RegistroAdministrativo.id)
+        .where(RegistroAdministrativo.ator_id == alvo_id)
+        .limit(1)
+    ).first()
+    if tem_registro:
+        return True
+
+    for modelo in (RodadaMines, RodadaCrash, RodadaTorre, RodadaDados):
+        tem_rodada = sessao.execute(
+            select(modelo.id).where(modelo.jogador_id == alvo_id).limit(1)
+        ).first()
+        if tem_rodada:
+            return True
+
+    return False
+
+
+def _exigir_conta_removivel(alvo, sessao):
+    """As contas que nem apagar nem encerrar podem tocar.
+
+    Banco Central e casa do Caladinho não são pessoas: são peças do sistema, e
+    o ledger inteiro se apoia nelas. O dono do cassino sai da frente passando
+    a posse primeiro — apagar quem responde pela casa deixaria a casa órfã por
+    acidente, e trocar de dono é um comando que já existe.
+    """
+    from .caladinho import casa as casa_do_cassino
+
+    if alvo.eh_banco_central:
+        raise ValorInvalido("o Banco Central não se apaga")
+    if alvo.eh_cassino:
+        raise ValorInvalido("a casa do Caladinho não se apaga")
+
+    conta_da_casa = casa_do_cassino(sessao)
+    if conta_da_casa is not None and conta_da_casa.dono_id == alvo.id:
+        raise ValorInvalido(
+            f"{alvo.nome_usuario} é dono do Caladinho; passe a posse antes"
+        )
+
+
+def destino_da_conta(alvo, sessao=None):
+    """O que vai acontecer com esta conta: ``"apagar"`` ou ``"encerrar"``.
+
+    Existe para a tela **dizer antes** qual dos dois é o caso, e para o botão
+    de apagar de verdade nem aparecer onde ele não vale. Consultada de novo na
+    hora de executar: entre desenhar a tela e clicar, a conta pode ter
+    recebido dinheiro.
+    """
+    sessao = sessao or db.session
+    if alvo.saldo != ZERO or _conta_tem_rastro(alvo, sessao):
+        return "encerrar"
+    return "apagar"
+
+
+def apagar_conta(alvo, autoridade=None, sessao=None):
+    """Apaga de verdade uma conta que não explica nada. Poder do Banco Central.
+
+    Recusa qualquer conta com saldo ou com rastro — e a recusa é do servidor,
+    não da tela. Este é o ponto exato em que o Benbals vaza dinheiro, e a
+    diferença é uma condição, não um cuidado.
+
+    O convite que a conta resgatou, se houver, vai junto. Ele registrava que
+    aquela pessoa entrou, e a entrada está sendo apagada como se não tivesse
+    acontecido; deixá-lo "livre" faria o código voltar a valer para quem o
+    tivesse guardado, e deixá-lo apontando para ninguém seria lixo. Some com a
+    conta, e o Banco Central emite outro com um clique.
+    """
+    from .autoridade import exigir_banco_central
+    from .modelos import registrar_acao
+
+    sessao = sessao or db.session
+    bc = exigir_banco_central(autoridade, sessao)
+    _exigir_conta_removivel(alvo, sessao)
+
+    if alvo.saldo != ZERO:
+        raise ContaComHistorico(
+            f"{alvo.nome_usuario} tem {alvo.saldo} VVC; encerre em vez de apagar"
+        )
+    if _conta_tem_rastro(alvo, sessao):
+        raise ContaComHistorico(
+            f"{alvo.nome_usuario} tem histórico; encerre em vez de apagar"
+        )
+
+    nome = alvo.nome_usuario
+    convite = sessao.execute(
+        select(Convite).where(Convite.usuario_id == alvo.id)
+    ).scalar_one_or_none()
+    detalhe = "conta apagada"
+    if convite is not None:
+        detalhe = f"conta apagada; convite {convite.codigo} apagado junto"
+        sessao.delete(convite)
+
+    sessao.delete(alvo)
+    sessao.flush()
+    registrar_acao(bc, "conta", alvo=nome, detalhe=detalhe, sessao=sessao)
+    return nome
+
+
+def encerrar_conta(alvo, motivo, autoridade=None, sessao=None):
+    """Encerra a conta e devolve o saldo ao Banco Central. Poder do BC.
+
+    O saldo volta por ``mover()``, com motivo — não some, não é zerado por
+    ``UPDATE``, e aparece no extrato dos dois lados. É a diferença inteira
+    entre isto e o ``delete_user`` do Benbals.
+
+    As linhas do ledger ficam onde estão. Quem transferiu para esta conta
+    continua vendo a transferência, e a auditoria continua explicando cada
+    centavo — que é o motivo de a conta encerrada continuar existindo como
+    linha em vez de virar um id órfão.
+    """
+    from .autoridade import exigir_banco_central
+    from .modelos import registrar_acao
+
+    sessao = sessao or db.session
+    bc = exigir_banco_central(autoridade, sessao)
+    _exigir_conta_removivel(alvo, sessao)
+
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise MotivoObrigatorio("encerrar conta pede motivo")
+
+    if alvo.encerrada:
+        raise ValorInvalido(f"{alvo.nome_usuario} já está encerrada")
+
+    devolvido = alvo.saldo
+    if devolvido > ZERO:
+        mover(
+            alvo,
+            bc,
+            devolvido,
+            tipo=TIPO_ENCERRAMENTO,
+            motivo=motivo,
+            ator=bc,
+            sessao=sessao,
+        )
+
+    alvo.encerrada_em = agora()
+    sessao.flush()
+    registrar_acao(
+        bc,
+        "conta",
+        alvo=alvo.nome_usuario,
+        detalhe=f"conta encerrada; {devolvido} VVC devolvidos",
+        motivo=motivo,
+        sessao=sessao,
+    )
+    return alvo

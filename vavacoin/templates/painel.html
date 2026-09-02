@@ -43,6 +43,22 @@
           class="forma-linha">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     </form>
+    {% if not conta.eh_conta_de_sistema %}
+      {% if destino_da_conta[conta.id] == 'apagar' %}
+      <form id="apagar-{{ conta.id }}" method="post"
+            action="{{ url_for('admin.apagar', conta_id=conta.id) }}"
+            class="forma-linha">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      </form>
+      {% elif not conta.encerrada %}
+      <form id="encerrar-{{ conta.id }}" method="post"
+            action="{{ url_for('admin.encerrar', conta_id=conta.id) }}"
+            class="forma-linha">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="motivo" value="encerrada pelo painel">
+      </form>
+      {% endif %}
+    {% endif %}
   {% endfor %}
   <div class="rolagem">
     <table class="tabela tabela-edicao">
@@ -65,6 +81,9 @@
                      name="nome_usuario" value="{{ conta.nome_usuario }}"
                      aria-label="Usuário de {{ conta.nome_usuario }}">
             {% endif %}
+            {# O nome público embaixo, pequeno: dois nomes na mesma célula em
+               vez de duas colunas, que no celular não caberiam. #}
+            <div class="nome-publico">{{ conta.nome_exibicao }}</div>
           </td>
           <td>
             {% if conta.eh_conta_de_sistema %}
@@ -93,6 +112,22 @@
                     class="btn btn-gold btn-sm"
                     aria-label="Salvar {{ conta.nome_usuario }}">Salvar</button>
             <a href="{{ url_for('admin.extrato_de', nome_usuario=conta.nome_normalizado) }}">extrato</a>
+            {# Um dos dois, nunca os dois: o servidor decidiu qual vale, e o
+               botão de apagar nem existe onde apagar mentiria sobre o ledger.
+               Conta de sistema não mostra nenhum. #}
+            {% if not conta.eh_conta_de_sistema %}
+              {% if destino_da_conta[conta.id] == 'apagar' %}
+                <button type="submit" form="apagar-{{ conta.id }}"
+                        class="botao-perigo"
+                        aria-label="Apagar {{ conta.nome_usuario }}">apagar</button>
+              {% elif not conta.encerrada %}
+                <button type="submit" form="encerrar-{{ conta.id }}"
+                        class="botao-perigo"
+                        aria-label="Encerrar {{ conta.nome_usuario }}">encerrar</button>
+              {% else %}
+                <span class="text-muted">encerrada</span>
+              {% endif %}
+            {% endif %}
           </td>
         </tr>
         {% if erro_na_linha.get(conta.id) %}
@@ -140,6 +175,17 @@
     {{ campo(form_ajuste.novo_saldo) }}
     {{ campo(form_ajuste.motivo) }}
     {{ form_ajuste.enviar(class="btn btn-gold btn-full") }}
+  </form>
+</div>
+
+<div class="card">
+  <div class="section-title"><i class="ti ti-ticket" aria-hidden="true"></i>Cadastro</div>
+  <form method="post" action="{{ url_for('admin.cadastro_aberto') }}">
+    {{ form_cadastro.hidden_tag() }}
+    <div class="campo">
+      {{ form_cadastro.aberto() }} {{ form_cadastro.aberto.label }}
+    </div>
+    {{ form_cadastro.enviar(class="btn btn-outline btn-full") }}
   </form>
 </div>
 

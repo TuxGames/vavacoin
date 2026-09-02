@@ -62,6 +62,12 @@ class Usuario(db.Model, UserMixin):
     nome_exibicao = db.Column(db.String(80), nullable=False)
     senha_hash = db.Column(db.String(128), nullable=True)
     eh_banco_central = db.Column(db.Boolean, nullable=False, default=False)
+    #: Quando a conta foi encerrada pelo Banco Central. Anulável: a conta viva
+    #: é a que tem isto em branco. Encerrada não autentica e não recebe
+    #: transferência, mas **continua existindo** — as linhas do ledger que
+    #: falam dela precisam de alguém para apontar, senão a auditoria passa a
+    #: acusar para sempre.
+    encerrada_em = db.Column(db.DateTime(timezone=True), nullable=True)
     #: A conta da casa do Caladinho. É uma conta de verdade no ledger, com
     #: saldo próprio — não uma coluna de configuração. Separada das duas
     #: coisas com que não pode se confundir: não é o Banco Central (que
@@ -124,13 +130,21 @@ class Usuario(db.Model, UserMixin):
         return bcrypt.checkpw(senha.encode("utf-8"), self.senha_hash.encode("utf-8"))
 
     @property
+    def encerrada(self):
+        return self.encerrada_em is not None
+
+    @property
     def is_active(self):
         """Flask-Login: toda conta com senha entra, o Banco Central inclusive.
 
         Uma conta ainda sem senha definida não entra — é o estado do Banco
         Central logo depois da gênese, antes do ``flask senha-bc``.
+
+        Conta encerrada também não entra. É aqui que o encerramento vira
+        realidade para o login: ``login_user`` recusa quem não é ``is_active``,
+        então não há uma segunda checagem para alguém esquecer.
         """
-        return self.senha_hash is not None
+        return self.senha_hash is not None and not self.encerrada
 
     @property
     def eh_admin(self):
@@ -323,6 +337,12 @@ class Configuracao(db.Model):
 
 #: Se o saldo da casa aparece para os jogadores.
 CHAVE_CAIXA_VISIVEL = "caladinho_caixa_visivel"
+
+#: Se dá para criar conta sem código de convite. **Nasce ligado**, por decisão
+#: do dono: como quem entra começa com saldo zero, o convite deixou de ser o
+#: que segura a porta. O sistema de convite continua inteiro — link, painel,
+#: uso único —, e desligar este interruptor volta a exigi-lo.
+CHAVE_CADASTRO_ABERTO = "cadastro_aberto"
 
 
 def config_texto(chave, padrao=None, sessao=None):

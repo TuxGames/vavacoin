@@ -120,3 +120,12 @@ class SemRodadaAtiva(ErroDeJogo):
     É o que responde ao clique duplo e ao recarregar depois do fim: a segunda
     tentativa não encontra rodada ativa, então não cobra nem paga de novo.
     """
+
+
+class ContaComHistorico(ErroMonetario):
+    """Tentaram apagar uma conta que o ledger precisa explicar.
+
+    É o guarda que impede aqui o bug que o Benbals tem: lá, apagar uma pessoa
+    faz o saldo dela sumir e quebra o invariante de supply. Conta com saldo ou
+    com rastro se encerra; apagar é só para a que não explica nada.
+    """

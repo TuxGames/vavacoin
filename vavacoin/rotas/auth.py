@@ -17,7 +17,12 @@ from ..extensoes import db
 from ..formularios import FormularioCadastro, FormularioLogin
 from ..limite import limitador_taxa, trava_por_falhas
 from ..nomes import normalizar_nome
-from ..modelos import Convite, buscar_usuario
+from ..modelos import (
+    CHAVE_CADASTRO_ABERTO,
+    Convite,
+    buscar_usuario,
+    config_ligada,
+)
 
 bp = Blueprint("auth", __name__)
 
@@ -107,9 +112,17 @@ def logout():
 def cadastro(codigo=None):
     """Cria a conta. É a única porta de entrada.
 
-    A conta nasce com **saldo zero**: o convite dá entrada na economia, não
-    dinheiro. Não existe cadastro sem convite — é o que garante que ninguém
-    entra sem ter pedido.
+    A conta nasce com **saldo zero**, com convite ou sem.
+
+    O convite deixou de ser obrigatório por decisão do dono, e o argumento é
+    bom: ele segurava dinheiro numa época em que resgatar valia 50 VVC, e
+    essa época acabou. O que segura a porta hoje é o interruptor
+    ``cadastro_aberto``, que nasce ligado e vive no painel do Banco Central —
+    desligá-lo faz o código voltar a ser exigido, sem deploy.
+
+    O sistema de convite continua inteiro: quem chega com código entra por
+    ele, o convite é conferido e queimado, e o link do painel funciona como
+    sempre. O que sumiu foi a **obrigação**, não o mecanismo.
 
     As duas rotas são a mesma tela. ``/cadastro/<codigo>`` é o link que o
     Banco Central manda para a pessoa: ele só **preenche** o campo, que
@@ -124,6 +137,8 @@ def cadastro(codigo=None):
     if current_user.is_authenticated:
         return redirect(url_for("publico.inicio"))
 
+    aberto = config_ligada(CHAVE_CADASTRO_ABERTO, padrao=True)
+
     formulario = FormularioCadastro()
     if request.method == "GET" and codigo is not None:
         convite = _convite_livre(codigo)
@@ -136,30 +151,52 @@ def cadastro(codigo=None):
             formulario.codigo.data = convite.codigo
 
     if formulario.validate_on_submit():
-        from ..operacoes import cadastrar_por_convite
+        from ..operacoes import cadastrar_por_convite, cadastrar_sem_convite
 
         # Guarda como a pessoa escreveu; a unicidade é pela forma normalizada.
         nome = formulario.nome_usuario.data.strip()
+        digitado = (formulario.codigo.data or "").strip()
+
+        if not digitado and not aberto:
+            flash("Precisa de um código de convite.", "erro")
+            return render_template(
+                "cadastro.html", formulario=formulario, aberto=aberto
+            ), 400
+
         try:
-            usuario = cadastrar_por_convite(
-                nome,
-                formulario.senha.data,
-                formulario.codigo.data.strip(),
-                nome_exibicao=formulario.nome_exibicao.data.strip(),
-            )
+            if digitado:
+                # Com código, o caminho é o de sempre: o convite é conferido e
+                # queimado. Vale mesmo com o cadastro aberto — quem recebeu um
+                # link entrou por ele, e o convite tem de constar como usado.
+                usuario = cadastrar_por_convite(
+                    nome,
+                    formulario.senha.data,
+                    digitado,
+                    nome_exibicao=formulario.nome_exibicao.data.strip(),
+                )
+            else:
+                usuario = cadastrar_sem_convite(
+                    nome,
+                    formulario.senha.data,
+                    nome_exibicao=formulario.nome_exibicao.data.strip(),
+                )
             db.session.commit()
         except IntegrityError:
             db.session.rollback()
             flash("Esse nome de usuário já existe.", "erro")
-            return render_template("cadastro.html", formulario=formulario), 409
+            return render_template(
+                "cadastro.html", formulario=formulario, aberto=aberto
+            ), 409
         except ErroMonetario as erro:
             db.session.rollback()
             current_app.logger.info("cadastro recusado: %s", erro)
             flash(str(erro), "erro")
-            return render_template("cadastro.html", formulario=formulario), 400
+            return render_template(
+                "cadastro.html", formulario=formulario, aberto=aberto
+            ), 400
 
         login_user(usuario)
         flash("Conta criada.", "ok")
         return redirect(url_for("publico.inicio"))
 
-    return render_template("cadastro.html", formulario=formulario)
+    return render_template("cadastro.html", formulario=formulario, aberto=aberto)

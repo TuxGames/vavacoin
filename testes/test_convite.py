@@ -13,7 +13,15 @@ from vavacoin.erros import (
     UsuarioJaResgatou,
 )
 from vavacoin.extensoes import db
-from vavacoin.modelos import Transacao
+from vavacoin.dinheiro import ZERO
+from vavacoin.modelos import (
+    CHAVE_CADASTRO_ABERTO,
+    Convite,
+    Transacao,
+    buscar_usuario,
+    config_ligada,
+    definir_config,
+)
 from vavacoin.operacoes import criar_convite, criar_usuario, resgatar_convite
 
 
@@ -200,3 +208,104 @@ def test_ledger_explica_cada_centavo(app, bc, nova_pessoa):
     assert saldos[bia.id] == bia.saldo
     assert saldos[bc.id] == bc.saldo
     assert sum(saldos.values(), Decimal("0.00")) == SUPPLY_INICIAL
+
+
+# --- o convite deixou de ser obrigatório -------------------------------------
+#
+# Decisão do dono: como quem entra começa com saldo zero, o convite deixou de
+# ser o que segura a porta. O que sumiu foi a OBRIGAÇÃO — o mecanismo continua
+# inteiro, e um interruptor no painel do Banco Central devolve a exigência sem
+# deploy.
+
+
+def test_cadastro_sem_codigo_cria_conta_com_saldo_zero(app, bc):
+    """O caminho novo: entra sem código, e entra com zero."""
+    antes = conservacao()
+    cliente = app.test_client()
+
+    cliente.post(
+        "/cadastro",
+        data={
+            "nome_usuario": "semconvite",
+            "nome_exibicao": "Sem Convite",
+            "senha": "senha-boa-123",
+            "confirmacao": "senha-boa-123",
+        },
+        follow_redirects=True,
+    )
+
+    conta = buscar_usuario("semconvite")
+    assert conta is not None
+    assert conta.saldo == ZERO
+    assert conservacao() == antes
+
+
+def test_com_codigo_o_convite_continua_queimando(app, bc):
+    """O mecanismo não foi arrancado: quem chega por link gasta o convite."""
+    convite = criar_convite(destinatario="Fulano", autoridade=bc)
+    db.session.commit()
+    codigo = convite.codigo
+
+    app.test_client().post(
+        "/cadastro",
+        data={
+            "codigo": codigo,
+            "nome_usuario": "comconvite",
+            "nome_exibicao": "Com Convite",
+            "senha": "senha-boa-123",
+            "confirmacao": "senha-boa-123",
+        },
+        follow_redirects=True,
+    )
+
+    db.session.expire_all()
+    usado = db.session.execute(
+        db.select(Convite).where(Convite.codigo == codigo)
+    ).scalar_one()
+    assert usado.resgatado
+    assert usado.usuario_id == buscar_usuario("comconvite").id
+
+
+def test_o_interruptor_volta_a_exigir_convite(app, bc):
+    """Desligar o cadastro aberto é uma configuração, não um deploy."""
+    definir_config(CHAVE_CADASTRO_ABERTO, False)
+    db.session.commit()
+
+    resposta = app.test_client().post(
+        "/cadastro",
+        data={
+            "nome_usuario": "barrado",
+            "nome_exibicao": "Barrado",
+            "senha": "senha-boa-123",
+            "confirmacao": "senha-boa-123",
+        },
+        follow_redirects=True,
+    )
+
+    assert resposta.status_code == 400
+    assert buscar_usuario("barrado") is None
+
+
+def test_com_o_cadastro_fechado_o_codigo_ainda_entra(app, bc):
+    definir_config(CHAVE_CADASTRO_ABERTO, False)
+    convite = criar_convite(destinatario="Fulano", autoridade=bc)
+    db.session.commit()
+
+    app.test_client().post(
+        "/cadastro",
+        data={
+            "codigo": convite.codigo,
+            "nome_usuario": "passou",
+            "nome_exibicao": "Passou",
+            "senha": "senha-boa-123",
+            "confirmacao": "senha-boa-123",
+        },
+        follow_redirects=True,
+    )
+
+    assert buscar_usuario("passou") is not None
+
+
+def test_o_cadastro_nasce_aberto(app, bc):
+    """Sem ninguém configurar nada, entra sem convite. É o que ele pediu."""
+    assert config_ligada(CHAVE_CADASTRO_ABERTO, padrao=True) is True

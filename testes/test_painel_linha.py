@@ -313,11 +313,17 @@ def test_o_painel_mostra_o_supply_mudando_depois_de_queimar(app, bc, painel):
     conservacao()
 
 
-def test_nao_existe_excluir_conta(app, bc, painel, ana):
-    """O 🗑️ do Benbals não veio: excluir é o bug que existe lá."""
+def test_o_painel_nao_apaga_conta_com_historico(app, bc, painel, ana):
+    """O 🗑️ cego do Benbals não veio, e não vai vir.
+
+    Este teste já disse "não existe excluir conta". Existe agora, mas com a
+    regra que falta lá: a `ana` da fixture tem saldo, então o painel oferece
+    **encerrar** e o caminho de apagar de verdade nem aparece para ela.
+    """
     corpo = painel.get("/painel/").get_data(as_text=True)
-    assert "excluir" not in corpo.lower()
-    assert "/painel/conta/%s/excluir" % ana.id not in corpo
+
+    assert "/painel/conta/%s/apagar" % ana.id not in corpo
+    assert "/painel/conta/%s/encerrar" % ana.id in corpo
 
 
 # --- teto do supply ---------------------------------------------------------

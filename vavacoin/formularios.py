@@ -49,7 +49,10 @@ class FormularioLogin(FlaskForm):
 class FormularioCadastro(FlaskForm):
     """Cadastro por convite — a única porta de entrada."""
 
-    codigo = StringField("Código do convite", validators=[DataRequired()])
+    #: Opcional no formulário, obrigatório ou não conforme o interruptor
+    #: ``cadastro_aberto``. A regra mora na rota, e não aqui, porque ela é
+    #: dado no banco — um validador de classe não consegue lê-la.
+    codigo = StringField("Código do convite (opcional)", validators=[Optional()])
     nome_usuario = StringField(
         "Usuário",
         validators=[DataRequired(), Length(min=3, max=50), NOME_USUARIO],
@@ -191,6 +194,13 @@ class FormularioVisibilidadeDoCaixa(FlaskForm):
     """Liga e desliga o caixa da casa para os jogadores."""
 
     visivel = BooleanField("Mostrar o caixa da casa para os jogadores")
+    enviar = SubmitField("Salvar")
+
+
+class FormularioCadastroAberto(FlaskForm):
+    """Liga e desliga a exigência de convite. Só o Banco Central vê."""
+
+    aberto = BooleanField("Deixar criar conta sem convite")
     enviar = SubmitField("Salvar")
 
 

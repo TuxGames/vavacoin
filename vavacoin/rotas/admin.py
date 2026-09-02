@@ -29,11 +29,12 @@ from sqlalchemy.exc import IntegrityError
 
 from ..auditoria import auditar, estado_da_economia, linhas_extrato
 from ..convites import link_de_convite
-from ..erros import ErroMonetario, ValorInvalido
+from ..erros import ContaComHistorico, ErroMonetario, ValorInvalido
 from ..extensoes import db
 from ..caladinho import casa as casa_do_cassino
 from ..caladinho import criar_casa, exposicao_comprometida, limite_de_aposta
 from ..formularios import (
+    FormularioCadastroAberto,
     MOTIVO_PADRAO,
     FormularioAjusteDeSaldo,
     FormularioCriarConta,
@@ -44,6 +45,7 @@ from ..formularios import (
 )
 from ..nomes import normalizar_nome
 from ..modelos import (
+    CHAVE_CADASTRO_ABERTO,
     CHAVE_CAIXA_VISIVEL,
     Convite,
     RegistroAdministrativo,
@@ -53,7 +55,15 @@ from ..modelos import (
     definir_config,
     registrar_acao,
 )
-from ..operacoes import ajustar_saldo, criar_convite, criar_usuario, resetar_economia
+from ..operacoes import (
+    ajustar_saldo,
+    apagar_conta,
+    criar_convite,
+    criar_usuario,
+    destino_da_conta,
+    encerrar_conta,
+    resetar_economia,
+)
 
 bp = Blueprint("admin", __name__, url_prefix="/painel")
 
@@ -88,6 +98,9 @@ def _formularios():
         "form_reset": FormularioReset(),
         "form_caixa": FormularioVisibilidadeDoCaixa(
             visivel=config_ligada(CHAVE_CAIXA_VISIVEL)
+        ),
+        "form_cadastro": FormularioCadastroAberto(
+            aberto=config_ligada(CHAVE_CADASTRO_ABERTO, padrao=True)
         ),
     }
 
@@ -125,6 +138,9 @@ def _pagina(**extras):
         "linhas": {c.id: FormularioLinhaDaConta(saldo=str(c.saldo)) for c in contas},
         "erro_na_linha": {},
         "convites_livres": convites_livres,
+        # Qual dos dois a conta aceita — calculado no servidor, para o botão
+        # de apagar nem existir onde apagar não vale.
+        "destino_da_conta": {c.id: destino_da_conta(c) for c in contas},
         # O link é montado aqui, e não no template, porque o `url_for`
         # externo precisa do host da requisição — que o template tem, mas
         # repetido em cada linha do laço.
@@ -329,6 +345,72 @@ def cassino():
     )
     db.session.commit()
     flash("Caladinho atualizado.", "ok")
+    return redirect(url_for("admin.painel"))
+
+
+@bp.route("/conta/<int:conta_id>/apagar", methods=["POST"])
+def apagar(conta_id):
+    """Apaga a conta virgem. Recusa qualquer outra.
+
+    A tela já mostra "apagar" só onde apagar vale, mas a decisão é conferida
+    aqui de novo: entre desenhar a página e clicar, a conta pode ter recebido
+    dinheiro — e aí apagar deixaria o ledger sem explicar centavos.
+    """
+    alvo = db.session.get(Usuario, conta_id)
+    if alvo is None:
+        abort(404)
+    try:
+        nome = apagar_conta(alvo, autoridade=current_user)
+        db.session.commit()
+        flash(f"Conta {nome} apagada.", "ok")
+    except (ContaComHistorico, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("admin.painel"))
+
+
+@bp.route("/conta/<int:conta_id>/encerrar", methods=["POST"])
+def encerrar(conta_id):
+    """Encerra a conta e devolve o saldo ao Banco Central, por ``mover()``."""
+    alvo = db.session.get(Usuario, conta_id)
+    if alvo is None:
+        abort(404)
+    try:
+        encerrar_conta(
+            alvo,
+            (request.form.get("motivo") or "").strip() or "encerrada pelo painel",
+            autoridade=current_user,
+        )
+        db.session.commit()
+        flash(f"Conta {alvo.nome_usuario} encerrada.", "ok")
+    except ErroMonetario as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("admin.painel"))
+
+
+@bp.route("/cadastro", methods=["POST"])
+def cadastro_aberto():
+    """Liga e desliga a exigência de código de convite.
+
+    Nasce ligado — o dono tirou a obrigação do convite porque quem entra
+    começa com saldo zero. Desligar o interruptor volta a exigir o código sem
+    precisar de deploy, e é por isso que ele existe em vez de o convite ter
+    sido simplesmente arrancado.
+    """
+    formulario = FormularioCadastroAberto()
+    if not formulario.validate_on_submit():
+        return _pagina(form_cadastro=formulario), 400
+
+    definir_config(CHAVE_CADASTRO_ABERTO, formulario.aberto.data)
+    registrar_acao(
+        current_user,
+        "cadastro",
+        alvo="convite",
+        detalhe="opcional" if formulario.aberto.data else "obrigatório",
+    )
+    db.session.commit()
+    flash("Cadastro atualizado.", "ok")
     return redirect(url_for("admin.painel"))
 
 

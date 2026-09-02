@@ -127,9 +127,11 @@ def transferir_passo1():
     if formulario.validate_on_submit():
         destino = buscar_usuario(formulario.destinatario.data)
 
-        if destino is None or destino.eh_banco_central:
+        if destino is None or destino.eh_banco_central or destino.encerrada:
             # O Banco Central some do universo de destinos: não se paga ao BC,
-            # e dizer que ele existe já é informação de mais.
+            # e dizer que ele existe já é informação de mais. A conta encerrada
+            # some pelo mesmo motivo e com a mesma frase — mandar dinheiro para
+            # uma conta que ninguém mais abre é dinheiro parado para sempre.
             flash("Não existe ninguém com esse usuário.", "erro")
             return render_template("transferir.html", formulario=formulario), 404
         if destino.id == current_user.id:
