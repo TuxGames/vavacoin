@@ -292,6 +292,31 @@ def rodada_ativa(jogador, sessao=None, travada=False):
     return sessao.execute(consulta).scalars().first()
 
 
+def ultima_rodada(jogador, sessao=None):
+    """A rodada encerrada mais recente do jogador, se houver.
+
+    Existe porque o resultado não pode viver só no ``?rodada=`` que o redirect
+    do clique carrega: reenvio do POST, recarregar a página e voltar ao jogo
+    chegam sem esse parâmetro, e sem um lugar de onde reler o resultado a tela
+    mostrava tabuleiro fechado como se nada tivesse acontecido.
+    """
+    sessao = sessao or db.session
+    jogador_id = jogador.id if isinstance(jogador, Usuario) else jogador
+    return (
+        sessao.execute(
+            select(RodadaMines)
+            .where(
+                RodadaMines.jogador_id == jogador_id,
+                RodadaMines.estado != RodadaMines.ATIVA,
+            )
+            .order_by(RodadaMines.id.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
 def criar_rodada(jogador, aposta, minas_escolhidas, sessao=None):
     """Começa a rodada e cobra a aposta.
 

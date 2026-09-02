@@ -447,6 +447,16 @@ class RodadaMines(db.Model):
         return self._lista(self.minas)
 
     @property
+    def casas_abertas(self):
+        """Quantas casas a pessoa abriu, contando a mina em que pisou.
+
+        ``reveladas`` guarda só as seguras, porque é delas que sai o
+        multiplicador. Para o histórico isso mentia: quem estourou no primeiro
+        clique lia "0 abertas" e concluía que a rodada tinha encerrado sozinha.
+        """
+        return len(self.casas_reveladas) + (0 if self.casa_estourada is None else 1)
+
+    @property
     def encerrada(self):
         return self.estado != self.ATIVA
 

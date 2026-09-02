@@ -35,9 +35,10 @@ from ..caladinho import (
     retirar_do_caixa,
     revelar_casa,
     rodada_ativa,
+    ultima_rodada,
     visao_da_rodada,
 )
-from ..erros import ErroDeJogo, ErroMonetario
+from ..erros import ErroDeJogo, ErroMonetario, SemRodadaAtiva
 from ..formularios import FormularioCaixaDoDono
 from ..extensoes import db
 from ..mines import (
@@ -138,12 +139,18 @@ def casa_retirar():
 
 @bp.route("/mines")
 def mines():
-    """A rodada ativa, ou o resultado da que acabou de encerrar.
+    """A rodada ativa, o resultado da última encerrada, ou o formulário.
 
-    ``?rodada=`` mostra uma rodada encerrada com o tabuleiro à mostra — é para
-    onde revelar e retirar redirecionam. Sem ele, retoma a rodada ativa; sem
-    rodada ativa, mostra o formulário. Em nenhum caso o GET cria ou sorteia
-    coisa alguma.
+    A ordem é essa, e a última encerrada entra por padrão de propósito: o
+    resultado não pode depender de o navegador ter chegado com o ``?rodada=``
+    do redirect. Reenviar o POST do clique, recarregar a página ou voltar pelo
+    lobby chegam aqui sem parâmetro nenhum, e antes disso a tela respondia com
+    tabuleiro fechado — o mesmo desenho de rodada nova, o que fazia parecer que
+    o jogo tinha travado com a aposta cobrada.
+
+    ``?nova=1`` é o caminho de volta ao formulário de aposta, e é para onde
+    aponta o "Jogar de novo". ``?rodada=`` abre uma encerrada específica. Em
+    nenhum caso o GET cria ou sorteia coisa alguma.
     """
     rodada = rodada_ativa(current_user)
 
@@ -153,6 +160,8 @@ def mines():
         if encerrada is None or encerrada.jogador_id != current_user.id:
             abort(404)
         rodada = encerrada
+    elif rodada is None and not request.args.get("nova"):
+        rodada = ultima_rodada(current_user)
 
     minas = request.args.get("minas", type=int) or 3
     minas = min(max(minas, MIN_MINAS), MAX_MINAS)
@@ -200,6 +209,13 @@ def revelar():
             # Leva para a tela do resultado: quem perdeu tem que poder ver
             # onde estavam as minas.
             encerrada = rodada.id
+    except SemRodadaAtiva:
+        # O mesmo clique chegou duas vezes — toque duplo, ou o navegador
+        # reenviando o POST cuja resposta se perdeu. A rodada foi resolvida
+        # pela primeira requisição; o GET cai na última encerrada e mostra o
+        # tabuleiro. Reclamar aqui seria acusar a pessoa de um erro que é da
+        # rede.
+        db.session.rollback()
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
@@ -214,6 +230,8 @@ def sacar():
         db.session.commit()
         encerrada = rodada.id
         flash(f"Retirou {rodada.premio} VVC.", "ok")
+    except SemRodadaAtiva:
+        db.session.rollback()
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
