@@ -15,6 +15,10 @@
       <div class="cal-stats">
         <div>Aposta: <b>{{ rodada.aposta }}</b> VVC</div>
         <div>Minas: <b>{{ rodada.minas_escolhidas }}</b></div>
+        {# A vantagem CONGELADA nesta rodada. Fica à vista justamente porque
+           agora ela é editável: quem está jogando precisa poder ver com qual
+           número está jogando, e que ele não mudou no meio. #}
+        <div>Vantagem: <b>{{ rodada.vantagem }}%</b></div>
         <div>Multiplicador: <b>{{ rodada.multiplicador }}×</b>
           <span class="cal-teto">/ {{ teto }}×</span></div>
         <div>

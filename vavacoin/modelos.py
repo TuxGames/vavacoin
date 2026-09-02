@@ -6,6 +6,7 @@ centavo que se moveu (``Transacao``).
 """
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import bcrypt
 from flask import current_app, has_app_context
@@ -324,6 +325,38 @@ class Configuracao(db.Model):
 CHAVE_CAIXA_VISIVEL = "caladinho_caixa_visivel"
 
 
+def config_texto(chave, padrao=None, sessao=None):
+    """O valor cru de uma configuração, ou ``padrao`` se ela nunca foi gravada.
+
+    ``config_ligada`` é o caso booleano desta função. Existe separada porque
+    nem toda configuração é interruptor: a vantagem da casa, por exemplo, é um
+    número que o dono escolhe dentro de uma faixa.
+    """
+    sessao = sessao or db.session
+    registro = sessao.execute(
+        db.select(Configuracao).where(Configuracao.chave == chave)
+    ).scalar_one_or_none()
+    if registro is None:
+        return padrao
+    return registro.valor
+
+
+def definir_config_texto(chave, valor, sessao=None):
+    """Grava o valor cru. Não faz ``commit``."""
+    sessao = sessao or db.session
+    registro = sessao.execute(
+        db.select(Configuracao).where(Configuracao.chave == chave)
+    ).scalar_one_or_none()
+    if registro is None:
+        registro = Configuracao(chave=chave, valor=str(valor))
+        sessao.add(registro)
+    else:
+        registro.valor = str(valor)
+        registro.atualizado_em = agora()
+    sessao.flush()
+    return registro
+
+
 def config_ligada(chave, padrao=False, sessao=None):
     """A configuração está ligada? Guardada como "1"/"0"."""
     sessao = sessao or db.session
@@ -394,6 +427,14 @@ class RodadaMines(db.Model):
     #: pisou, diferente das outras — e para responder "qual casa eu cliquei?"
     #: se alguém contestar a rodada depois.
     casa_estourada = db.Column(db.Integer, nullable=True)
+    #: A vantagem da casa **no instante da aposta**, em pontos percentuais
+    #: (``2.00`` = 2%). Congelada aqui de propósito: o dono pode mudar a
+    #: vantagem a qualquer momento, e rodada aberta não pode ser afetada —
+    #: senão daria para baixar o pagamento com a pessoa no meio do jogo, que
+    #: é exatamente a acusação que o cassino não pode receber. Guardada em
+    #: ``Dinheiro`` porque é o tipo exato que o projeto já tem (inteiro de
+    #: centésimos); aqui o "centavo" é um centésimo de ponto percentual.
+    vantagem = db.Column(Dinheiro, nullable=False, default=Decimal("2.00"))
     #: Multiplicador acumulado, sem teto. Dois decimais exatos, como dinheiro.
     multiplicador = db.Column(Dinheiro, nullable=False, default=ZERO)
     premio = db.Column(Dinheiro, nullable=False, default=ZERO)
@@ -462,6 +503,101 @@ class RodadaMines(db.Model):
 
     def __repr__(self):
         return f"<RodadaMines {self.id} {self.estado} aposta={self.aposta}>"
+
+
+class RodadaCrash(db.Model):
+    """Uma rodada de crash. Como a do mines, é a fonte da verdade do servidor.
+
+    **O resultado já está decidido quando a linha nasce.** O ponto de estouro
+    é sorteado no instante da aposta, o alvo é declarado junto, e ``alvo <=
+    ponto_de_estouro`` responde sozinho se a rodada foi ganha. O tempo só
+    decide *quando* isso é aplicado, e o saque manual só decide se a pessoa
+    saiu por um número menor que o alvo.
+
+    Por isso resolver uma rodada esquecida na leitura da página não é
+    re-sortear nada: a decisão é de antes, e aplicar tarde dá o mesmo
+    resultado que aplicar na hora.
+
+    ``ponto_de_estouro`` é SEGREDO DO SERVIDOR enquanto a rodada vive — é o
+    equivalente ao tabuleiro do mines, e o ponto em que um descuido entregaria
+    o jogo.
+
+    Estados: ``ativa``, ``estourada`` (o alvo passou do estouro) e
+    ``retirada`` (saiu no alvo ou antes dele).
+    """
+
+    __tablename__ = "rodada_crash"
+
+    ATIVA = "ativa"
+    ESTOURADA = "estourada"
+    RETIRADA = "retirada"
+
+    id = db.Column(db.Integer, primary_key=True)
+    jogador_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    aposta = db.Column(Dinheiro, nullable=False)
+    #: A vantagem da casa no instante da aposta, em pontos percentuais. Mesma
+    #: disciplina da rodada de mines: o dono muda a vantagem quando quiser, e
+    #: rodada aberta não sente.
+    vantagem = db.Column(Dinheiro, nullable=False, default=Decimal("2.00"))
+    #: Onde a curva para. SEGREDO DO SERVIDOR enquanto ``ativa``.
+    ponto_de_estouro = db.Column(Dinheiro, nullable=False)
+    #: Onde o jogador declarou que quer sair. Resolvido pelo servidor sem
+    #: depender de clique — é o que zera o risco de rede.
+    alvo = db.Column(Dinheiro, nullable=False)
+
+    estado = db.Column(db.String(12), nullable=False, default=ATIVA, index=True)
+    #: Por onde a rodada saiu de fato: o alvo, o número do saque manual, ou o
+    #: ponto de estouro quando perdeu.
+    multiplicador = db.Column(Dinheiro, nullable=False, default=ZERO)
+    premio = db.Column(Dinheiro, nullable=False, default=ZERO)
+
+    transacao_aposta_id = db.Column(
+        db.Integer, db.ForeignKey("transacao.id"), nullable=True
+    )
+    transacao_premio_id = db.Column(
+        db.Integer, db.ForeignKey("transacao.id"), nullable=True
+    )
+
+    #: O instante zero da curva. É contra ele, e contra o relógio do servidor,
+    #: que o saque manual é validado.
+    iniciada_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
+    encerrada_em = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    jogador = db.relationship("Usuario", foreign_keys=[jogador_id])
+
+    __table_args__ = (
+        CheckConstraint("aposta > 0", name="ck_crash_aposta_positiva"),
+        CheckConstraint("alvo > 100", name="ck_crash_alvo_acima_de_um"),
+        CheckConstraint("ponto_de_estouro >= 100", name="ck_crash_estouro_minimo"),
+        CheckConstraint(
+            "estado IN ('ativa', 'estourada', 'retirada')", name="ck_crash_estado"
+        ),
+        # Mesma defesa do mines: o banco recusa a segunda rodada ativa do
+        # mesmo jogador, mesmo em corrida entre processos.
+        db.Index(
+            "uq_uma_rodada_crash_ativa_por_jogador",
+            "jogador_id",
+            unique=True,
+            sqlite_where=db.text("estado = 'ativa'"),
+            postgresql_where=db.text("estado = 'ativa'"),
+        ),
+    )
+
+    @property
+    def encerrada(self):
+        return self.estado != self.ATIVA
+
+    @property
+    def ganhou(self):
+        """Decidido na aposta: o alvo cabe dentro do estouro?"""
+        return self.alvo <= self.ponto_de_estouro
+
+    def __repr__(self):
+        return f"<RodadaCrash {self.id} {self.estado} aposta={self.aposta}>"
 
 
 def buscar_usuario(nome, sessao=None):

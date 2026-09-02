@@ -44,6 +44,30 @@
     </form>
   </div>
 
+  {# Vantagem por jogo: edita na linha e salva. Cada linha é o próprio
+     formulário — mesmo formato do ajuste de saldo do painel do BC, sem modal
+     e sem passo extra. Os jogos que ainda não existem já aparecem: o
+     mecanismo é um só, e a vantagem deles já fica escolhida. #}
+  <div class="cal-card">
+    <h2>Vantagem</h2>
+    {% for jogo in jogos %}
+    <form class="cal-linha" method="post"
+          action="{{ url_for('caladinho.casa_vantagem', jogo=jogo) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="cal-rot" for="vantagem-{{ jogo }}">{{ jogo }}</label>
+      <div class="cal-linha-form">
+        <input class="cal-entrada cal-entrada-curta" id="vantagem-{{ jogo }}"
+               name="vantagem" type="number" inputmode="decimal"
+               step="0.01" min="{{ vantagem_min }}" max="{{ vantagem_max }}"
+               value="{{ vantagens[jogo] }}"
+               aria-label="Vantagem do {{ jogo }} em por cento">
+        <span class="cal-unidade">%</span>
+        <button type="submit" class="cal-btn cal-btn-amarelo cal-btn-curto">Salvar</button>
+      </div>
+    </form>
+    {% endfor %}
+  </div>
+
   <a class="cal-btn cal-btn-neutro" href="{{ url_for('caladinho.lobby') }}">Voltar</a>
 </div>
 {% endblock %}

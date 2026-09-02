@@ -21,9 +21,16 @@ Três coisas que este módulo não deixa acontecer:
    e conexão que cai chegam todos ao mesmo lugar.
 3. **Decidir no navegador.** O cliente informa a casa clicada; as minas ficam
    no servidor e só aparecem quando a rodada encerra.
+4. **Mudar a tabela com a rodada aberta.** A vantagem da casa é editável pelo
+   dono, e a rodada guarda a que valia no instante da aposta. Quem começou a
+   jogar com 2% termina com 2%, mesmo que o dono suba para 8% no meio — senão
+   daria para baixar o pagamento de alguém que já está jogando, que é a
+   acusação que este cassino não pode receber.
 """
 
 import secrets
+from datetime import timezone
+from decimal import Decimal
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -40,6 +47,16 @@ from .erros import (
     ValorInvalido,
 )
 from .extensoes import db
+from .crash import (
+    MULTIPLICADOR_INICIAL as MULTIPLICADOR_INICIAL_CRASH,
+    TETO_DO_MULTIPLICADOR as TETO_CRASH,
+    ganhou as crash_ganhou,
+    multiplicador_no_tempo,
+    premio_maximo as premio_maximo_crash,
+    segundos_para_multiplicador,
+    sortear_ponto_de_estouro,
+    validar_alvo,
+)
 from .mines import (
     CASAS,
     aposta_maxima,
@@ -49,11 +66,21 @@ from .mines import (
     premio_maximo,
     validar_minas,
 )
-from .modelos import RodadaMines, Transacao, Usuario, agora
+from .modelos import RodadaCrash, RodadaMines, Transacao, Usuario, agora
 from .moeda import mover
+from .vantagem import fator_de, vantagem as vantagem_vigente
 
 TIPO_APOSTA = "aposta_mines"
 TIPO_PREMIO = "premio_mines"
+
+TIPO_APOSTA_CRASH = "aposta_crash"
+TIPO_PREMIO_CRASH = "premio_crash"
+
+#: Tudo que é aposta e tudo que é prêmio, de qualquer jogo. O lucro do dono
+#: soma por aqui — assim um jogo novo entra na conta ao ser acrescentado nesta
+#: tupla, e não ao alguém lembrar de mexer no ``lucro_do_dono``.
+TIPOS_DE_APOSTA = (TIPO_APOSTA, TIPO_APOSTA_CRASH)
+TIPOS_DE_PREMIO = (TIPO_PREMIO, TIPO_PREMIO_CRASH)
 
 #: Dinheiro do dono entrando e saindo da casa. É capital, não lucro — por
 #: isso não entra na conta do :func:`lucro_do_dono`.
@@ -163,7 +190,7 @@ def lucro_do_dono(sessao=None):
     for transacao in sessao.execute(
         select(Transacao).where(
             Transacao.criado_em >= conta.dono_desde,
-            Transacao.tipo.in_((TIPO_APOSTA, TIPO_PREMIO)),
+            Transacao.tipo.in_(TIPOS_DE_APOSTA + TIPOS_DE_PREMIO),
         )
     ).scalars():
         if transacao.destino_id == conta.id:
@@ -245,10 +272,14 @@ def retirar_do_caixa(pessoa, valor, sessao=None):
 
 
 def exposicao_comprometida(sessao=None):
-    """O prêmio máximo somado das rodadas ainda ativas.
+    """O prêmio máximo somado das rodadas ainda ativas, de TODOS os jogos.
 
     Sem descontar isto, dez jogadores apostam ao mesmo tempo, cada aposta
     passa sozinha no teto, e juntas passam do que a casa tem.
+
+    Somar só um jogo teria o mesmo efeito de não somar nada: bastaria abrir a
+    rodada cara no jogo que ficou de fora. Todo jogo novo entra aqui no mesmo
+    dia em que passa a aceitar aposta.
     """
     sessao = sessao or db.session
     total = ZERO
@@ -256,6 +287,10 @@ def exposicao_comprometida(sessao=None):
         select(RodadaMines.aposta).where(RodadaMines.estado == RodadaMines.ATIVA)
     ).scalars():
         total += premio_maximo(aposta)
+    for aposta in sessao.execute(
+        select(RodadaCrash.aposta).where(RodadaCrash.estado == RodadaCrash.ATIVA)
+    ).scalars():
+        total += premio_maximo_crash(aposta)
     return total
 
 
@@ -363,6 +398,9 @@ def criar_rodada(jogador, aposta, minas_escolhidas, sessao=None):
     rodada = RodadaMines(
         jogador_id=jogador.id,
         aposta=aposta,
+        # A vantagem vigente AGORA, congelada na rodada. A partir daqui o dono
+        # pode mudá-la à vontade que esta rodada não sente.
+        vantagem=vantagem_vigente("mines", sessao),
         minas_escolhidas=minas_escolhidas,
         minas=",".join(str(m) for m in minas),
         reveladas="",
@@ -418,7 +456,8 @@ def revelar_casa(jogador, posicao, sessao=None):
         return _estourar(rodada, posicao, sessao)
 
     reveladas.append(posicao)
-    fator = multiplicador(rodada.minas_escolhidas, len(reveladas))
+    fator_da_rodada = fator_de(rodada.vantagem)
+    fator = multiplicador(rodada.minas_escolhidas, len(reveladas), fator_da_rodada)
     aplicado = sessao.execute(
         update(RodadaMines)
         .where(
@@ -436,7 +475,7 @@ def revelar_casa(jogador, posicao, sessao=None):
 
     # Ao bater o teto não há mais o que ganhar abrindo casa: a rodada encerra
     # e paga sozinha. Deixá-la aberta seria oferecer risco sem prêmio.
-    if bateu_o_teto(rodada.minas_escolhidas, len(reveladas)):
+    if bateu_o_teto(rodada.minas_escolhidas, len(reveladas), fator_da_rodada):
         return retirar(jogador, sessao=sessao)
 
     return rodada
@@ -478,7 +517,9 @@ def retirar(jogador, sessao=None):
     if abertas < 1:
         raise ValorInvalido("revele ao menos uma casa antes de retirar")
 
-    fator = multiplicador_pagavel(rodada.minas_escolhidas, abertas)
+    fator = multiplicador_pagavel(
+        rodada.minas_escolhidas, abertas, fator_de(rodada.vantagem)
+    )
     premio = quantizar_para_baixo(rodada.aposta * fator)
 
     aplicado = sessao.execute(
@@ -530,9 +571,18 @@ def visao_da_rodada(rodada):
     if rodada is None:
         return None
     abertas = len(rodada.casas_reveladas)
-    fator = multiplicador_pagavel(rodada.minas_escolhidas, abertas) if abertas else ZERO
+    fator = (
+        multiplicador_pagavel(
+            rodada.minas_escolhidas, abertas, fator_de(rodada.vantagem)
+        )
+        if abertas
+        else ZERO
+    )
     return {
         "id": rodada.id,
+        # A vantagem desta rodada, não a de agora: é o que a tela deve mostrar
+        # para quem está no meio do jogo.
+        "vantagem": rodada.vantagem,
         "estado": rodada.estado,
         "encerrada": rodada.encerrada,
         "aposta": rodada.aposta,
@@ -543,4 +593,300 @@ def visao_da_rodada(rodada):
         "premio": rodada.premio,
         "minas": rodada.casas_com_mina if rodada.encerrada else None,
         "casa_estourada": rodada.casa_estourada,
+    }
+
+
+# --- crash ------------------------------------------------------------------
+#
+# O crash não tem tabuleiro: o que ele guarda de segredo é o ponto de estouro,
+# sorteado na aposta. E não tem "clique que revela": o resultado já está
+# decidido quando a rodada nasce, e o que o tempo faz é só chegar nele.
+#
+# Por isso a liquidação aqui é **preguiçosa**: quem lê a página aplica o
+# desfecho de uma rodada cujo prazo venceu. Não é sortear no GET — é aplicar
+# uma decisão de antes, e aplicar tarde dá o mesmo resultado que aplicar na
+# hora. Sem isso, fechar a aba deixaria a rodada aberta para sempre, prendendo
+# o caixa da casa em `exposicao_comprometida`.
+
+
+def rodada_crash_ativa(jogador, sessao=None, travada=False):
+    """A rodada de crash em andamento do jogador, se houver."""
+    sessao = sessao or db.session
+    jogador_id = jogador.id if isinstance(jogador, Usuario) else jogador
+    consulta = (
+        select(RodadaCrash)
+        .where(
+            RodadaCrash.jogador_id == jogador_id,
+            RodadaCrash.estado == RodadaCrash.ATIVA,
+        )
+        .order_by(RodadaCrash.id.desc())
+    )
+    if travada:
+        consulta = consulta.with_for_update()
+    return sessao.execute(consulta).scalars().first()
+
+
+def ultima_rodada_crash(jogador, sessao=None):
+    """A rodada de crash encerrada mais recente, para a tela ter o que mostrar.
+
+    Mesma lição do mines: resultado que só existe no parâmetro do redirect não
+    sobrevive a rede ruim.
+    """
+    sessao = sessao or db.session
+    jogador_id = jogador.id if isinstance(jogador, Usuario) else jogador
+    return (
+        sessao.execute(
+            select(RodadaCrash)
+            .where(
+                RodadaCrash.jogador_id == jogador_id,
+                RodadaCrash.estado != RodadaCrash.ATIVA,
+            )
+            .order_by(RodadaCrash.id.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def segundos_decorridos(rodada, momento=None):
+    """Há quanto tempo a rodada começou, pelo relógio do servidor."""
+    momento = momento or agora()
+    inicio = rodada.iniciada_em
+    if inicio.tzinfo is None:
+        # O SQLite devolve datetime ingênuo; o relógio do projeto é UTC.
+        inicio = inicio.replace(tzinfo=timezone.utc)
+    return Decimal(str((momento - inicio).total_seconds()))
+
+
+def criar_rodada_crash(jogador, aposta, alvo, sessao=None):
+    """Começa a rodada, sorteia o estouro e cobra a aposta.
+
+    Mesma ordem do mines: tudo que pode recusar é conferido **antes** de o
+    dinheiro sair. O ponto de estouro é sorteado aqui, com ``secrets``, e não
+    vai para o cliente enquanto a rodada viver.
+    """
+    sessao = sessao or db.session
+    conta_da_casa = exigir_casa(sessao)
+
+    if jogador.eh_conta_de_sistema:
+        raise ValorInvalido("conta de sistema não joga")
+
+    try:
+        alvo = validar_alvo(alvo)
+    except ValueError as erro:
+        raise ValorInvalido(str(erro)) from erro
+
+    try:
+        aposta = para_decimal(aposta)
+    except TypeError as erro:
+        raise ValorInvalido(str(erro)) from erro
+    if aposta <= ZERO:
+        raise ValorInvalido("a aposta precisa ser maior que zero")
+
+    travado = sessao.execute(
+        select(Usuario).where(Usuario.id == jogador.id).with_for_update()
+    ).scalar_one()
+
+    if rodada_crash_ativa(jogador, sessao) is not None:
+        raise RodadaEmAndamento("você já tem uma rodada em andamento")
+
+    if travado.saldo < aposta:
+        raise ValorInvalido(f"você tem {travado.saldo} VVC")
+
+    maximo = limite_de_aposta(sessao)
+    if aposta > maximo:
+        raise ApostaAlta(f"aposta máxima para o caixa de agora: {maximo} VVC")
+
+    vantagem_da_rodada = vantagem_vigente("crash", sessao)
+    rodada = RodadaCrash(
+        jogador_id=jogador.id,
+        aposta=aposta,
+        vantagem=vantagem_da_rodada,
+        alvo=alvo,
+        ponto_de_estouro=sortear_ponto_de_estouro(
+            fator_de(vantagem_da_rodada), secrets.SystemRandom()
+        ),
+        estado=RodadaCrash.ATIVA,
+        multiplicador=ZERO,
+        premio=ZERO,
+        iniciada_em=agora(),
+    )
+    sessao.add(rodada)
+    try:
+        sessao.flush()
+    except IntegrityError as erro:
+        sessao.rollback()
+        raise RodadaEmAndamento("você já tem uma rodada em andamento") from erro
+
+    transacao = mover(
+        jogador,
+        conta_da_casa,
+        aposta,
+        tipo=TIPO_APOSTA_CRASH,
+        motivo=f"crash #{rodada.id}",
+        sessao=sessao,
+    )
+    rodada.transacao_aposta_id = transacao.id
+    sessao.flush()
+    return rodada
+
+
+def _encerrar_crash(rodada, estado, multiplicador, premio, sessao):
+    """Fecha a rodada e paga, se houver o que pagar. Idempotente.
+
+    O estado vira o final **antes** do pagamento, por ``UPDATE`` condicional:
+    duas requisições juntas, só uma passa da trava, e só ela paga.
+
+    ``multiplicador`` e ``premio`` vêm SEPARADOS de propósito. Na rodada
+    perdida o multiplicador guardado é o ponto de estouro — é o número que a
+    tela mostra e que responde "onde foi que estourou?" —, mas o prêmio é
+    zero. Enquanto o prêmio era derivado do multiplicador, a rodada estourada
+    pagava como se tivesse ganhado.
+    """
+
+    aplicado = sessao.execute(
+        update(RodadaCrash)
+        .where(RodadaCrash.id == rodada.id, RodadaCrash.estado == RodadaCrash.ATIVA)
+        .values(
+            estado=estado,
+            multiplicador=multiplicador,
+            premio=premio,
+            encerrada_em=agora(),
+        )
+    )
+    if aplicado.rowcount != 1:
+        raise SemRodadaAtiva("esta rodada já acabou")
+    sessao.expire(rodada)
+
+    if premio > ZERO:
+        # O teto de banca de novo, agora contra o caixa DESTE instante: entre a
+        # aposta e o pagamento pode ter entrado outra rodada.
+        conta_da_casa = exigir_casa(sessao, travada=True)
+        if conta_da_casa.saldo < premio:
+            raise CaixaComprometido(
+                f"a casa não tem {premio} VVC agora; procure o dono do cassino"
+            )
+        transacao = mover(
+            conta_da_casa,
+            rodada.jogador_id,
+            premio,
+            tipo=TIPO_PREMIO_CRASH,
+            motivo=f"crash #{rodada.id} · {multiplicador}x",
+            sessao=sessao,
+        )
+        rodada.transacao_premio_id = transacao.id
+        sessao.flush()
+    return rodada
+
+
+def resolver_crash(jogador, sessao=None, momento=None):
+    """Aplica o desfecho de uma rodada cujo prazo já venceu. Não sorteia nada.
+
+    Chamada na leitura da página. Se a rodada ainda não chegou nem ao alvo nem
+    ao estouro, não faz nada e devolve a rodada como está.
+    """
+    sessao = sessao or db.session
+    rodada = rodada_crash_ativa(jogador, sessao, travada=True)
+    if rodada is None:
+        return None
+
+    decisivo = min(rodada.alvo, rodada.ponto_de_estouro)
+    if segundos_decorridos(rodada, momento) < segundos_para_multiplicador(decisivo):
+        return rodada
+
+    if crash_ganhou(rodada.alvo, rodada.ponto_de_estouro):
+        return _encerrar_crash(
+            rodada,
+            RodadaCrash.RETIRADA,
+            rodada.alvo,
+            quantizar_para_baixo(rodada.aposta * rodada.alvo),
+            sessao,
+        )
+    # Perdeu: o multiplicador guardado é onde estourou, e o prêmio é zero.
+    return _encerrar_crash(
+        rodada, RodadaCrash.ESTOURADA, rodada.ponto_de_estouro, ZERO, sessao
+    )
+
+
+def sacar_crash(jogador, sessao=None, momento=None):
+    """Saque manual: sair ANTES do alvo, pelo número de agora.
+
+    Validado contra o relógio do servidor, nunca contra o do navegador. O
+    cliente só anima; quem diz onde a curva está é este método.
+
+    Três desfechos, e nenhum depende de o POST chegar rápido:
+
+    - a curva já passou do alvo (ou do estouro) → a rodada é resolvida pelo
+      que estava decidido desde a aposta, e o clique não muda nada;
+    - a curva está no meio → paga pelo multiplicador de agora, que é menor que
+      o alvo.
+
+    É este desenho que tira a rede do caminho: quem declarou alvo e não clica
+    tem risco zero, e quem clica no braço só pode ganhar menos do que o alvo,
+    nunca perder a rodada por causa de 250 ms de atraso.
+    """
+    sessao = sessao or db.session
+    rodada = rodada_crash_ativa(jogador, sessao, travada=True)
+    if rodada is None:
+        raise SemRodadaAtiva("nenhuma rodada em andamento")
+
+    decorridos = segundos_decorridos(rodada, momento)
+    decisivo = min(rodada.alvo, rodada.ponto_de_estouro)
+
+    # O prazo da rodada venceu: o desfecho é o de sempre, e o clique chegou
+    # tarde demais para mudar alguma coisa. Não é punição — é o alvo (ou o
+    # estouro) tendo acontecido primeiro.
+    if decorridos >= segundos_para_multiplicador(decisivo):
+        return resolver_crash(jogador, sessao=sessao, momento=momento)
+
+    agora_na_curva = multiplicador_no_tempo(decorridos)
+    if agora_na_curva < MULTIPLICADOR_INICIAL_CRASH:
+        agora_na_curva = MULTIPLICADOR_INICIAL_CRASH
+    return _encerrar_crash(
+        rodada,
+        RodadaCrash.RETIRADA,
+        agora_na_curva,
+        quantizar_para_baixo(rodada.aposta * agora_na_curva),
+        sessao,
+    )
+
+
+def historico_crash(jogador, limite=15, sessao=None):
+    """Rodadas de crash encerradas, da mais recente para a mais antiga."""
+    sessao = sessao or db.session
+    return list(
+        sessao.execute(
+            select(RodadaCrash)
+            .where(
+                RodadaCrash.jogador_id == jogador.id,
+                RodadaCrash.estado != RodadaCrash.ATIVA,
+            )
+            .order_by(RodadaCrash.id.desc())
+            .limit(limite)
+        ).scalars()
+    )
+
+
+def visao_da_rodada_crash(rodada, momento=None):
+    """O que a tela pode mostrar.
+
+    Enquanto a rodada vive, ``ponto_de_estouro`` é ``None``: é o segredo do
+    servidor, e entregá-lo seria entregar o jogo. O que a tela recebe para
+    animar é há quanto tempo a rodada começou e qual o alvo — com isso o
+    cliente desenha a curva sem saber onde ela para.
+    """
+    if rodada is None:
+        return None
+    return {
+        "id": rodada.id,
+        "estado": rodada.estado,
+        "encerrada": rodada.encerrada,
+        "aposta": rodada.aposta,
+        "vantagem": rodada.vantagem,
+        "alvo": rodada.alvo,
+        "multiplicador": rodada.multiplicador,
+        "premio": rodada.premio,
+        "decorridos": segundos_decorridos(rodada, momento),
+        "ponto_de_estouro": rodada.ponto_de_estouro if rodada.encerrada else None,
     }

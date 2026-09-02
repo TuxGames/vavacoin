@@ -20,7 +20,14 @@ O produto é calculado como **fração de inteiros**, com uma única divisão
 arredondamento a cada passo, e num jogo que paga dinheiro isso vira centavo
 perdido — o mesmo motivo que faz o resto do projeto recusar ``float``.
 
-Sobre o justo aplica-se a vantagem da casa (2%), quantizando **para baixo**.
+Sobre o justo aplica-se a **vantagem da casa**, quantizando **para baixo**. A
+vantagem não mora mais aqui: ela é editável pelo dono no painel da casa e vive
+em :mod:`vavacoin.vantagem`. Este módulo recebe o **fator** já pronto
+(``0.98`` para 2%) e continua sendo função pura — dá para conferir a tabela
+inteira, em qualquer vantagem, sem subir a aplicação.
+
+A rodada guarda o fator que valia quando a aposta foi feita, e é esse que
+chega aqui na hora de pagar. Rodada aberta não muda de tabela no meio.
 
 ## Teto
 
@@ -39,9 +46,10 @@ CASAS = 25
 MIN_MINAS = 1
 MAX_MINAS = 24
 
-#: Vantagem da casa: 2%. Fica na tela, em número — o que é escondido vira
-#: suspeita que o dono não consegue desprovar depois.
-VANTAGEM_DA_CASA = Decimal("0.98")
+#: O fator de quando a vantagem era 2% fixos no código. Continua sendo o
+#: padrão de quem não passa fator nenhum — e é o que as rodadas anteriores à
+#: vantagem editável usaram, então a conta delas não muda.
+FATOR_PADRAO = Decimal("0.98")
 
 #: Teto do multiplicador pagável.
 TETO_DO_MULTIPLICADOR = Decimal("25.00")
@@ -67,33 +75,38 @@ def multiplicador_justo(minas, abertas):
     return Decimal(numerador) / Decimal(denominador)
 
 
-def multiplicador(minas, abertas):
+def multiplicador(minas, abertas, fator=None):
     """O multiplicador acumulado do jogador, sem o teto.
 
     Guardar o valor sem teto é de propósito: é o número "verdadeiro" da
     rodada. O teto entra no que se paga (:func:`multiplicador_pagavel`).
+
+    ``fator`` é ``(100 - vantagem) / 100``. Quem chama sem ele pega o padrão
+    histórico de 2% — é o que mantém correta a conta das rodadas criadas antes
+    de a vantagem virar editável.
     """
     if abertas <= 0:
         return Decimal("1.00")
-    return quantizar_para_baixo(multiplicador_justo(minas, abertas) * VANTAGEM_DA_CASA)
+    fator = FATOR_PADRAO if fator is None else fator
+    return quantizar_para_baixo(multiplicador_justo(minas, abertas) * fator)
 
 
-def multiplicador_pagavel(minas, abertas):
+def multiplicador_pagavel(minas, abertas, fator=None):
     """O que a casa paga de fato: ``min(multiplicador, teto)``."""
-    return min(multiplicador(minas, abertas), TETO_DO_MULTIPLICADOR)
+    return min(multiplicador(minas, abertas, fator), TETO_DO_MULTIPLICADOR)
 
 
-def bateu_o_teto(minas, abertas):
+def bateu_o_teto(minas, abertas, fator=None):
     """Chegou ao máximo? Daqui em diante abrir casa não paga mais nada."""
-    return multiplicador(minas, abertas) >= TETO_DO_MULTIPLICADOR
+    return multiplicador(minas, abertas, fator) >= TETO_DO_MULTIPLICADOR
 
 
-def tabela_de_multiplicadores(minas):
+def tabela_de_multiplicadores(minas, fator=None):
     """A progressão até o teto, para desenhar na tela."""
     linhas = []
     for k in range(1, casas_seguras(minas) + 1):
-        linhas.append((k, multiplicador_pagavel(minas, k)))
-        if bateu_o_teto(minas, k):
+        linhas.append((k, multiplicador_pagavel(minas, k, fator)))
+        if bateu_o_teto(minas, k, fator):
             break
     return linhas
 

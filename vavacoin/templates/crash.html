@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block titulo %}Crash — VavaCoin{% endblock %}
+{% block estilos %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='caladinho.css') }}">
+{% endblock %}
+{% block conteudo %}
+<div class="caladinho">
+<div class="cal-grid">
+
+  {# ---------------- Coluna esquerda: controles ---------------- #}
+  <div class="cal-card">
+    <h1>🚀 Crash</h1>
+
+    {% if rodada %}
+      <div class="cal-stats">
+        <div>Aposta: <b>{{ rodada.aposta }}</b> VVC</div>
+        <div>Alvo: <b>{{ rodada.alvo }}×</b>
+          <span class="cal-teto">/ {{ teto }}×</span></div>
+        {# A vantagem congelada nesta rodada: quem está jogando vê com qual
+           número está jogando, e que ele não mudou no meio. #}
+        <div>Vantagem: <b>{{ rodada.vantagem }}%</b></div>
+        {% if rodada.encerrada %}
+          <div>Estourou em: <b class="cal-perdeu">{{ rodada.ponto_de_estouro }}×</b></div>
+          {# "Saiu em" só faz sentido em rodada ganha. Na perdida o
+             multiplicador guardado É o ponto de estouro, e repetir o mesmo
+             número com dois rótulos diferentes só confunde. #}
+          {% if rodada.premio > 0 %}
+          <div>Saiu em: <b class="cal-ganhou">{{ rodada.multiplicador }}×</b></div>
+          {% endif %}
+          <div>Prêmio:
+            <b class="{{ 'cal-ganhou' if rodada.premio > 0 else 'cal-perdeu' }}">{{ rodada.premio }}</b> VVC</div>
+        {% endif %}
+      </div>
+
+      {% if rodada.encerrada %}
+        <a class="cal-btn cal-btn-amarelo" href="{{ url_for('caladinho.crash', nova=1) }}">Jogar de novo</a>
+      {% else %}
+        <form method="post" action="{{ url_for('caladinho.crash_sacar') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="cal-btn cal-btn-verde">Sacar agora</button>
+        </form>
+      {% endif %}
+
+    {% else %}
+      <form method="post" action="{{ url_for('caladinho.crash_comecar') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="cal-campo">
+          <label for="aposta">Aposta (VVC)</label>
+          <input class="cal-entrada" id="aposta" name="aposta" type="number"
+                 inputmode="decimal" step="0.01" min="0.01" max="{{ aposta_max }}"
+                 placeholder="0.00" required>
+        </div>
+        <div class="cal-campo">
+          <label for="alvo">Sair em (×)</label>
+          <input class="cal-entrada" id="alvo" name="alvo" type="number"
+                 inputmode="decimal" step="0.01" min="{{ alvo_minimo }}"
+                 max="{{ teto }}" value="2.00" required>
+        </div>
+        <button type="submit" class="cal-btn cal-btn-verde">Começar</button>
+      </form>
+
+      <div class="cal-stats">
+        <div>Aposta máxima: <b>{{ aposta_max }}</b> VVC</div>
+        <div>Vantagem: <b>{{ vantagem }}%</b></div>
+        {% if caixa is not none %}
+        <div>Caixa da casa: <b>{{ caixa }}</b> VVC</div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {# ---------------- Coluna direita: a curva ---------------- #}
+  <div class="cal-card">
+    {# O número é animado pelo `crash.js`, que só desenha: recebe há quanto
+       tempo a rodada começou e a constante da curva, nunca o ponto de
+       estouro. Sem JavaScript o número fica parado no valor do servidor, e o
+       jogo continua jogável — o alvo resolve sozinho. #}
+    <div class="cal-crash-visor {{ 'cal-crash-parado' if not rodada or rodada.encerrada }}"
+         {% if rodada and not rodada.encerrada %}
+         data-crash-decorridos="{{ rodada.decorridos }}"
+         data-crash-dobrar="{{ segundos_para_dobrar }}"
+         data-crash-alvo="{{ rodada.alvo }}"
+         {% endif %}>
+      <span class="cal-crash-numero" id="crash-numero">{% if rodada and rodada.encerrada %}{{ rodada.ponto_de_estouro }}{% elif rodada %}{{ rodada.multiplicador or "1.00" }}{% else %}1.00{% endif %}</span><span class="cal-crash-x">×</span>
+    </div>
+  </div>
+
+  {# ---------------- Histórico ---------------- #}
+  <div class="cal-card">
+    <h2>Últimas</h2>
+    {% if historico %}
+      {% for r in historico %}
+      <div class="cal-linha">
+        <div>
+          <div>{{ r.aposta }} VVC · alvo {{ r.alvo }}×</div>
+          <div class="cal-linha-sub">estourou em {{ r.ponto_de_estouro }}×</div>
+        </div>
+        <div class="{{ 'cal-ganhou' if r.premio > 0 else 'cal-perdeu' }}">
+          {{ '+' if r.premio > 0 else '−' }}{{ r.premio if r.premio > 0 else r.aposta }}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="cal-vazio">Nenhuma rodada ainda.</div>
+    {% endif %}
+  </div>
+
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='crash.js') }}" defer></script>
+{% endblock %}

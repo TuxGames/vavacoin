@@ -25,6 +25,13 @@ from ..caladinho import (
     aportar,
     casa,
     criar_rodada,
+    criar_rodada_crash,
+    historico_crash,
+    resolver_crash,
+    rodada_crash_ativa,
+    sacar_crash,
+    ultima_rodada_crash,
+    visao_da_rodada_crash,
     dono,
     exposicao_comprometida,
     historico,
@@ -38,7 +45,7 @@ from ..caladinho import (
     ultima_rodada,
     visao_da_rodada,
 )
-from ..erros import ErroDeJogo, ErroMonetario, SemRodadaAtiva
+from ..erros import ErroDeJogo, ErroMonetario, SemRodadaAtiva, ValorInvalido
 from ..formularios import FormularioCaixaDoDono
 from ..extensoes import db
 from ..mines import (
@@ -46,10 +53,23 @@ from ..mines import (
     MAX_MINAS,
     MIN_MINAS,
     TETO_DO_MULTIPLICADOR,
-    VANTAGEM_DA_CASA,
     tabela_de_multiplicadores,
 )
-from ..modelos import CHAVE_CAIXA_VISIVEL, RodadaMines, config_ligada
+from ..crash import (
+    ALVO_MINIMO,
+    SEGUNDOS_PARA_DOBRAR,
+    TETO_DO_MULTIPLICADOR as TETO_CRASH,
+)
+from ..modelos import CHAVE_CAIXA_VISIVEL, RodadaCrash, RodadaMines, config_ligada
+from ..vantagem import (
+    JOGOS,
+    MAXIMA,
+    MINIMA,
+    definir_vantagem,
+    fator_de,
+    todas as vantagens_vigentes,
+    vantagem as vantagem_do_jogo,
+)
 
 bp = Blueprint("caladinho", __name__, url_prefix="/caladinho")
 
@@ -96,6 +116,10 @@ def painel_da_casa():
         lucro=lucro_do_dono(),
         desde=conta.dono_desde,
         formulario=FormularioCaixaDoDono(),
+        jogos=JOGOS,
+        vantagens=vantagens_vigentes(),
+        vantagem_min=MINIMA,
+        vantagem_max=MAXIMA,
     )
 
 
@@ -137,6 +161,26 @@ def casa_retirar():
     return redirect(url_for("caladinho.painel_da_casa"))
 
 
+@bp.route("/casa/vantagem/<jogo>", methods=["POST"])
+def casa_vantagem(jogo):
+    """Salva a vantagem de um jogo. Editar na linha e salvar, nada mais.
+
+    Mesmo formato do ajuste de saldo do painel do Banco Central, e pelo mesmo
+    motivo: o dono reclamou que mudar número por caminho longo dá trabalho
+    demais. Sem modal, sem confirmação, sem segundo passo.
+    """
+    if not _eh_dono():
+        abort(403)
+    try:
+        nova = definir_vantagem(jogo, request.form.get("vantagem"), current_user)
+        db.session.commit()
+        flash(f"Vantagem do {jogo}: {nova}%.", "ok")
+    except (ValorInvalido, ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.painel_da_casa"))
+
+
 @bp.route("/mines")
 def mines():
     """A rodada ativa, o resultado da última encerrada, ou o formulário.
@@ -168,6 +212,11 @@ def mines():
     if rodada is not None:
         minas = rodada.minas_escolhidas
 
+    # A tabela na tela tem que ser a que vale para ESTA rodada. Com rodada
+    # aberta é a congelada nela; sem rodada, a vigente — que é a que a próxima
+    # aposta vai congelar.
+    vantagem = rodada.vantagem if rodada is not None else vantagem_do_jogo("mines")
+
     return render_template(
         "mines.html",
         rodada=visao_da_rodada(rodada),
@@ -176,8 +225,8 @@ def mines():
         min_minas=MIN_MINAS,
         max_minas=MAX_MINAS,
         teto=TETO_DO_MULTIPLICADOR,
-        vantagem=(1 - VANTAGEM_DA_CASA) * 100,
-        tabela=tabela_de_multiplicadores(minas),
+        vantagem=vantagem,
+        tabela=tabela_de_multiplicadores(minas, fator_de(vantagem)),
         aposta_max=limite_de_aposta(),
         caixa=_caixa_visivel(),
         historico=historico(current_user),
@@ -236,3 +285,83 @@ def sacar():
         db.session.rollback()
         flash(str(erro), "erro")
     return redirect(url_for("caladinho.mines", rodada=encerrada))
+
+
+@bp.route("/crash")
+def crash():
+    """A rodada ativa, o resultado da última encerrada, ou o formulário.
+
+    Mesma ordem do mines, e pelo mesmo motivo: resultado que só existe no
+    ``?rodada=`` do redirect não sobrevive a rede ruim.
+
+    A diferença é que aqui o GET **resolve** a rodada cujo prazo venceu. Não é
+    sortear na leitura: o ponto de estouro foi sorteado na aposta e o alvo foi
+    declarado junto, então o desfecho já existia — o GET só aplica. Sem isso,
+    fechar a aba deixaria a rodada aberta para sempre, prendendo o caixa da
+    casa na exposição comprometida.
+    """
+    try:
+        resolver_crash(current_user)
+        db.session.commit()
+    except (ErroDeJogo, ErroMonetario):
+        db.session.rollback()
+
+    rodada = rodada_crash_ativa(current_user)
+
+    encerrada_id = request.args.get("rodada", type=int)
+    if rodada is None and encerrada_id is not None:
+        encerrada = db.session.get(RodadaCrash, encerrada_id)
+        if encerrada is None or encerrada.jogador_id != current_user.id:
+            abort(404)
+        rodada = encerrada
+    elif rodada is None and not request.args.get("nova"):
+        rodada = ultima_rodada_crash(current_user)
+
+    vantagem = rodada.vantagem if rodada is not None else vantagem_do_jogo("crash")
+
+    return render_template(
+        "crash.html",
+        rodada=visao_da_rodada_crash(rodada),
+        teto=TETO_CRASH,
+        alvo_minimo=ALVO_MINIMO,
+        segundos_para_dobrar=SEGUNDOS_PARA_DOBRAR,
+        vantagem=vantagem,
+        aposta_max=limite_de_aposta(),
+        caixa=_caixa_visivel(),
+        historico=historico_crash(current_user),
+    )
+
+
+@bp.route("/crash/comecar", methods=["POST"])
+def crash_comecar():
+    try:
+        criar_rodada_crash(
+            current_user,
+            (request.form.get("aposta") or "").strip().replace(",", "."),
+            (request.form.get("alvo") or "").strip().replace(",", "."),
+        )
+        db.session.commit()
+    except (ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.crash"))
+
+
+@bp.route("/crash/sacar", methods=["POST"])
+def crash_sacar():
+    encerrada = None
+    try:
+        rodada = sacar_crash(current_user)
+        db.session.commit()
+        if rodada is not None:
+            encerrada = rodada.id
+            if rodada.premio > 0:
+                flash(f"Retirou {rodada.premio} VVC.", "ok")
+    except SemRodadaAtiva:
+        # O mesmo clique chegou duas vezes, ou a rodada foi resolvida pela
+        # leitura da página no meio do caminho. A rede não é erro da pessoa.
+        db.session.rollback()
+    except (ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.crash", rodada=encerrada))

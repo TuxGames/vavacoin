@@ -202,3 +202,38 @@
 
 /* ── Lobby ── */
 .cal-jogos { display: grid; gap: 10px; }
+
+/* ── Vantagem por jogo (painel do dono) ──
+   Uma linha por jogo: rótulo à esquerda, campo e Salvar à direita. O <form>
+   É a linha — assim editar e salvar é um gesto só, sem modal e sem passo
+   extra, que é como o dono pediu o ajuste de saldo no painel do BC. */
+.cal-rot {
+    color: var(--cal-txt-mut); font-size: 14px;
+    text-transform: capitalize; margin: 0;
+}
+.cal-entrada-curta { width: 6.5rem; text-align: right; }
+.cal-unidade { color: var(--cal-txt-mut); font-size: 14px; }
+.cal-btn-curto { width: auto; padding: 10px 16px; min-height: 44px; font-size: 14px; }
+@media (max-width: 480px) {
+    .cal-entrada-curta { width: 5rem; }
+}
+
+/* ── Visor do crash ──
+   O número é o jogo inteiro: grande, em verde enquanto sobe e vermelho
+   quando a rodada acabou. Largura tabular para o número não dançar de
+   posição a cada quadro da animação. */
+.cal-crash-visor {
+    display: flex; align-items: baseline; justify-content: center;
+    gap: 4px; padding: 40px 16px;
+    background: var(--cal-bg-2);
+    border: 1px solid var(--cal-borda);
+    border-radius: 12px;
+    color: var(--cal-verde);
+}
+.cal-crash-numero {
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(2.6rem, 14vw, 4rem);
+    font-weight: 800; letter-spacing: -.03em; line-height: 1;
+}
+.cal-crash-x { font-size: 1.4rem; font-weight: 700; opacity: .7; }
+.cal-crash-parado { color: var(--cal-vermelho); }
