@@ -28,6 +28,7 @@ from ..caladinho import (
     criar_rodada_crash,
     criar_rodada_torre,
     abrir_porta,
+    expirar_mines_abandonadas,
     expirar_torres_abandonadas,
     historico_crash,
     historico_dados,
@@ -229,7 +230,17 @@ def mines():
     ``?nova=1`` é o caminho de volta ao formulário de aposta, e é para onde
     aponta o "Jogar de novo". ``?rodada=`` abre uma encerrada específica. Em
     nenhum caso o GET cria ou sorteia coisa alguma.
+
+    O que o GET faz é varrer rodada abandonada, que não é sortear nem decidir:
+    é fechar o que já passou do prazo, pagando o conquistado, para o caixa da
+    casa não ficar preso por quem fechou a aba.
     """
+    try:
+        expirar_mines_abandonadas()
+        db.session.commit()
+    except (ErroDeJogo, ErroMonetario):
+        db.session.rollback()
+
     rodada = rodada_ativa(current_user)
 
     encerrada_id = request.args.get("rodada", type=int)

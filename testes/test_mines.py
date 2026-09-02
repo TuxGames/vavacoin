@@ -4,6 +4,7 @@ O que este arquivo persegue é o que morde num cassino: pagar duas vezes,
 cobrar sem poder pagar, e o tabuleiro vazar antes da hora.
 """
 
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -12,9 +13,11 @@ from conftest import conservacao
 from vavacoin.caladinho import (
     TIPO_APOSTA,
     TIPO_PREMIO,
+    VALIDADE_DO_MINES,
     casa,
     criar_casa,
     criar_rodada,
+    expirar_mines_abandonadas,
     exposicao_comprometida,
     limite_de_aposta,
     retirar,
@@ -34,7 +37,10 @@ from vavacoin.mines import (
     premio_maximo,
     tabela_de_multiplicadores,
 )
-from vavacoin.modelos import RodadaMines, Transacao
+from vavacoin.dinheiro import ZERO
+from vavacoin.moeda import soma_saldos
+from vavacoin.modelos import RodadaMines, Transacao, agora, buscar_usuario
+from vavacoin.operacoes import ajustar_saldo
 
 
 @pytest.fixture
@@ -510,3 +516,183 @@ def test_casa_do_cassino_e_idempotente(app, bc):
     assert primeira.eh_cassino is True
     assert primeira.senha_hash is None, "a casa não entra pelo site"
     assert primeira.is_active is False
+
+
+# --- a rodada abandonada ----------------------------------------------------
+#
+# Conserto de produção: rodada de mines aberta segura `premio_maximo` na
+# exposição comprometida. Com o cassino no ar, um punhado de abas fechadas
+# recusa aposta de quem quer jogar — sem ninguém estar jogando.
+
+
+def _cassino_com_caixa(bc, nova_pessoa):
+    conta = criar_casa(autoridade=bc)
+    db.session.commit()
+    ajustar_saldo(conta, "2000.00", "caixa do teste", autoridade=bc)
+    db.session.commit()
+    ana = nova_pessoa(nome="ana", saldo="100.00")
+    return conta, ana
+
+
+def _passou_o_prazo():
+    return agora() + VALIDADE_DO_MINES + timedelta(minutes=1)
+
+
+def test_o_caixa_comprometido_volta_a_zero_depois_do_prazo(app, bc, nova_pessoa):
+    """O motivo de a expiração existir, medido no número que importa."""
+    _cassino_com_caixa(bc, nova_pessoa)
+    ana = buscar_usuario("ana")
+
+    criar_rodada(ana, "10.00", minas_escolhidas=3)
+    db.session.commit()
+    assert exposicao_comprometida() == Decimal("250.00")  # 10 × 25
+
+    expirar_mines_abandonadas(momento=_passou_o_prazo())
+    db.session.commit()
+
+    assert exposicao_comprometida() == Decimal("0.00")
+
+
+def test_rodada_abandonada_expira_pagando_o_conquistado(app, bc, nova_pessoa):
+    """Quem fechou a aba não perde o que já tinha aberto."""
+    _cassino_com_caixa(bc, nova_pessoa)
+    ana = buscar_usuario("ana")
+    antes = conservacao()
+
+    rodada = criar_rodada(ana, "10.00", minas_escolhidas=3)
+    db.session.commit()
+    segura = next(c for c in range(25) if c not in rodada.casas_com_mina)
+    revelar_casa(ana, segura)
+    db.session.commit()
+    saldo = ana.saldo
+
+    expirar_mines_abandonadas(momento=_passou_o_prazo())
+    db.session.commit()
+    db.session.expire_all()
+
+    rodada = db.session.get(RodadaMines, rodada.id)
+    assert rodada.estado == RodadaMines.RETIRADA
+    assert rodada.premio > ZERO
+    assert buscar_usuario("ana").saldo == saldo + rodada.premio
+    assert conservacao() == antes
+
+
+def test_abandonada_sem_abrir_casa_devolve_a_aposta(app, bc, nova_pessoa):
+    """Zero casas é multiplicador 1,00×: a aposta de volta.
+
+    Quem não chegou a arriscar nada não perde nada — e a casa não ganha nada,
+    que é o simétrico. A regra de "revele ao menos uma casa antes de retirar"
+    continua valendo para quem saca de verdade; aqui não há saque, há
+    devolução.
+    """
+    _cassino_com_caixa(bc, nova_pessoa)
+    ana = buscar_usuario("ana")
+    antes = conservacao()
+    saldo = ana.saldo
+
+    criar_rodada(ana, "10.00", minas_escolhidas=3)
+    db.session.commit()
+
+    expirar_mines_abandonadas(momento=_passou_o_prazo())
+    db.session.commit()
+    db.session.expire_all()
+
+    assert buscar_usuario("ana").saldo == saldo
+    assert conservacao() == antes
+
+
+def test_rodada_expirada_nao_resolve_duas_vezes(app, bc, nova_pessoa):
+    """A guarda de status vale para a varredura como vale para o clique.
+
+    Duas varreduras concorrentes — duas abas, dois processos — não podem pagar
+    o mesmo prêmio duas vezes.
+    """
+    _cassino_com_caixa(bc, nova_pessoa)
+    ana = buscar_usuario("ana")
+    antes = conservacao()
+
+    rodada = criar_rodada(ana, "10.00", minas_escolhidas=3)
+    db.session.commit()
+    segura = next(c for c in range(25) if c not in rodada.casas_com_mina)
+    revelar_casa(ana, segura)
+    db.session.commit()
+
+    momento = _passou_o_prazo()
+    expirar_mines_abandonadas(momento=momento)
+    db.session.commit()
+    saldo = buscar_usuario("ana").saldo
+
+    # Segunda varredura: a rodada não está mais ativa, então não há o que
+    # varrer — e nada é pago de novo.
+    assert expirar_mines_abandonadas(momento=momento) == []
+    db.session.commit()
+    db.session.expire_all()
+
+    assert buscar_usuario("ana").saldo == saldo
+    premios = db.session.execute(
+        db.select(Transacao).where(Transacao.tipo == "premio_mines")
+    ).scalars().all()
+    assert len(premios) == 1
+    assert conservacao() == antes
+
+
+def test_rodada_recente_nao_expira(app, bc, nova_pessoa):
+    _cassino_com_caixa(bc, nova_pessoa)
+    ana = buscar_usuario("ana")
+
+    criar_rodada(ana, "10.00", minas_escolhidas=3)
+    db.session.commit()
+
+    expirar_mines_abandonadas()
+    db.session.commit()
+
+    assert rodada_ativa(ana) is not None
+
+
+def test_abrir_casa_adia_a_expiracao(app, bc, nova_pessoa):
+    """Quem está jogando devagar não é interrompido no meio."""
+    _cassino_com_caixa(bc, nova_pessoa)
+    ana = buscar_usuario("ana")
+
+    rodada = criar_rodada(ana, "10.00", minas_escolhidas=3)
+    db.session.commit()
+    antes = rodada.mexida_em
+
+    segura = next(c for c in range(25) if c not in rodada.casas_com_mina)
+    revelar_casa(ana, segura)
+    db.session.commit()
+    db.session.expire_all()
+
+    assert db.session.get(RodadaMines, rodada.id).mexida_em >= antes
+
+
+def test_a_criacao_de_rodada_varre_o_caixa_preso(app, bc, nova_pessoa):
+    """A varredura acontece onde ela decide alguma coisa.
+
+    Sem ela, a rodada esquecida de uma pessoa recusa a aposta de outra: o
+    caixa parece comprometido e o teto de banca corta.
+    """
+    conta, _ = _cassino_com_caixa(bc, nova_pessoa)
+    esquecida = nova_pessoa(nome="esquecida", saldo="100.00")
+    db.session.commit()
+
+    criar_rodada(esquecida, "40.00", minas_escolhidas=3)
+    db.session.commit()
+    # 40 × 25 = 1.000 preso, de um caixa de 2.010: sobra pouco.
+    assert limite_de_aposta() < Decimal("40.00")
+
+    # O tempo passa. A próxima pessoa a apostar varre a esquecida e volta a
+    # encontrar o caixa inteiro.
+    db.session.execute(
+        db.update(RodadaMines)
+        .where(RodadaMines.estado == RodadaMines.ATIVA)
+        .values(mexida_em=agora() - VALIDADE_DO_MINES - timedelta(minutes=1))
+    )
+    db.session.commit()
+
+    ana = buscar_usuario("ana")
+    rodada = criar_rodada(ana, "40.00", minas_escolhidas=3)
+    db.session.commit()
+
+    assert rodada is not None
+    assert conservacao() == soma_saldos()

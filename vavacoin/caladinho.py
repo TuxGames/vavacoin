@@ -42,6 +42,7 @@ from .erros import (
     CaixaComprometido,
     CasaIndisponivel,
     RodadaEmAndamento,
+    SaldoInsuficiente,
     SemAutoridade,
     SemRodadaAtiva,
     ValorInvalido,
@@ -421,6 +422,10 @@ def criar_rodada(jogador, aposta, minas_escolhidas, sessao=None):
     if aposta <= ZERO:
         raise ValorInvalido("a aposta precisa ser maior que zero")
 
+    # Varre as abandonadas ANTES de medir a exposição: é aqui que o caixa
+    # preso por rodada esquecida faria diferença, recusando aposta boa.
+    expirar_mines_abandonadas(sessao)
+
     # Trava a linha do jogador: serializa a criação de rodada e impede que
     # duas requisições simultâneas criem duas.
     travado = sessao.execute(
@@ -510,7 +515,9 @@ def revelar_casa(jogador, posicao, sessao=None):
             RodadaMines.reveladas == rodada.reveladas,
         )
         .values(
-            reveladas=",".join(str(c) for c in reveladas), multiplicador=fator
+            reveladas=",".join(str(c) for c in reveladas),
+            multiplicador=fator,
+            mexida_em=agora(),
         )
     )
     if aplicado.rowcount != 1:
@@ -534,6 +541,7 @@ def _estourar(rodada, posicao, sessao):
             estado=RodadaMines.ESTOURADA,
             casa_estourada=posicao,
             premio=ZERO,
+            mexida_em=agora(),
             encerrada_em=agora(),
         )
     )
@@ -543,22 +551,27 @@ def _estourar(rodada, posicao, sessao):
     return rodada
 
 
-def retirar(jogador, sessao=None):
+def retirar(jogador, sessao=None, rodada=None, exigir_casa_aberta=True):
     """Encerra ganhando e paga o prêmio. Idempotente.
 
     O estado vira ``retirada`` **antes** do pagamento, por ``UPDATE``
     condicional: se duas requisições chegarem juntas, só uma passa da trava, e
     só ela paga.
+
+    ``exigir_casa_aberta`` é a regra do jogo: ninguém saca sem ter arriscado
+    nada. A expiração passa ``False`` porque ali não há saque — há devolução,
+    e devolver a aposta de quem não chegou a jogar é o resultado certo.
     """
     sessao = sessao or db.session
     conta_da_casa = exigir_casa(sessao, travada=True)
 
-    rodada = rodada_ativa(jogador, sessao, travada=True)
+    if rodada is None:
+        rodada = rodada_ativa(jogador, sessao, travada=True)
     if rodada is None:
         raise SemRodadaAtiva("nenhuma rodada em andamento para retirar")
 
     abertas = len(rodada.casas_reveladas)
-    if abertas < 1:
+    if exigir_casa_aberta and abertas < 1:
         raise ValorInvalido("revele ao menos uma casa antes de retirar")
 
     fator = multiplicador_pagavel(
@@ -569,7 +582,12 @@ def retirar(jogador, sessao=None):
     aplicado = sessao.execute(
         update(RodadaMines)
         .where(RodadaMines.id == rodada.id, RodadaMines.estado == RodadaMines.ATIVA)
-        .values(estado=RodadaMines.RETIRADA, premio=premio, encerrada_em=agora())
+        .values(
+            estado=RodadaMines.RETIRADA,
+            premio=premio,
+            mexida_em=agora(),
+            encerrada_em=agora(),
+        )
     )
     if aplicado.rowcount != 1:
         raise SemRodadaAtiva("esta rodada já acabou")
@@ -587,6 +605,52 @@ def retirar(jogador, sessao=None):
         rodada.transacao_premio_id = transacao.id
         sessao.flush()
     return rodada
+
+
+#: Quanto tempo uma rodada de mines sobrevive sem ninguém mexer. O mesmo
+#: prazo da torre: são o mesmo problema.
+VALIDADE_DO_MINES = timedelta(minutes=30)
+
+
+def expirar_mines_abandonadas(sessao=None, momento=None):
+    """Fecha as rodadas de mines esquecidas, pagando o já conquistado.
+
+    O mesmo conserto que a torre já nasceu tendo, agora aplicado ao jogo que
+    está no ar. Rodada aberta segura ``premio_maximo`` em
+    :func:`exposicao_comprometida`; quem fecha a aba congela esse pedaço do
+    caixa para sempre, e um punhado de abas fechadas passa a recusar aposta de
+    quem quer jogar — sem que ninguém esteja jogando.
+
+    Paga o multiplicador já conquistado. Com zero casas abertas isso é 1,00×,
+    ou seja, a aposta de volta: quem não chegou a arriscar nada não perde
+    nada. A rodada aparece como ``retirada``, porque foi o que aconteceu.
+    """
+    sessao = sessao or db.session
+    limite = (momento or agora()) - VALIDADE_DO_MINES
+
+    abandonadas = list(
+        sessao.execute(
+            select(RodadaMines)
+            .where(
+                RodadaMines.estado == RodadaMines.ATIVA,
+                RodadaMines.mexida_em < limite,
+            )
+            .with_for_update()
+        ).scalars()
+    )
+    for rodada in abandonadas:
+        try:
+            retirar(
+                rodada.jogador_id,
+                sessao=sessao,
+                rodada=rodada,
+                exigir_casa_aberta=False,
+            )
+        except (SemRodadaAtiva, CaixaComprometido, SaldoInsuficiente):
+            # Outra requisição chegou primeiro, ou a casa não cobre agora.
+            # Nenhum dos dois é motivo para derrubar quem só passava por aqui.
+            continue
+    return abandonadas
 
 
 def historico(jogador, limite=15, sessao=None):

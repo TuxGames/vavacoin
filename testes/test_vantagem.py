@@ -445,3 +445,60 @@ def test_a_casa_paga_de_verdade_o_que_prometeu_no_evento(app, bc, cassino):
     )
     assert cassino["casa"].saldo == caixa_antes + rodada.aposta - rodada.premio
     assert conservacao() == antes
+
+
+# --- a vantagem com centavos ------------------------------------------------
+
+
+@pytest.mark.parametrize("pct", ["2.50", "-2.50", "7.25", "0.01", "-0.01"])
+def test_vantagem_com_centavos_funciona_nos_quatro_jogos(app, bc, cassino, pct):
+    """O campo aceita ``step="0.01"``, então 2,50% é digitável — e quebrava.
+
+    ``fator_de(2.50)`` vale ``0.975``, com três casas. O sorteio do crash
+    passava esse fator por ``para_decimal``, que existe para recusar DINHEIRO
+    com precisão abaixo do centavo, e derrubava a rodada com erro 500. O fator
+    é uma razão, não dinheiro.
+
+    O teste percorre os quatro jogos porque o mesmo engano cabe em qualquer um
+    deles no dia em que alguém for mexer.
+    """
+    from vavacoin.caladinho import (
+        criar_rodada_crash,
+        criar_rodada_torre,
+        jogar_dados,
+    )
+    from vavacoin.dados import MENOR
+
+    for jogo in JOGOS:
+        definir_vantagem(jogo, pct, cassino["dono"])
+    db.session.commit()
+    antes = conservacao()
+
+    criar_rodada(cassino["ana"], "1.00", minas_escolhidas=3)
+    db.session.commit()
+    retirar_ou_ignorar(cassino["ana"])
+
+    criar_rodada_crash(cassino["ana"], "1.00", "2.00")
+    db.session.commit()
+
+    criar_rodada_torre(cassino["ana"], "1.00", portas=3)
+    db.session.commit()
+
+    jogar_dados(cassino["ana"], "1.00", MENOR, 50)
+    db.session.commit()
+
+    assert conservacao() == antes
+
+
+def retirar_ou_ignorar(jogador):
+    """Fecha a rodada de mines se ela ainda estiver aberta."""
+    from vavacoin.caladinho import rodada_ativa, revelar_casa, retirar
+
+    rodada = rodada_ativa(jogador)
+    if rodada is None:
+        return
+    segura = next(c for c in range(25) if c not in rodada.casas_com_mina)
+    revelar_casa(jogador, segura)
+    db.session.commit()
+    retirar(jogador)
+    db.session.commit()

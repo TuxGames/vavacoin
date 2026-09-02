@@ -117,7 +117,11 @@ def sortear_ponto_de_estouro(fator, aleatorio):
     u = Decimal(str(aleatorio.random()))
     if u <= 0:  # praticamente impossível, mas dividir por zero é certeza
         u = Decimal("0.0000000001")
-    bruto = quantizar_para_baixo(para_decimal(fator) / u)
+    # O fator é uma RAZÃO, não dinheiro: com vantagem de 2,50% ele vale
+    # 0,975, e `para_decimal` — que existe para recusar dinheiro com
+    # precisão abaixo do centavo — recusava isso e derrubava a rodada.
+    # Quem arredonda aqui é o `quantizar_para_baixo` do resultado.
+    bruto = quantizar_para_baixo(Decimal(fator) / u)
     if bruto < MULTIPLICADOR_INICIAL:
         return MULTIPLICADOR_INICIAL
     return min(bruto, TETO_DO_MULTIPLICADOR)

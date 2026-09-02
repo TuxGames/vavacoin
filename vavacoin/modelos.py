@@ -451,6 +451,12 @@ class RodadaMines(db.Model):
     criada_em = db.Column(
         db.DateTime(timezone=True), nullable=False, default=agora, index=True
     )
+    #: Quando a pessoa mexeu pela última vez. É por aqui que a rodada
+    #: abandonada expira, em vez de prender o caixa da casa para sempre —
+    #: mesma coluna e mesma razão da rodada de torre.
+    mexida_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
     encerrada_em = db.Column(db.DateTime(timezone=True), nullable=True)
 
     jogador = db.relationship("Usuario", foreign_keys=[jogador_id])
