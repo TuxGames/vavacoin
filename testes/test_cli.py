@@ -93,14 +93,19 @@ def test_senha_bc_antes_da_genese(app):
 
 
 def test_convite_sem_destinatario_pela_cli(app, bc):
-    """`flask convite`, sem nenhuma opção, imprime um código."""
+    """`flask convite`, sem nenhuma opção, imprime o código e o link.
+
+    O código continua sendo a PRIMEIRA linha: era a saída inteira antes do
+    link existir, e é o que qualquer script que leia esta saída espera.
+    """
     from vavacoin.modelos import Convite
 
     resultado = _rodar(app, "convite")
 
     assert resultado.exit_code == 0, resultado.output
-    codigo = resultado.output.strip()
+    codigo, link = resultado.output.strip().splitlines()
     assert codigo
+    assert link.endswith("/cadastro/" + codigo)
     convite = db.session.execute(
         db.select(Convite).where(Convite.codigo == codigo)
     ).scalar_one()
@@ -113,8 +118,9 @@ def test_convite_com_destinatario_pela_cli(app, bc):
     resultado = _rodar(app, "convite", "--destinatario", "Fulano")
 
     assert resultado.exit_code == 0
+    codigo = resultado.output.strip().splitlines()[0]
     convite = db.session.execute(
-        db.select(Convite).where(Convite.codigo == resultado.output.strip())
+        db.select(Convite).where(Convite.codigo == codigo)
     ).scalar_one()
     assert convite.destinatario == "Fulano"
 

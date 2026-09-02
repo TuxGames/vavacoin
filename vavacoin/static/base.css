@@ -608,6 +608,28 @@ label {
     font-size: 19px; font-weight: 700; letter-spacing: -.03em; color: var(--text-hi);
 }
 
+/* ── LINK DE CONVITE (painel) ──
+   Quebra em qualquer caractere para caber sem esticar a linha, e fica em
+   dígito de largura fixa porque é uma coisa para conferir caractere a
+   caractere, não para ler. Continua texto normal: dá para selecionar com o
+   dedo mesmo se o botão de copiar não funcionar. */
+.convite-link {
+    font-family: var(--num);
+    font-size: 11.5px; line-height: 1.45;
+    color: var(--muted); word-break: break-all;
+    margin-top: 3px;
+}
+
+/* Campo auxiliar do `copiar.js`: precisa estar no documento e selecionável,
+   então não pode ser `hidden` nem `display: none`. Sai da tela pelo lado.
+   Vive aqui, e não num `style` no JavaScript, para o estilo continuar todo
+   em CSS. */
+.fora-da-tela {
+    position: fixed; top: 0; left: -9999px;
+    width: 1px; height: 1px; opacity: 0;
+    border: 0; padding: 0;
+}
+
 /* ── MEDIDOR DE SUPPLY (painel) ──
    `<progress>` em vez de <div> com largura: a largura vem do atributo
    `value`, e a CSP proíbe `style=""`. De quebra, o valor fica no DOM. */

@@ -14,6 +14,7 @@ from flask.cli import with_appcontext
 from .auditoria import auditar, linhas_extrato
 from .autoridade import exigir_banco_central
 from .constantes import SUPPLY_INICIAL, SUPPLY_MAXIMO
+from .convites import link_de_convite
 from .erros import ErroMonetario
 from .extensoes import db
 from .moeda import criar_genese, soma_saldos, verificar_conservacao
@@ -46,12 +47,20 @@ def comando_genese():
 @click.option("--codigo", default=None, help="Código fixo; se omitido, é sorteado.")
 @with_appcontext
 def comando_convite(destinatario, codigo):
-    """Emite um convite (um por aluno). Poder do Banco Central."""
+    """Emite um convite (um por aluno). Poder do Banco Central.
+
+    Imprime duas linhas: o código e o link. O código primeiro porque é o que
+    já era impresso, e porque quem lê a saída com script lê a primeira linha.
+    O link sai do endereço em ``VAVACOIN_BASE_URL`` — sem ela, o padrão é o
+    servidor de desenvolvimento, e o link impresso avisa sozinho que está
+    apontando para localhost.
+    """
     convite = criar_convite(
         codigo=codigo, destinatario=destinatario, autoridade=_autoridade()
     )
     db.session.commit()
     click.echo(convite.codigo)
+    click.echo(link_de_convite(convite.codigo))
 
 
 @click.command("criar-conta")

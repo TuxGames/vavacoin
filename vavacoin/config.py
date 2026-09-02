@@ -17,6 +17,11 @@ class Config:
         "VAVACOIN_DATABASE_URI", f"sqlite:///{RAIZ / 'vavacoin.sqlite3'}"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    #: Endereço público do site, usado para montar o link de convite fora de
+    #: uma requisição (a CLI). Dentro de uma requisição o host verdadeiro é
+    #: melhor fonte e este valor nem é consultado. Nunca escreva o domínio de
+    #: produção no código: ele muda, e o código não deveria saber onde mora.
+    BASE_URL = os.environ.get("VAVACOIN_BASE_URL", "http://localhost:5000")
     WTF_CSRF_ENABLED = True
     #: Custo do bcrypt. Não baixe em produção.
     BCRYPT_ROUNDS = 12

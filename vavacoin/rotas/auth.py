@@ -17,7 +17,7 @@ from ..extensoes import db
 from ..formularios import FormularioCadastro, FormularioLogin
 from ..limite import limitador_taxa, trava_por_falhas
 from ..nomes import normalizar_nome
-from ..modelos import buscar_usuario
+from ..modelos import Convite, buscar_usuario
 
 bp = Blueprint("auth", __name__)
 
@@ -25,6 +25,21 @@ bp = Blueprint("auth", __name__)
 def _endereco():
     """De onde veio a tentativa. Chave do limite de taxa."""
     return request.remote_addr or "desconhecido"
+
+
+def _convite_livre(codigo):
+    """O convite ainda por resgatar com esse código, ou ``None``.
+
+    Só lê. Quem queima o convite é ``cadastrar_por_convite()``, dentro do
+    SAVEPOINT dele — o que se decide aqui é apenas se vale preencher o campo.
+    Entre esta leitura e o envio do formulário o convite pode ser resgatado
+    por outra pessoa, e é o resgate que recusa, como sempre foi.
+    """
+    return db.session.execute(
+        db.select(Convite).where(
+            Convite.codigo == codigo, Convite.usuario_id.is_(None)
+        )
+    ).scalar_one_or_none()
 
 
 @bp.route("/entrar", methods=["GET", "POST"])
@@ -88,17 +103,38 @@ def logout():
 
 
 @bp.route("/cadastro", methods=["GET", "POST"])
-def cadastro():
+@bp.route("/cadastro/<codigo>", methods=["GET", "POST"])
+def cadastro(codigo=None):
     """Cria a conta. É a única porta de entrada.
 
     A conta nasce com **saldo zero**: o convite dá entrada na economia, não
     dinheiro. Não existe cadastro sem convite — é o que garante que ninguém
     entra sem ter pedido.
+
+    As duas rotas são a mesma tela. ``/cadastro/<codigo>`` é o link que o
+    Banco Central manda para a pessoa: ele só **preenche** o campo, que
+    continua editável, e o resgate segue sendo o mesmo caminho de sempre. Não
+    há atalho de cadastro pelo link — quem chega por ele preenche o resto do
+    formulário igual a quem digitou o código na mão.
+
+    Quem manda no POST é sempre o campo do formulário, nunca o caminho: assim
+    existe um só lugar de onde o código sai, e trocar o campo depois de abrir
+    o link funciona como a pessoa espera.
     """
     if current_user.is_authenticated:
         return redirect(url_for("publico.inicio"))
 
     formulario = FormularioCadastro()
+    if request.method == "GET" and codigo is not None:
+        convite = _convite_livre(codigo)
+        if convite is None:
+            # Uma linha, no padrão de erro do resto do site. Não diz se o
+            # código não existe ou se já foi usado — a diferença não ajuda
+            # quem chegou pelo link e ajuda quem está sondando códigos.
+            flash("Convite já usado ou inexistente.", "erro")
+        else:
+            formulario.codigo.data = convite.codigo
+
     if formulario.validate_on_submit():
         from ..operacoes import cadastrar_por_convite
 

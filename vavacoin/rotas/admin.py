@@ -28,6 +28,7 @@ from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
 from ..auditoria import auditar, estado_da_economia, linhas_extrato
+from ..convites import link_de_convite
 from ..erros import ErroMonetario, ValorInvalido
 from ..extensoes import db
 from ..caladinho import casa as casa_do_cassino
@@ -124,6 +125,10 @@ def _pagina(**extras):
         "linhas": {c.id: FormularioLinhaDaConta(saldo=str(c.saldo)) for c in contas},
         "erro_na_linha": {},
         "convites_livres": convites_livres,
+        # O link é montado aqui, e não no template, porque o `url_for`
+        # externo precisa do host da requisição — que o template tem, mas
+        # repetido em cada linha do laço.
+        "links_de_convite": {c.id: link_de_convite(c.codigo) for c in convites_livres},
         "registros": registros,
         "casa": conta_da_casa,
         "caixa_visivel": config_ligada(CHAVE_CAIXA_VISIVEL),

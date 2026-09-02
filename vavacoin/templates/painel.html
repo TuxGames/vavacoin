@@ -154,10 +154,17 @@
   <hr>
   <div class="section-label">Ainda não usados</div>
   {% for convite in convites_livres %}
+  {# O link é a mesma tela de cadastro com o código no caminho. O código
+     continua à vista para quem prefere ditar ou mandar solto. #}
   <div class="row row-evt">
     <span class="row-chip" aria-hidden="true">{{ (convite.destinatario or "?")[0]|upper }}</span>
-    <div class="row-main">{{ convite.destinatario or "sem nome" }}</div>
-    <div class="row-val"><code>{{ convite.codigo }}</code></div>
+    <div class="row-main">
+      <div>{{ convite.destinatario or "sem nome" }} <code>{{ convite.codigo }}</code></div>
+      <div class="convite-link">{{ links_de_convite[convite.id] }}</div>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm copiar"
+            data-copiar="{{ links_de_convite[convite.id] }}"
+            aria-label="Copiar o link de {{ convite.destinatario or convite.codigo }}">Copiar</button>
   </div>
   {% endfor %}
   {% endif %}
@@ -209,4 +216,8 @@
   <p class="vazio">Nada registrado ainda.</p>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='copiar.js') }}" defer></script>
 {% endblock %}
