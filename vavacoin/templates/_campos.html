@@ -38,6 +38,11 @@
       &middot; {{ linha.quando.strftime("%d/%m %H:%M") }}
       &middot; saldo {{ linha.saldo_depois }}
     </div>
+    {# Linha própria, e não no fim da `.ei-sub`: aquela corta com reticências
+       para não desalinhar a lista, e um link cortado é um link que não dá
+       para clicar justamente no celular, que é onde a turma usa. #}
+    <a class="link-recibo"
+       href="{{ url_for('carteira.comprovante', transacao_id=linha.id) }}">comprovante</a>
   </div>
   <div class="row-val {{ 'neg' if saida else 'pos' }}">
     {{ "" if saida else "+" }}{{ linha.valor_com_sinal }}

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block titulo %}Comprovante {{ "%08d"|format(transacao.id) }} — VavaCoin{% endblock %}
+{% block conteudo %}
+{# O recibo do Benbals, com a estética daqui: a moeda dourada no topo, valor
+   em dígito de largura fixa e as duas partes com a ficha da inicial. As
+   bordas tracejadas e o número com oito dígitos vieram de lá inteiros — é o
+   que faz a coisa parecer comprovante e não mais uma tela.
+
+   `confirmar.html` é a tela ANTES, e mostra uma intenção que ainda pode não
+   acontecer; esta é a de DEPOIS, e mostra uma linha do ledger que já é fato.
+   Parecidas de propósito, separadas de propósito. #}
+<div class="centro">
+  <div class="recibo-folha">
+    <div class="recibo-topo">
+      <span class="moeda moeda-lg" aria-hidden="true">V</span>
+      <div class="recibo-titulo">Comprovante</div>
+      <div class="recibo-numero">Nº {{ "%08d"|format(transacao.id) }}</div>
+    </div>
+
+    <div class="recibo-valor-bloco">
+      <div class="recibo-moeda">Valor</div>
+      <div class="recibo-valor">{{ transacao.valor }}</div>
+      <div class="recibo-moeda">VavaCoin &middot; VVC</div>
+    </div>
+
+    <div class="recibo-parte">
+      <div class="recibo-rot">De</div>
+      <div class="recibo-pessoa">
+        <span class="row-chip" aria-hidden="true">{{ origem[0]|upper }}</span>
+        <div>
+          <div class="recibo-nome">{{ origem }}</div>
+          {% if origem_usuario %}<div class="recibo-user">{{ origem_usuario }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="recibo-seta" aria-hidden="true">&darr;</div>
+
+    <div class="recibo-parte">
+      <div class="recibo-rot">Para</div>
+      <div class="recibo-pessoa">
+        <span class="row-chip" aria-hidden="true">{{ destino[0]|upper }}</span>
+        <div>
+          <div class="recibo-nome">{{ destino }}</div>
+          {% if destino_usuario %}<div class="recibo-user">{{ destino_usuario }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="recibo-meta">
+      <div class="recibo-linha">
+        <span class="recibo-rot">Quando</span>
+        <span>{{ transacao.criado_em.strftime("%d/%m/%Y às %H:%M") }}</span>
+      </div>
+      <div class="recibo-linha">
+        <span class="recibo-rot">Tipo</span>
+        <span>{{ transacao.tipo|replace("_", " ") }}</span>
+      </div>
+      {% if transacao.motivo %}
+      <div class="recibo-linha">
+        <span class="recibo-rot">Motivo</span>
+        <span>{{ transacao.motivo }}</span>
+      </div>
+      {% endif %}
+      {% if ator %}
+      <div class="recibo-linha">
+        <span class="recibo-rot">Ator</span>
+        <span>{{ ator }}</span>
+      </div>
+      {% endif %}
+      <div class="recibo-linha">
+        <span class="recibo-rot">Saldo depois</span>
+        <span>{{ transacao.saldo_origem_depois if saiu else transacao.saldo_destino_depois }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="recibo-acoes">
+    <button type="button" class="btn btn-outline btn-sm imprimir">Imprimir</button>
+    <a class="btn btn-outline btn-sm" href="{{ url_for('carteira.minha_carteira') }}">Extrato</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='imprimir.js') }}" defer></script>
+{% endblock %}

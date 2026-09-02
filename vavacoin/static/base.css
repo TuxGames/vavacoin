@@ -724,6 +724,120 @@ label {
 }
 .recibo-para .nome { font-size: 15px; font-weight: 650; color: var(--text-hi); }
 
+/* ── COMPROVANTE ──
+   A folha do recibo. As bordas tracejadas e o número de oito dígitos vieram
+   do Benbals — é o que faz a tela parecer comprovante e não mais uma página.
+   O resto é a linguagem daqui: moeda dourada, valor em dígito de largura
+   fixa, ficha com a inicial de cada parte. */
+.recibo-folha {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    margin-bottom: 14px;
+}
+.recibo-topo {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 24px 20px 20px;
+    background: var(--grad-aurora), transparent;
+    border-bottom: 2px dashed var(--border);
+}
+.recibo-titulo {
+    font-size: 17px; font-weight: 700; color: var(--text-hi); letter-spacing: -.01em;
+}
+.recibo-numero {
+    font-family: var(--num); font-size: 11.5px; letter-spacing: .14em;
+    color: var(--muted);
+}
+.recibo-valor-bloco {
+    text-align: center; padding: 22px 20px;
+    border-bottom: 2px dashed var(--border);
+}
+/* O valor grande. A mesma régua do `.recibo-valor` de confirmar.html: as
+   duas telas mostram o mesmo número e não deveriam mostrá-lo diferente. */
+.recibo-valor {
+    font-family: var(--num); font-variant-numeric: tabular-nums;
+    font-size: clamp(2.2rem, 10vw, 2.8rem); font-weight: 700;
+    letter-spacing: -.04em; line-height: 1;
+    color: var(--gold-lt); margin: 8px 0;
+}
+.recibo-moeda {
+    font-size: 11px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted);
+}
+.recibo-parte { padding: 14px 20px; }
+.recibo-parte + .recibo-parte { padding-top: 0; }
+.recibo-rot {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted);
+}
+.recibo-pessoa { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.recibo-nome { font-size: 16px; font-weight: 650; color: var(--text-hi); }
+.recibo-user { font-family: var(--num); font-size: 12px; color: var(--muted); }
+/* A seta entre as partes: a direção do dinheiro, sem uma palavra.
+
+   Alinhada com a coluna das fichas (20px de padding + os 34px da ficha), e
+   não no centro do cartão: assim ela liga a inicial de cima à de baixo em
+   vez de flutuar solta ao lado dos nomes. */
+.recibo-seta {
+    width: 74px; padding-left: 20px;
+    text-align: center; color: var(--gold);
+    font-size: 17px; line-height: 1;
+}
+.recibo-meta {
+    padding: 16px 20px 20px;
+    border-top: 2px dashed var(--border);
+}
+.recibo-linha {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 14px; padding: 5px 0; font-size: 13.5px; color: var(--text);
+}
+.recibo-linha > span:last-child {
+    text-align: right; font-family: var(--num);
+    font-variant-numeric: tabular-nums; min-width: 0;
+}
+.recibo-acoes { display: flex; gap: 10px; }
+.recibo-acoes > * { flex: 1; }
+/* O link do comprovante na linha do extrato. Discreto porque é a terceira
+   informação da linha, mas com alvo de toque de verdade — o padding é o que
+   faz o dedo acertar sem aumentar o texto. */
+.link-recibo {
+    display: inline-block;
+    margin-top: 2px; padding: 3px 0;
+    font-size: 11.5px; font-weight: 600;
+    letter-spacing: .02em;
+    color: var(--muted-2);
+}
+.link-recibo:hover { color: var(--gold-lt); text-decoration: none; }
+@media (max-width: 767px) {
+    .link-recibo { font-size: 12.5px; padding: 5px 0; }
+}
+
+/* ── IMPRESSÃO ──
+   O diálogo de impressão é o "salvar" do comprovante: vira PDF no
+   computador e imagem no celular. Some tudo que é navegação e fica só a
+   folha, em papel branco — imprimir o fundo escuro gastaria tinta à toa e
+   sairia ilegível na maioria das impressoras. */
+@media print {
+    .topbar, .rodape, .sidebar, .backdrop, .avisos, .recibo-acoes {
+        display: none !important;
+    }
+    body { background: #fff; color: #111; }
+    .page-wrap { padding: 0; max-width: none; }
+    .recibo-folha {
+        border-color: #bbb; box-shadow: none; background: #fff;
+    }
+    .recibo-topo, .recibo-valor-bloco, .recibo-meta { border-color: #bbb; }
+    .recibo-topo { background: none; }
+    .recibo-titulo, .recibo-nome { color: #111; }
+    .recibo-valor { color: #111; }
+    .recibo-rot, .recibo-numero, .recibo-moeda, .recibo-user { color: #555; }
+    .recibo-linha { color: #111; }
+    .recibo-seta { color: #555; }
+    .row-chip { border-color: #bbb; color: #555; background: none; }
+}
+
 /* ── ÍCONES OUTLINE (SVG via CSS mask; tingido por currentColor) ──
    Self-contained, sem CDN nem fonte externa: sempre renderiza, e passa na CSP
    porque `data:` está liberado em img-src. Só os ícones usados aqui. */
