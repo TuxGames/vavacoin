@@ -16,17 +16,20 @@ O tipo é ``Dinheiro`` (inteiro de centésimos) pela mesma razão que o resto do
 projeto recusa ``float``: 2,5% precisa ser exatamente 2,5%. Aqui o "centavo"
 é um centésimo de ponto percentual.
 
-## A faixa, e de onde ela sai
+## A faixa: −10% a +10%, e de onde os dois números saem
 
-Vantagem **negativa** faz o jogo pagar, na média, mais do que arrecada: a casa
-quebra por aritmética, não por azar. Por isso o piso é zero — e zero é jogo
-justo, que é um extremo legítimo (o dono pode querer uma noite sem vantagem).
+**Vantagem negativa é permitida, por decisão do dono.** Ela faz o jogo pagar,
+na média, mais do que arrecada — a casa perde por aritmética, não por azar —,
+e é exatamente isso que ele quer poder fazer: evento em que o Caladinho paga
+acima do justo. Não existe atrito nem aviso contra isso na tela; a decisão é
+dele e está tomada.
 
-O teto é 10%, e o número tem motivo. Com a tabela do mines, a vantagem entra
-multiplicando o multiplicador justo, e o justo da primeira casa é baixo: com
-1 mina, ``25/24 = 1,0416``. A partir de **5%** esse produto cai abaixo de
-1,00 e a tela passa a mostrar que abrir uma casa e sacar devolve **menos** do
-que a aposta::
+### O lado de cima: +10%
+
+A vantagem multiplica o multiplicador justo, e o justo da primeira casa do
+mines é baixo — com 1 mina, ``25/24 = 1,0416``. A partir de **5%** esse
+produto cai abaixo de 1,00 e a tela passa a mostrar que abrir uma casa e sacar
+devolve **menos** do que a aposta::
 
     vantagem | 1 mina | 2 minas | 3 minas
         0%   |  1.04  |  1.08   |  1.13
@@ -35,11 +38,39 @@ que a aposta::
         5%   |  0.98  |  1.03   |  1.07
        10%   |  0.93  |  0.97   |  1.02
 
-Não é defeito — é a vantagem funcionando —, mas um multiplicador abaixo de
-1,00 na tela parece a casa roubando, e essa é a acusação que este cassino não
-pode receber. Daí a recomendação registrada: **até 4% a tabela nunca mostra
-número menor que 1,00**; entre 4% e 10% o dono pode ir, sabendo o que aparece.
-O código permite até 10% e recusa o resto; o bom senso entre 4 e 10 é dele.
+Não é defeito — é a vantagem funcionando —, mas multiplicador abaixo de 1,00
+na tela parece a casa roubando. Até 4% isso nunca aparece; entre 4 e 10 o dono
+vai sabendo o que a tela mostra.
+
+### O lado de baixo: −10%
+
+O que **não** é o motivo do limite: catástrofe numa rodada. O teto de 25× é
+aplicado **depois** do fator (``min(multiplicador × fator, 25)``), então o
+prêmio máximo continua sendo ``aposta × 25`` em qualquer vantagem — conferido
+por teste até −300%. Como a aposta máxima é ``caixa / 50``, a rodada mais cara
+possível paga ``caixa / 2``, e nenhum número digitado neste campo esvazia a
+casa de uma vez. A guarda de exposição continua honesta.
+
+O motivo do limite é a **velocidade da sangria**, que é linear em |vantagem|.
+Com aposta máxima em ``caixa/50``, a perda esperada por rodada máxima é
+``|vantagem| × caixa / 50``::
+
+    vantagem | % do caixa por rodada | rodadas até perder metade
+       −5%   |        0,100%         |          500
+      −10%   |        0,200%         |          250
+      −25%   |        0,500%         |          100
+      −50%   |        1,000%         |           50
+     −100%   |        2,000%         |           25
+
+−10% dá evento de verdade — no mines com 3 minas a primeira casa sai de 1,11
+para 1,24, e no crash o retorno esperado vira 110% do apostado — e ainda assim
+o caixa aguenta 250 rodadas no tamanho máximo. O dono vê o caixa no painel
+dele; não há como isso passar despercebido a noite inteira.
+
+E o motivo de parar em 10 e não em 25 ou 50 é o **erro de digitação de uma
+tecla**: −10 vira −100 com um dígito a mais, e −100% sangra quatro vezes mais
+rápido. Com o limite em 10, esse erro bate no validador em vez de virar
+evento. Simetria com o lado de cima é de brinde, não a razão.
 """
 
 from decimal import Decimal
@@ -56,7 +87,10 @@ JOGOS = ("mines", "crash", "torre", "dados")
 #: teve a vantagem mexida.
 PADRAO = Decimal("2.00")
 
-MINIMA = Decimal("0.00")
+#: Negativa é permitida, e é o evento generoso. O limite não existe para
+#: impedir a casa de perder — existe para que um dígito a mais não multiplique
+#: por quatro a velocidade com que ela perde.
+MINIMA = Decimal("-10.00")
 MAXIMA = Decimal("10.00")
 
 #: Acima disto a tabela do mines mostra multiplicador abaixo de 1,00 na
@@ -83,9 +117,7 @@ def validar_vantagem(valor):
     except (TypeError, AttributeError) as erro:
         raise ValorInvalido("vantagem inválida") from erro
     if not MINIMA <= valor <= MAXIMA:
-        raise ValorInvalido(
-            f"a vantagem vai de {MINIMA}% a {MAXIMA}%"
-        )
+        raise ValorInvalido(f"a vantagem vai de {MINIMA}% a {MAXIMA}%")
     return valor
 
 
