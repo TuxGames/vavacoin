@@ -208,6 +208,82 @@ def comando_dono_cassino(nome_usuario, sem_dono):
     click.echo(f"O Caladinho agora é de {alvo.nome_usuario}.")
 
 
+@click.command("criar-reino")
+@click.argument("nome")
+@with_appcontext
+def comando_criar_reino(nome):
+    """Cria um reino e o cofre dele. Idempotente: rodar de novo não duplica.
+
+    O nome vem por argumento porque reino é dado, não código: "Alfheim" é uma
+    linha da tabela, e o segundo reino tem de nascer sem tocar no primeiro.
+
+    O cofre nasce sem senha, como a casa do Caladinho — conta de sistema não
+    entra pela tela. Nasce também com saldo zero: pôr dinheiro nele é ajuste
+    do Banco Central pelo painel, e assim o cofre entra em circulação pelo
+    mesmo caminho registrado que todo mundo.
+    """
+    from .reinos import criar_reino
+
+    try:
+        reino = criar_reino(nome, autoridade=_autoridade())
+    except ErroMonetario as erro:
+        raise click.ClickException(str(erro)) from erro
+    db.session.commit()
+    click.echo(
+        f"Reino {reino.nome}: cofre {reino.cofre.nome_usuario} — "
+        f"{reino.cofre.saldo} VVC, juros {reino.juros_diarios}% ao dia"
+    )
+
+
+@click.command("operador-reino")
+@click.argument("reino")
+@click.argument("nome_usuario", required=False)
+@click.option("--tirar", is_flag=True, help="Tira o papel em vez de dar.")
+@with_appcontext
+def comando_operador_reino(reino, nome_usuario, tirar):
+    """Dá (ou tira) o papel de operador de um reino.
+
+    O poder é do reino, não da pessoa: quem tem o papel opera, e tirar o
+    papel tira o poder. Dá para haver mais de um — cada um é um ministro.
+
+    Sem o nome da conta, lista quem opera hoje. Idempotente: dar o papel a
+    quem já o tem não muda nada, e tirá-lo de quem não o tem também não.
+    """
+    from .reinos import definir_operador, eh_operador, operadores, reino_por_nome, tirar_operador
+
+    alvo_reino = reino_por_nome(reino)
+    if alvo_reino is None:
+        raise click.ClickException(f"reino inexistente: {reino}")
+
+    if not nome_usuario:
+        atuais = operadores(alvo_reino)
+        if not atuais:
+            click.echo(f"{alvo_reino.nome} não tem operador.")
+            return
+        for pessoa in atuais:
+            click.echo(f"{alvo_reino.nome}: {pessoa.nome_usuario}")
+        return
+
+    pessoa = buscar_usuario(nome_usuario)
+    if pessoa is None:
+        raise click.ClickException(f"conta inexistente: {nome_usuario}")
+
+    try:
+        if tirar:
+            tirar_operador(alvo_reino, pessoa, autoridade=_autoridade())
+            db.session.commit()
+            click.echo(f"{pessoa.nome_usuario} não opera mais {alvo_reino.nome}.")
+            return
+        ja_era = eh_operador(alvo_reino, pessoa)
+        definir_operador(alvo_reino, pessoa, autoridade=_autoridade())
+    except ErroMonetario as erro:
+        raise click.ClickException(str(erro)) from erro
+    db.session.commit()
+    click.echo(
+        f"{pessoa.nome_usuario} "
+        f"{'já operava' if ja_era else 'opera'} {alvo_reino.nome}."
+    )
+
 @click.command("conservacao")
 @with_appcontext
 def comando_conservacao():
@@ -298,6 +374,8 @@ def registrar_comandos(app):
     app.cli.add_command(comando_senha_bc)
     app.cli.add_command(comando_criar_cassino)
     app.cli.add_command(comando_dono_cassino)
+    app.cli.add_command(comando_criar_reino)
+    app.cli.add_command(comando_operador_reino)
     app.cli.add_command(comando_emitir)
     app.cli.add_command(comando_convite)
     app.cli.add_command(comando_criar_conta)

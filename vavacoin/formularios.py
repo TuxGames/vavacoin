@@ -197,6 +197,18 @@ class FormularioVisibilidadeDoCaixa(FlaskForm):
     enviar = SubmitField("Salvar")
 
 
+class FormularioReinosVisiveis(FlaskForm):
+    """Liga e desliga a página dos reinos para a turma.
+
+    **Nasce desligada.** O reino aparece quando o Banco Central montar o cofre
+    e nomear o operador — antes disso a tela existiria vazia, e tela vazia
+    convida pergunta que ninguém quer responder duas vezes.
+    """
+
+    visiveis = BooleanField("Mostrar os reinos para a turma")
+    enviar = SubmitField("Salvar")
+
+
 class FormularioCadastroAberto(FlaskForm):
     """Liga e desliga a exigência de convite. Só o Banco Central vê."""
 

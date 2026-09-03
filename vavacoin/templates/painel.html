@@ -179,6 +179,17 @@
 </div>
 
 <div class="card">
+  <div class="section-title"><i class="ti ti-shield" aria-hidden="true"></i>Reinos</div>
+  <form method="post" action="{{ url_for('admin.reinos_visiveis') }}">
+    {{ form_reinos.hidden_tag() }}
+    <div class="campo">
+      {{ form_reinos.visiveis() }} {{ form_reinos.visiveis.label }}
+    </div>
+    {{ form_reinos.enviar(class="btn btn-outline btn-full") }}
+  </form>
+</div>
+
+<div class="card">
   <div class="section-title"><i class="ti ti-ticket" aria-hidden="true"></i>Cadastro</div>
   <form method="post" action="{{ url_for('admin.cadastro_aberto') }}">
     {{ form_cadastro.hidden_tag() }}

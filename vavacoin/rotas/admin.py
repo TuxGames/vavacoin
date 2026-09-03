@@ -40,6 +40,7 @@ from ..formularios import (
     FormularioCriarConta,
     FormularioEmitirConvite,
     FormularioLinhaDaConta,
+    FormularioReinosVisiveis,
     FormularioReset,
     FormularioVisibilidadeDoCaixa,
 )
@@ -47,6 +48,7 @@ from ..nomes import normalizar_nome
 from ..modelos import (
     CHAVE_CADASTRO_ABERTO,
     CHAVE_CAIXA_VISIVEL,
+    CHAVE_REINOS_VISIVEIS,
     Convite,
     RegistroAdministrativo,
     Usuario,
@@ -101,6 +103,9 @@ def _formularios():
         ),
         "form_cadastro": FormularioCadastroAberto(
             aberto=config_ligada(CHAVE_CADASTRO_ABERTO, padrao=True)
+        ),
+        "form_reinos": FormularioReinosVisiveis(
+            visiveis=config_ligada(CHAVE_REINOS_VISIVEIS)
         ),
     }
 
@@ -389,6 +394,34 @@ def encerrar(conta_id):
     except ErroMonetario as erro:
         db.session.rollback()
         flash(str(erro), "erro")
+    return redirect(url_for("admin.painel"))
+
+
+@bp.route("/reinos", methods=["POST"])
+def reinos_visiveis():
+    """Liga e desliga a página dos reinos para a turma.
+
+    Nasce desligada, e é o mesmo interruptor do caixa do Caladinho: dado no
+    banco, não constante no código — trocar de ideia não pode exigir deploy.
+
+    Desligar fecha a página **e** a rota, não só o link do menu: o blueprint
+    inteiro devolve 404 com o interruptor no zero. Esconder a porta sem
+    trancá-la é meio caminho, e meio caminho aqui vira uma cobrança feita numa
+    tela que ninguém deveria estar vendo.
+    """
+    formulario = FormularioReinosVisiveis()
+    if not formulario.validate_on_submit():
+        return _pagina(form_reinos=formulario), 400
+
+    definir_config(CHAVE_REINOS_VISIVEIS, formulario.visiveis.data)
+    registrar_acao(
+        current_user,
+        "reino",
+        alvo="página",
+        detalhe="visível" if formulario.visiveis.data else "escondida",
+    )
+    db.session.commit()
+    flash("Reinos atualizados.", "ok")
     return redirect(url_for("admin.painel"))
 
 
