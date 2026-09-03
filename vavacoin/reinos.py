@@ -38,6 +38,7 @@ from .extensoes import db
 from .modelos import (
     Cidadania,
     Cobranca,
+    Distribuicao,
     Divida,
     OperadorDoReino,
     Reino,
@@ -772,16 +773,24 @@ def perdoar_divida(divida, credor, sessao=None):
 # --- distribuição -----------------------------------------------------------
 
 
-def distribuir(reino, operador, valor_por_pessoa, pessoas, motivo, sessao=None):
+def distribuir(
+    reino, operador, valor_por_pessoa, pessoas, motivo, token=None, sessao=None
+):
     """Paga o mesmo valor a cada pessoa marcada. **Tudo ou nada.**
 
     Recusada inteira se o cofre não cobre todo mundo: pagar até acabar
     deixaria metade da lista recebendo e a outra metade não, decidido pela
     ordem alfabética. O operador prefere saber que não dá.
 
-    Idempotência: a checagem de caixa e os repasses acontecem na mesma
-    transação, e quem chama passa por uma tela com token de uso único — dois
-    cliques não pagam duas vezes.
+    **Idempotente no banco**, como :func:`cobrar`: o lote vira uma linha em
+    ``distribuicao`` com ``token`` UNIQUE, e o segundo lote com o mesmo token
+    bate no índice antes de qualquer dinheiro sair. Aqui isso pesa mais que na
+    cobrança — cobrar duas vezes cria dívida repetida, que o operador apaga
+    perdoando; distribuir duas vezes esvazia o cofre, e não há desfazer.
+
+    O token da sessão do navegador continua existindo e barra o clique duplo
+    sequencial; este índice barra o que a sessão não vê, que são dois POSTs
+    simultâneos lendo o mesmo cookie antes de qualquer um gastá-lo.
     """
     sessao = sessao or db.session
     exigir_operador(reino, operador, sessao)
@@ -810,6 +819,24 @@ def distribuir(reino, operador, valor_por_pessoa, pessoas, motivo, sessao=None):
         raise SaldoInsuficiente(
             f"o cofre tem {cofre.saldo} VVC e a distribuição pede {total} VVC"
         )
+
+    # O lote entra ANTES dos repasses: se o token repetir, o índice recusa
+    # aqui e nenhum centavo chegou a sair.
+    lote = Distribuicao(
+        reino_id=reino.id,
+        operador_id=operador.id,
+        valor_por_pessoa=valor,
+        total=total,
+        quantos=len(alvos),
+        motivo=motivo,
+        token=token or secrets.token_urlsafe(16),
+    )
+    sessao.add(lote)
+    try:
+        sessao.flush()
+    except IntegrityError as erro:
+        sessao.rollback()
+        raise ValorInvalido("essa distribuição já foi feita") from erro
 
     for pessoa in alvos:
         mover(

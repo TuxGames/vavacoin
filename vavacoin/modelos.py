@@ -995,6 +995,42 @@ class Cobranca(db.Model):
     )
 
 
+class Distribuicao(db.Model):
+    """Um lote de repasse: um clique do operador, N pagamentos.
+
+    Gêmea de :class:`Cobranca`, e existe pela mesma razão — mas aqui a razão
+    é mais forte, porque **isto move dinheiro**. Cobrar duas vezes cria
+    dívidas repetidas, que o operador apaga perdoando; distribuir duas vezes
+    esvazia o cofre, e não há como desfazer.
+
+    O ``token`` é gerado quando a tela é desenhada e é UNIQUE no banco. O
+    token da sessão já barra o clique duplo sequencial; este índice barra o
+    que a sessão não vê — dois POSTs simultâneos, em processos diferentes,
+    lendo o mesmo cookie antes de qualquer um gastá-lo.
+    """
+
+    __tablename__ = "distribuicao"
+
+    id = db.Column(db.Integer, primary_key=True)
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=False, index=True
+    )
+    #: Quem clicou. Nunca o cofre — o ledger registra a pessoa.
+    operador_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False)
+    valor_por_pessoa = db.Column(Dinheiro, nullable=False)
+    total = db.Column(Dinheiro, nullable=False)
+    quantos = db.Column(db.Integer, nullable=False)
+    motivo = db.Column(db.String(200), nullable=False)
+    #: Chave de idempotência do lote.
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    criada_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+
+    __table_args__ = (
+        CheckConstraint("valor_por_pessoa > 0", name="ck_distribuicao_valor"),
+        CheckConstraint("quantos > 0", name="ck_distribuicao_quantos"),
+    )
+
+
 class Divida(db.Model):
     """O que uma pessoa deve a um reino.
 

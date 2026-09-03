@@ -82,6 +82,28 @@ def criar_app(config=Config):
     # CSP e companhia em toda resposta, inclusive nas de erro.
     app.after_request(aplicar_cabecalhos)
 
+    @app.context_processor
+    def interruptores_do_menu():
+        """O que o menu precisa saber para não oferecer porta trancada.
+
+        Consultado só para quem está logado: para o visitante o menu tem
+        dois links fixos, e uma consulta ao banco ali seria paga em toda tela
+        de login sem mudar nada na tela.
+
+        O link é o espelho da rota, nunca a tranca: quem fecha os reinos é o
+        ``before_request`` do blueprint. Se um dia os dois discordarem, quem
+        manda é o de lá.
+        """
+        from flask_login import current_user
+
+        if not current_user.is_authenticated:
+            return {"reinos_visiveis": False}
+        return {
+            "reinos_visiveis": modelos.config_ligada(
+                modelos.CHAVE_REINOS_VISIVEIS
+            )
+        }
+
     @app.errorhandler(404)
     def nao_encontrado(_erro):
         return render_template(

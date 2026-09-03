@@ -61,14 +61,12 @@ from ..reinos import (
 bp = Blueprint("reino", __name__, url_prefix="/reino")
 
 #: Token de uso único das ações em lote, guardado na sessão do navegador.
+#:
+#: É **uma** chave para cobrança e distribuição, e não uma por ação. A
+#: consequência, aceita pelo dono: feita uma das duas, a outra pede recarregar
+#: a mesa antes de valer. É atrito, não bug — nada cobra nem paga duas vezes,
+#: que é o que o token existe para impedir.
 LOTE = "token_do_lote"
-
-
-@bp.before_request
-@login_required
-def exigir_pessoa():
-    """Reino é para quem está na economia."""
-    return None
 
 
 def _visivel():
@@ -76,11 +74,27 @@ def _visivel():
     return config_ligada(CHAVE_REINOS_VISIVEIS, padrao=False)
 
 
-def _exigir_visivel():
-    # O Banco Central vê sempre: é ele quem liga o interruptor, e precisa
-    # conferir a tela antes de mostrá-la para a turma.
+@bp.before_request
+@login_required
+def exigir_pessoa_e_interruptor():
+    """Reino é para quem está na economia, e só com o interruptor ligado.
+
+    O portão é do blueprint inteiro, e não de cada rota, de propósito: com a
+    checagem repetida em cada uma, a rota nova esquecida vira a porta aberta.
+    Aqui não há como esquecer — inclusive as de dívida (pagar, negociar,
+    perdoar), que não recebem o nome do reino no caminho e por isso ficariam
+    de fora de qualquer gate escrito por tela.
+
+    Desligado, o site inteiro devolve 404: esconder o link do menu sem fechar
+    a rota é meio caminho, e meio caminho aqui vira uma cobrança feita numa
+    tela que ninguém deveria estar vendo.
+
+    O Banco Central atravessa sempre — é ele quem liga o interruptor, e
+    precisa conferir a tela antes de mostrá-la para a turma.
+    """
     if not _visivel() and not current_user.eh_admin:
         abort(404)
+    return None
 
 
 def _reino_ou_404(nome):
@@ -110,7 +124,6 @@ def _consumir_token(enviado):
 
 @bp.route("/")
 def lista():
-    _exigir_visivel()
     todos = reinos()
     if len(todos) == 1:
         return redirect(url_for("reino.ver", nome=todos[0].nome_normalizado))
@@ -119,7 +132,6 @@ def lista():
 
 @bp.route("/<nome>")
 def ver(nome):
-    _exigir_visivel()
     reino = _reino_ou_404(nome)
     minhas = [
         d for d in dividas_em_aberto(current_user, reino=reino) if devido(d) > 0
@@ -146,7 +158,6 @@ def ver(nome):
 @bp.route("/<nome>/entrar", methods=["POST"])
 def entrar(nome):
     """A pessoa pede para entrar. Ato dela, sempre."""
-    _exigir_visivel()
     reino = _reino_ou_404(nome)
     try:
         entrar_no_reino(reino, current_user)
@@ -161,7 +172,6 @@ def entrar(nome):
 @bp.route("/<nome>/sair", methods=["POST"])
 def sair(nome):
     """A pessoa pede para sair. A dívida em aberto congela, não some."""
-    _exigir_visivel()
     reino = _reino_ou_404(nome)
     try:
         sair_do_reino(reino, current_user)
@@ -198,7 +208,6 @@ def pagar(divida_id):
 
 @bp.route("/<nome>/operar")
 def operar(nome):
-    _exigir_visivel()
     reino = _reino_ou_404(nome)
     if not eh_operador(reino, current_user):
         abort(403)
@@ -244,7 +253,6 @@ def _marcados(reino):
 @bp.route("/<nome>/cobrar", methods=["POST"])
 def cobrar_imposto(nome):
     """Gera as dívidas. Não move um centavo — quem paga é o devedor."""
-    _exigir_visivel()
     reino = _reino_ou_404(nome)
     if not eh_operador(reino, current_user):
         abort(403)
@@ -275,12 +283,12 @@ def cobrar_imposto(nome):
 @bp.route("/<nome>/distribuir", methods=["POST"])
 def distribuir_do_cofre(nome):
     """Paga o mesmo valor a cada marcado. Tudo ou nada."""
-    _exigir_visivel()
     reino = _reino_ou_404(nome)
     if not eh_operador(reino, current_user):
         abort(403)
 
-    if _consumir_token(request.form.get("token")) is None:
+    token = _consumir_token(request.form.get("token"))
+    if token is None:
         flash("Essa distribuição já foi enviada.", "erro")
         return redirect(url_for("reino.operar", nome=nome))
 
@@ -291,6 +299,7 @@ def distribuir_do_cofre(nome):
             request.form.get("valor"),
             _marcados(reino),
             request.form.get("motivo_repasse"),
+            token=token,
         )
         db.session.commit()
         flash(f"{total} VVC para {len(alvos)} cidadão(s).", "ok")
@@ -341,7 +350,6 @@ def perdoar(divida_id):
 
 @bp.route("/<nome>/juros", methods=["POST"])
 def juros(nome):
-    _exigir_visivel()
     reino = _reino_ou_404(nome)
     if not eh_operador(reino, current_user):
         abort(403)

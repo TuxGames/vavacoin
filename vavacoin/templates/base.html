@@ -31,6 +31,15 @@
     <a href="{{ url_for('caladinho.lobby') }}" class="{{ classe }}"
        {% if request.blueprint == 'caladinho' %}aria-current="page"{% endif %}>
       <i class="ti ti-dice" aria-hidden="true"></i>Cassino</a>
+    {# O reino só aparece com o interruptor do Banco Central ligado. O BC vê
+       sempre: é ele quem liga, e precisa conferir a tela antes de mostrá-la.
+       Esconder o link não é a tranca — o blueprint devolve 404 com o
+       interruptor no zero. #}
+    {% if reinos_visiveis or current_user.eh_admin %}
+    <a href="{{ url_for('reino.lista') }}" class="{{ classe }}"
+       {% if request.blueprint == 'reino' %}aria-current="page"{% endif %}>
+      <i class="ti ti-shield" aria-hidden="true"></i>Reino</a>
+    {% endif %}
     <a href="{{ url_for('carteira.perfil') }}" class="{{ classe }}"
        {% if request.endpoint == 'carteira.perfil' %}aria-current="page"{% endif %}>
       <i class="ti ti-user" aria-hidden="true"></i>Perfil</a>

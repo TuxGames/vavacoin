@@ -1173,3 +1173,32 @@ def test_o_devedor_nao_perdoa_pela_web(app, bc, alfheim):
 
     db.session.expire_all()
     assert db.session.get(Divida, criadas[0].id) is not None
+
+
+def test_a_distribuicao_e_idempotente_no_banco(app, bc, alfheim):
+    """O token da sessão barra o clique duplo; o índice barra o que ela não vê.
+
+    Dois POSTs simultâneos, em processos diferentes, leem o mesmo cookie
+    antes de qualquer um gastá-lo — e aí só o banco separa. Aqui isso pesa
+    mais que na cobrança: cobrar duas vezes cria dívida repetida, que o
+    operador apaga perdoando; distribuir duas vezes esvazia o cofre, e não há
+    desfazer.
+    """
+    reino, rei = alfheim["reino"], alfheim["rei"]
+    antes = conservacao()
+    cofre_antes = reino.cofre.saldo
+
+    distribuir(reino, rei, "10.00", alfheim["povo"], "auxílio", token="mesmo-token")
+    db.session.commit()
+
+    with pytest.raises(ValorInvalido):
+        distribuir(
+            reino, rei, "10.00", alfheim["povo"], "auxílio", token="mesmo-token"
+        )
+    db.session.rollback()
+
+    db.session.expire_all()
+    assert db.session.get(Usuario, reino.cofre_id).saldo == cofre_antes - Decimal("30.00")
+    assert db.session.query(Transacao).filter_by(tipo=TIPO_REPASSE).count() == 3
+    assert conservacao() == antes
+    assert _auditoria_fecha()

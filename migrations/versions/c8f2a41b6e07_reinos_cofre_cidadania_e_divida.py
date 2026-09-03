@@ -128,6 +128,29 @@ def upgrade():
         )
 
     op.create_table(
+        'distribuicao',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('reino_id', sa.Integer(), nullable=False),
+        sa.Column('operador_id', sa.Integer(), nullable=False),
+        sa.Column('valor_por_pessoa', vavacoin.dinheiro.Dinheiro(), nullable=False),
+        sa.Column('total', vavacoin.dinheiro.Dinheiro(), nullable=False),
+        sa.Column('quantos', sa.Integer(), nullable=False),
+        sa.Column('motivo', sa.String(length=200), nullable=False),
+        sa.Column('token', sa.String(length=64), nullable=False),
+        sa.Column('criada_em', sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint('valor_por_pessoa > 0', name='ck_distribuicao_valor'),
+        sa.CheckConstraint('quantos > 0', name='ck_distribuicao_quantos'),
+        sa.ForeignKeyConstraint(['operador_id'], ['usuario.id']),
+        sa.ForeignKeyConstraint(['reino_id'], ['reino.id']),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('token'),
+    )
+    with op.batch_alter_table('distribuicao', schema=None) as batch_op:
+        batch_op.create_index(
+            batch_op.f('ix_distribuicao_reino_id'), ['reino_id'], unique=False
+        )
+
+    op.create_table(
         'divida',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('reino_id', sa.Integer(), nullable=False),
@@ -169,6 +192,7 @@ def upgrade():
 
 def downgrade():
     op.drop_table('divida')
+    op.drop_table('distribuicao')
     op.drop_table('cobranca')
     op.drop_table('operador_do_reino')
     op.drop_table('cidadania')
