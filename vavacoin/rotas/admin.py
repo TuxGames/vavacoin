@@ -66,6 +66,8 @@ from ..operacoes import (
     criar_usuario,
     destino_da_conta,
     encerrar_conta,
+    referencias_da_conta,
+    remover_conta,
     resetar_economia,
 )
 
@@ -399,6 +401,44 @@ def encerrar(conta_id):
     except ErroMonetario as erro:
         db.session.rollback()
         flash(str(erro), "erro")
+    return redirect(url_for("admin.painel"))
+
+
+@bp.route("/conta/<int:conta_id>/remover", methods=["GET", "POST"])
+def remover(conta_id):
+    """Apaga a conta de verdade, com uma tela de conferência antes.
+
+    A tela é ``GET`` e não convence de nada: mostra o usuário, o saldo e
+    quantas linhas do ledger vão passar a apontar para "conta removida". É o
+    número que decide, não uma frase.
+
+    O ``POST`` confere tudo de novo. Entre desenhar a tela e clicar, a conta
+    pode ter virado operadora de reino ou dona do cassino — e é o servidor
+    quem recusa, como no apagar.
+    """
+    alvo = db.session.get(Usuario, conta_id)
+    if alvo is None:
+        abort(404)
+
+    if request.method == "GET":
+        return render_template(
+            "remover_conta.html",
+            conta=alvo,
+            referencias=referencias_da_conta(alvo),
+        )
+
+    try:
+        nome = remover_conta(
+            alvo,
+            (request.form.get("motivo") or "").strip() or "removida pelo painel",
+            autoridade=current_user,
+        )
+        db.session.commit()
+        flash(f"Conta {nome} removida.", "ok")
+    except (ContaComHistorico, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+        return redirect(url_for("admin.remover", conta_id=conta_id))
     return redirect(url_for("admin.painel"))
 
 

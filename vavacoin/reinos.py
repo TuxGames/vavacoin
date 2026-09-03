@@ -352,13 +352,30 @@ def cidadania_de(pessoa, sessao=None):
 
 
 def cidadaos(reino, sessao=None):
-    """As pessoas com cidadania ativa, em ordem de nome."""
+    """As pessoas com cidadania ativa **e conta viva**, em ordem de nome.
+
+    O filtro de conta encerrada é a segunda tranca. A primeira é
+    :func:`vavacoin.operacoes.encerrar_conta`, que hoje encerra a cidadania
+    junto — mas ela passou a fazer isso depois de já existirem contas
+    encerradas com cidadania aberta, e sem este filtro aquelas linhas
+    continuariam listadas para sempre.
+
+    Uma conta encerrada aqui não era só feiura de tela: esta função é a lista
+    de quem o reino cobra e para quem o reino **distribui**. Uma conta que
+    ninguém mais abre recebia repasse, e o dinheiro ficava parado ali — o
+    mesmo motivo pelo qual a transferência já recusava conta encerrada como
+    destino.
+    """
     sessao = sessao or db.session
     return list(
         sessao.execute(
             select(Usuario)
             .join(Cidadania, Cidadania.usuario_id == Usuario.id)
-            .where(Cidadania.reino_id == reino.id, Cidadania.saiu_em.is_(None))
+            .where(
+                Cidadania.reino_id == reino.id,
+                Cidadania.saiu_em.is_(None),
+                Usuario.encerrada_em.is_(None),
+            )
             .order_by(Usuario.nome_usuario)
         ).scalars()
     )

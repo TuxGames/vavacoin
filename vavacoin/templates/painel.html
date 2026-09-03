@@ -125,7 +125,11 @@
                         class="botao-perigo"
                         aria-label="Encerrar {{ conta.nome_usuario }}">encerrar</button>
               {% else %}
-                <span class="text-muted">encerrada</span>
+                {# Encerrada já devolveu o saldo. O passo seguinte é sumir com
+                   a linha — e ele tem tela própria, porque é irreversível. #}
+                <a class="botao-perigo"
+                   href="{{ url_for('admin.remover', conta_id=conta.id) }}"
+                   aria-label="Remover {{ conta.nome_usuario }}">remover</a>
               {% endif %}
             {% endif %}
           </td>

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Remover conta — VavaCoin{% endblock %}
+{% block conteudo %}
+<h1>Remover conta</h1>
+
+<div class="card">
+  <div class="row row-evt">
+    <div class="row-main">Usuário</div>
+    <div class="row-val"><code>{{ conta.nome_usuario }}</code></div>
+  </div>
+  <div class="row row-evt">
+    <div class="row-main">Nome</div>
+    <div class="row-val">{{ conta.nome_exibicao }}</div>
+  </div>
+  <div class="row row-evt">
+    <div class="row-main">Saldo</div>
+    <div class="row-val">{{ conta.saldo }} VVC</div>
+  </div>
+  <div class="row row-evt">
+    <div class="row-main">Linhas que passam a <code>conta removida</code></div>
+    <div class="row-val">{{ referencias }}</div>
+  </div>
+
+  <hr>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="campo">
+      <input class="form-control" name="motivo" placeholder="Motivo"
+             aria-label="Motivo da remoção">
+    </div>
+    <button type="submit" class="btn btn-danger btn-full">Remover</button>
+  </form>
+  <hr>
+  <a class="link-fim" href="{{ url_for('admin.painel') }}">Cancelar</a>
+</div>
+{% endblock %}

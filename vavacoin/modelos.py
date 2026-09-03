@@ -89,6 +89,20 @@ class Usuario(db.Model, UserMixin):
     #: Quem opera o reino é uma pessoa com o papel de operador; o cofre é só
     #: onde o dinheiro mora.
     eh_cofre = db.Column(db.Boolean, nullable=False, default=False)
+    #: A conta-sombra que ficou no lugar de alguém que o Banco Central apagou
+    #: de verdade. Não é gente e nunca foi: nasce sem senha, com saldo zero e
+    #: já encerrada, e existe por um motivo só — dar às linhas do ledger
+    #: alguém para apontar.
+    #:
+    #: **Por que uma por remoção, e não uma compartilhada.** A ideia natural é
+    #: uma única "conta removida" para todas as exclusões. Ela quebra no
+    #: ``CHECK`` ``origem_id <> destino_id``: se duas pessoas que já
+    #: transferiram entre si forem apagadas, a linha das duas viraria
+    #: sombra → sombra e o banco recusaria. Uma sombra por remoção nunca
+    #: colide, porque a sombra nasce depois de todas as linhas que vai
+    #: receber. Na tela todas se chamam "conta removida" — a diferença é só
+    #: de identidade no banco.
+    eh_removida = db.Column(db.Boolean, nullable=False, default=False)
     #: De quem é esta conta, quando ela é de uma casa de jogo. Anulável de
     #: propósito: "sem dono" é um estado, não um caso especial — e é por aqui
     #: que uma transferência de posse entra depois, sem reescrever nada.
@@ -198,7 +212,12 @@ class Usuario(db.Model, UserMixin):
         chega neles por caminho próprio — ajuste, aposta, imposto. E nenhum
         entra pela tela: é o que impede "quem sabe a senha do cofre é rei".
         """
-        return self.eh_banco_central or self.eh_cassino or self.eh_cofre
+        return (
+            self.eh_banco_central
+            or self.eh_cassino
+            or self.eh_cofre
+            or self.eh_removida
+        )
 
     def __repr__(self):
         return f"<Usuario {self.nome_usuario} saldo={self.saldo}>"

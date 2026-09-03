@@ -13,7 +13,7 @@ chamou esqueça de dar ``rollback``.
 
 import secrets
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from .autoridade import exigir_banco_central
@@ -481,16 +481,34 @@ def _exigir_conta_removivel(alvo, sessao):
     acidente, e trocar de dono é um comando que já existe.
     """
     from .caladinho import casa as casa_do_cassino
+    from .modelos import OperadorDoReino
 
     if alvo.eh_banco_central:
         raise ValorInvalido("o Banco Central não se apaga")
     if alvo.eh_cassino:
         raise ValorInvalido("a casa do Caladinho não se apaga")
+    if alvo.eh_cofre:
+        raise ValorInvalido("o cofre de um reino não se apaga")
+    if alvo.eh_removida:
+        raise ValorInvalido("essa conta já foi removida")
 
     conta_da_casa = casa_do_cassino(sessao)
     if conta_da_casa is not None and conta_da_casa.dono_id == alvo.id:
         raise ValorInvalido(
             f"{alvo.nome_usuario} é dono do Caladinho; passe a posse antes"
+        )
+
+    # O operador é o poder do reino, e ele mora numa pessoa. Apagar quem opera
+    # deixaria o reino sem quem cobre, distribua ou responda pedido — sem
+    # ninguém perceber, porque nada quebra na hora. Tira o papel primeiro.
+    opera = sessao.execute(
+        select(OperadorDoReino.reino_id)
+        .where(OperadorDoReino.usuario_id == alvo.id)
+        .limit(1)
+    ).first()
+    if opera is not None:
+        raise ValorInvalido(
+            f"{alvo.nome_usuario} opera um reino; tire o papel antes"
         )
 
 
@@ -591,13 +609,236 @@ def encerrar_conta(alvo, motivo, autoridade=None, sessao=None):
         )
 
     alvo.encerrada_em = agora()
+    solto = _desligar_do_reino(alvo, sessao)
     sessao.flush()
     registrar_acao(
         bc,
         "conta",
         alvo=alvo.nome_usuario,
-        detalhe=f"conta encerrada; {devolvido} VVC devolvidos",
+        detalhe=f"conta encerrada; {devolvido} VVC devolvidos{solto}",
         motivo=motivo,
         sessao=sessao,
     )
     return alvo
+
+
+def _desligar_do_reino(alvo, sessao):
+    """Tira a conta de cidadania ativa e fecha pendência aberta em nome dela.
+
+    Chamado ao encerrar. Sem isto, uma conta encerrada continuava cidadã: ela
+    aparecia na tabela do reino, no ranking do reino, e — o que importa de
+    verdade — na lista para quem o reino **distribui** dinheiro. Repasse a uma
+    conta que ninguém mais abre é dinheiro parado para sempre.
+
+    A pendência fecha como ``recusado`` sem responsável: ninguém respondeu, a
+    conta acabou. Deixá-la pendente prenderia a dupla pessoa/reino no índice
+    de pendência única para sempre, e o reino nunca mais poderia convidar
+    aquele nome — pendência sem saída é exatamente o que não pode existir.
+
+    A **dívida não é tocada**, pelo mesmo motivo de ``sair_do_reino``: ela é
+    entre quem cobrou e quem deve, e encerrar a conta não é quitação.
+    """
+    from .modelos import Cidadania, PedidoDeCidadania
+
+    saiu = sessao.execute(
+        update(Cidadania)
+        .where(Cidadania.usuario_id == alvo.id, Cidadania.saiu_em.is_(None))
+        .values(saiu_em=agora())
+    ).rowcount
+    fechadas = sessao.execute(
+        update(PedidoDeCidadania)
+        .where(
+            PedidoDeCidadania.usuario_id == alvo.id,
+            PedidoDeCidadania.estado == PedidoDeCidadania.PENDENTE,
+        )
+        .values(estado=PedidoDeCidadania.RECUSADO, respondido_em=agora())
+    ).rowcount
+
+    partes = []
+    if saiu:
+        partes.append("saiu do reino")
+    if fechadas:
+        partes.append(f"{fechadas} pendência(s) de cidadania fechada(s)")
+    return ("; " + "; ".join(partes)) if partes else ""
+
+
+def _nova_sombra(sessao):
+    """Cria a conta-sombra que vai herdar as linhas de uma conta apagada.
+
+    **Uma por remoção**, e não uma compartilhada por todas — a ideia da conta
+    única é a primeira que ocorre e ela quebra em dois lugares:
+
+    1. O ``CHECK`` ``origem_id <> destino_id``. Duas pessoas que transferiram
+       entre si, ambas apagadas, teriam aquela linha apontando para a mesma
+       sombra dos dois lados, e o banco recusaria a segunda remoção.
+    2. Pior, e silencioso até rodar a auditoria: ``conferir_ledger`` confere o
+       ``saldo_origem_depois`` de cada linha contra o saldo reconstruído
+       naquele instante. Uma sombra compartilhada intercalaria o histórico de
+       duas pessoas, e **toda** linha reatribuída passaria a divergir — a
+       auditoria acusaria para sempre, sem que nada de errado tivesse
+       acontecido com o dinheiro.
+
+    Com uma sombra por remoção o replay é idêntico: ela recebe exatamente as
+    linhas de uma conta só, na mesma ordem, e termina em zero como a conta
+    terminou. Na tela todas se chamam "conta removida".
+    """
+    numero = 1
+    while sessao.execute(
+        select(Usuario.id).where(Usuario.nome_normalizado == f"removida-{numero}")
+    ).first():
+        numero += 1
+
+    sombra = Usuario(
+        # Todas se chamam igual na tela — é o que o extrato da contraparte
+        # mostra no lugar do nome que sumiu. Só o nome normalizado é único,
+        # e é ele que numera; guardar o nome antigo aqui seria manter à vista
+        # exatamente a identidade que a remoção existe para apagar.
+        nome_usuario="conta removida",
+        nome_normalizado=f"removida-{numero}",
+        nome_exibicao="conta removida",
+        # Sem senha: não entra pela tela. Já encerrada: não recebe
+        # transferência. Saldo escondido: não é gente, não ranqueia.
+        senha_hash=None,
+        eh_removida=True,
+        saldo_publico=False,
+        saldo=ZERO,
+        encerrada_em=agora(),
+    )
+    sessao.add(sombra)
+    sessao.flush()
+    return sombra
+
+
+def _colunas_que_apontam_para_conta():
+    """Toda coluna do banco que é chave estrangeira para ``usuario.id``.
+
+    Derivada do metadata, e não escrita à mão: a tabela nova de amanhã já
+    entra sozinha, tanto na contagem quanto na reatribuição.
+    """
+    return [
+        (tabela, coluna)
+        for tabela in db.metadata.sorted_tables
+        for coluna in tabela.columns
+        if any(
+            chave.target_fullname == "usuario.id" for chave in coluna.foreign_keys
+        )
+    ]
+
+
+def _reatribuir(alvo, sombra, sessao):
+    """Aponta para a sombra tudo que apontava para a conta. Varre o metadata.
+
+    Aqui a lista é **derivada**, e não escrita à mão como em
+    ``_conta_tem_rastro`` — de propósito, e a diferença tem motivo. Lá,
+    esquecer uma tabela faz uma conta com histórico passar por virgem e ser
+    apagada em silêncio: erro caro, então a lista tem de doer em revisão de
+    código. Aqui, esquecer uma tabela estoura em violação de chave
+    estrangeira na hora (o SQLite roda com ``PRAGMA foreign_keys`` ligado), e
+    o banco recusa a remoção inteira. Varrer o metadata é o que garante que a
+    tabela nova de amanhã já entre.
+
+    O que **não** pode acontecer é uma linha do ledger ficar sem origem:
+    ``origem_id`` nulo é emissão, e apagar gente viraria cunhagem. Por isso
+    não existe aqui nenhum ``SET NULL`` — só reatribuição para uma conta que
+    existe.
+    """
+    movidas = 0
+    for tabela, coluna in _colunas_que_apontam_para_conta():
+        movidas += sessao.execute(
+            tabela.update().where(coluna == alvo.id).values({coluna.name: sombra.id})
+        ).rowcount
+    return movidas
+
+
+def referencias_da_conta(alvo, sessao=None):
+    """Quantas linhas apontam para esta conta — o número que a tela mostra.
+
+    Sai da mesma lista de colunas que :func:`_reatribuir` usa para mover: se
+    a contagem viesse de outro lugar, o número da tela e o da remoção
+    começariam a divergir no dia em que uma tabela nova entrasse, e a tela
+    prometeria uma coisa enquanto o banco faz outra.
+    """
+    sessao = sessao or db.session
+    total = 0
+    for tabela, coluna in _colunas_que_apontam_para_conta():
+        total += sessao.execute(
+            select(func.count()).select_from(tabela).where(coluna == alvo.id)
+        ).scalar_one()
+    return total
+
+
+def remover_conta(alvo, motivo, autoridade=None, sessao=None):
+    """Apaga a conta de verdade, mantendo o ledger inteiro. Poder do BC.
+
+    É o degrau acima de :func:`encerrar_conta`, para quando encerrar não
+    basta — a conta continua listada no painel e o Banco Central quer sumir
+    com ela. A linha de ``usuario`` deixa de existir: nome, apelido, senha,
+    tudo.
+
+    A ordem importa, e é esta:
+
+    1. **Encerra**, se ainda não estava. O saldo volta ao Banco Central por
+       ``mover()``, com motivo. A conta chega em zero antes de sumir — nunca
+       se apaga dinheiro junto com a pessoa.
+    2. **Cria a sombra** e reatribui a ela toda linha que apontava para a
+       conta. O ledger continua completo: quem transferiu para essa pessoa
+       continua vendo a transferência, agora como "conta removida".
+    3. **Apaga a linha.**
+
+    O convite que ela resgatou vai junto, pelo mesmo motivo de
+    :func:`apagar_conta`: a entrada está sendo apagada como se não tivesse
+    acontecido.
+
+    **A armadilha deste projeto, e por que ela não acontece aqui.** O caminho
+    óbvio para apagar alguém é anular as referências. Aqui isso seria o pior
+    estrago possível: lançamento sem ``origem_id`` **é emissão** — é o ramo do
+    ``mover()`` que cunha, e o ``CHECK`` da tabela até permite quando o tipo é
+    ``emissao``. Anular a origem das linhas de quem saiu faria a auditoria ler
+    o histórico da pessoa como dinheiro criado do nada, e o supply passaria a
+    mentir. Nada aqui anula referência: toda linha troca de dono para uma
+    conta que existe e fecha em zero.
+
+    Conservação e auditoria continuam fechando depois — e os testes que
+    provam isso são o contrato desta função.
+    """
+    from .modelos import registrar_acao
+
+    sessao = sessao or db.session
+    bc = exigir_banco_central(autoridade, sessao)
+    _exigir_conta_removivel(alvo, sessao)
+
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise MotivoObrigatorio("remover conta pede motivo")
+
+    with sessao.begin_nested():
+        if not alvo.encerrada:
+            encerrar_conta(alvo, motivo, autoridade=bc, sessao=sessao)
+
+        nome = alvo.nome_usuario
+        convite = sessao.execute(
+            select(Convite).where(Convite.usuario_id == alvo.id)
+        ).scalar_one_or_none()
+        if convite is not None:
+            sessao.delete(convite)
+            sessao.flush()
+
+        sombra = _nova_sombra(sessao)
+        movidas = _reatribuir(alvo, sombra, sessao)
+
+        sessao.delete(alvo)
+        sessao.flush()
+        registrar_acao(
+            bc,
+            "conta",
+            alvo=nome,
+            detalhe=(
+                f"conta removida; {movidas} referência(s) passaram a "
+                f"{sombra.nome_usuario}"
+            ),
+            motivo=motivo,
+            sessao=sessao,
+        )
+
+    verificar_conservacao(sessao)
+    return nome
