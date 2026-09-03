@@ -365,68 +365,17 @@ def cidadaos(reino, sessao=None):
 
 
 def ranking_de_cidadaos(reino, sessao=None):
-    """Os cidadãos em duas listas: os do ranking e os que ficaram de fora.
+    """Os cidadãos deste reino em ``(ranking, escondidos)``.
 
-    Devolve ``(ranking, escondidos)``, onde ``ranking`` é uma lista de
-    ``(posicao, pessoa)`` do maior saldo para o menor, e ``escondidos`` é uma
-    lista de pessoas em ordem alfabética.
-
-    ## Por que quem escondeu não é posicionado
-
-    **A posição vaza o valor.** Se quem escondeu o saldo aparecesse entre o
-    terceiro e o quinto, o número dela estaria entre os dois números vizinhos
-    — e esconder deixaria de esconder. Não há posição discreta: qualquer lugar
-    na ordem é uma informação sobre quanto a pessoa tem.
-
-    Por isso o ranking é **só de quem está público**, com as posições contadas
-    entre eles: 1, 2, 3, sem buracos onde alguém foi pulado. Um buraco também
-    contaria alguma coisa.
-
-    ## A consequência, e o pedido para não "consertar"
-
-    Isso quer dizer que a posição de quem é público **não é a posição real na
-    turma** — os escondidos não entram na conta, e quem é "segundo" aqui pode
-    ser quarto de verdade. É o preço de a escolha de esconder funcionar, e é
-    deliberado.
-
-    Somar os escondidos de volta para "corrigir" as posições reintroduz
-    exatamente o vazamento que este desenho existe para fechar. Se um dia
-    alguém for tentado, é este parágrafo que responde.
-
-    ## Posição, número e quem vê
-
-    Quem entra no ranking sai de ``saldo_publico`` e de mais nada — de
-    propósito, sem olhar quem está vendo. Assim as posições são as mesmas para
-    todo mundo, e não há computação por observador onde um vazamento possa se
-    esconder.
-
-    O **número** continua governado pela regra única
-    (:meth:`Usuario.saldo_visivel_para`): o Banco Central e a própria pessoa
-    veem o saldo de quem escondeu, na parte de baixo — mas nunca uma posição,
-    porque posição é o que não pode existir para eles.
+    A conta das posições — e o motivo de quem escondeu não ser posicionado —
+    mora em :func:`vavacoin.ranking.ranquear`, que é a implementação única.
+    O ranking geral chama a mesma função com outra lista de gente: duas
+    implementações da mesma regra divergem, e o dia em que divergirem é o dia
+    em que vaza.
     """
-    sessao = sessao or db.session
-    todos = cidadaos(reino, sessao)
+    from .ranking import ranquear
 
-    publicos = sorted(
-        (p for p in todos if p.saldo_publico),
-        key=lambda p: (-p.saldo, p.nome_normalizado),
-    )
-    ranking = []
-    for indice, pessoa in enumerate(publicos):
-        # Saldos iguais dividem a posição; a seguinte continua da contagem,
-        # como em qualquer ranking. Empate não conta nada a mais: os dois
-        # saldos já estão à vista.
-        if indice and pessoa.saldo == publicos[indice - 1].saldo:
-            posicao = ranking[-1][0]
-        else:
-            posicao = indice + 1
-        ranking.append((posicao, pessoa))
-
-    escondidos = sorted(
-        (p for p in todos if not p.saldo_publico), key=lambda p: p.nome_normalizado
-    )
-    return ranking, escondidos
+    return ranquear(cidadaos(reino, sessao))
 
 
 def entrar_no_reino(reino, pessoa, sessao=None):

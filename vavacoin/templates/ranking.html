@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block titulo %}Ranking — VavaCoin{% endblock %}
+{% block conteudo %}
+<h1>Ranking</h1>
+
+<div class="card">
+  {% if ranking %}
+    {% for posicao, pessoa in ranking %}
+    {# Quatro informações em 375px: posição, nome, reino e valor. O reino vai
+       embaixo do nome, como o nome público na tabela do painel — em uma linha
+       só ele espremeria o nome e o valor até os dois cortarem. #}
+    <div class="row row-evt">
+      <span class="posicao" aria-hidden="true">{{ posicao }}</span>
+      <div class="row-main">
+        <div>{{ pessoa.nome_exibicao }}</div>
+        <div class="ei-sub">
+          {% if reinos[pessoa.id] %}{{ reinos[pessoa.id].nome }}{% else %}sem reino{% endif %}
+        </div>
+      </div>
+      <div class="row-val">{{ pessoa.saldo }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="vazio">Ninguém no ranking ainda.</p>
+  {% endif %}
+</div>
+
+{% if escondidos %}
+{# Sem posição: qualquer lugar na ordem seria informação sobre o valor. O
+   número aparece só para quem a regra única deixa ver. #}
+<div class="card">
+  <div class="section-title"><i class="ti ti-user" aria-hidden="true"></i>Sem ranking</div>
+  {% for pessoa in escondidos %}
+  <div class="row row-evt">
+    <span class="row-chip" aria-hidden="true">{{ pessoa.nome_exibicao[0]|upper }}</span>
+    <div class="row-main">
+      <div>{{ pessoa.nome_exibicao }}</div>
+      <div class="ei-sub">
+        {% if reinos[pessoa.id] %}{{ reinos[pessoa.id].nome }}{% else %}sem reino{% endif %}
+      </div>
+    </div>
+    {% if pessoa.saldo_visivel_para(current_user) %}
+    <div class="row-val">{{ pessoa.saldo }}</div>
+    {% else %}
+    <div class="row-val text-muted">—</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

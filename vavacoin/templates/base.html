@@ -31,6 +31,13 @@
     <a href="{{ url_for('caladinho.lobby') }}" class="{{ classe }}"
        {% if request.blueprint == 'caladinho' %}aria-current="page"{% endif %}>
       <i class="ti ti-dice" aria-hidden="true"></i>Cassino</a>
+    {# O ranking geral, atrás do interruptor do BC como as outras páginas.
+       Esconder o link não é a tranca: o blueprint devolve 404 desligado. #}
+    {% if ranking_visivel or current_user.eh_admin %}
+    <a href="{{ url_for('ranking.geral') }}" class="{{ classe }}"
+       {% if request.blueprint == 'ranking' %}aria-current="page"{% endif %}>
+      <i class="ti ti-list-details" aria-hidden="true"></i>Ranking</a>
+    {% endif %}
     {# O reino só aparece com o interruptor do Banco Central ligado. O BC vê
        sempre: é ele quem liga, e precisa conferir a tela antes de mostrá-la.
        Esconder o link não é a tranca — o blueprint devolve 404 com o

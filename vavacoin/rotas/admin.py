@@ -35,6 +35,7 @@ from ..caladinho import casa as casa_do_cassino
 from ..caladinho import criar_casa, exposicao_comprometida, limite_de_aposta
 from ..formularios import (
     FormularioCadastroAberto,
+    FormularioRankingVisivel,
     MOTIVO_PADRAO,
     FormularioAjusteDeSaldo,
     FormularioCriarConta,
@@ -47,6 +48,7 @@ from ..formularios import (
 from ..nomes import normalizar_nome
 from ..modelos import (
     CHAVE_CADASTRO_ABERTO,
+    CHAVE_RANKING_VISIVEL,
     CHAVE_CAIXA_VISIVEL,
     CHAVE_REINOS_VISIVEIS,
     Convite,
@@ -100,6 +102,9 @@ def _formularios():
         "form_reset": FormularioReset(),
         "form_caixa": FormularioVisibilidadeDoCaixa(
             visivel=config_ligada(CHAVE_CAIXA_VISIVEL)
+        ),
+        "form_ranking": FormularioRankingVisivel(
+            visivel=config_ligada(CHAVE_RANKING_VISIVEL, padrao=True)
         ),
         "form_cadastro": FormularioCadastroAberto(
             aberto=config_ligada(CHAVE_CADASTRO_ABERTO, padrao=True)
@@ -447,6 +452,30 @@ def cadastro_aberto():
     )
     db.session.commit()
     flash("Cadastro atualizado.", "ok")
+    return redirect(url_for("admin.painel"))
+
+
+@bp.route("/ranking", methods=["POST"])
+def ranking_visivel():
+    """Liga e desliga o ranking geral.
+
+    Nasce ligado — é o que o dono quer usar agora. Desligar esconde o link e
+    fecha a rota; o link é espelho, e quem tranca é o ``before_request`` do
+    blueprint do ranking.
+    """
+    formulario = FormularioRankingVisivel()
+    if not formulario.validate_on_submit():
+        return _pagina(form_ranking=formulario), 400
+
+    definir_config(CHAVE_RANKING_VISIVEL, formulario.visivel.data)
+    registrar_acao(
+        current_user,
+        "ranking",
+        alvo="geral",
+        detalhe="visível" if formulario.visivel.data else "escondido",
+    )
+    db.session.commit()
+    flash("Ranking atualizado.", "ok")
     return redirect(url_for("admin.painel"))
 
 

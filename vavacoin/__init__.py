@@ -97,11 +97,16 @@ def criar_app(config=Config):
         from flask_login import current_user
 
         if not current_user.is_authenticated:
-            return {"reinos_visiveis": False}
+            return {"reinos_visiveis": False, "ranking_visivel": False}
         return {
             "reinos_visiveis": modelos.config_ligada(
                 modelos.CHAVE_REINOS_VISIVEIS
-            )
+            ),
+            # Nasce ligado, ao contrário dos reinos: é o que o dono quer usar
+            # agora.
+            "ranking_visivel": modelos.config_ligada(
+                modelos.CHAVE_RANKING_VISIVEL, padrao=True
+            ),
         }
 
     @app.errorhandler(404)

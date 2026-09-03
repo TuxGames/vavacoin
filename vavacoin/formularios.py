@@ -216,6 +216,13 @@ class FormularioSaldoPublico(FlaskForm):
     enviar = SubmitField("Salvar")
 
 
+class FormularioRankingVisivel(FlaskForm):
+    """Liga e desliga o ranking geral. Só o Banco Central vê."""
+
+    visivel = BooleanField("Mostrar o ranking geral")
+    enviar = SubmitField("Salvar")
+
+
 class FormularioCadastroAberto(FlaskForm):
     """Liga e desliga a exigência de convite. Só o Banco Central vê."""
 

@@ -378,6 +378,11 @@ class Configuracao(db.Model):
 #: Se o saldo da casa aparece para os jogadores.
 CHAVE_CAIXA_VISIVEL = "caladinho_caixa_visivel"
 
+#: Se o ranking geral aparece. **Nasce ligado** — é o que o dono quer usar
+#: agora. Como as outras visibilidades, desligar esconde o link E fecha a
+#: rota.
+CHAVE_RANKING_VISIVEL = "ranking_visivel"
+
 #: Se a página dos reinos aparece para a turma. Mesmo interruptor das outras
 #: visibilidades: o Banco Central liga quando o RPG começar.
 CHAVE_REINOS_VISIVEIS = "reinos_visiveis"
