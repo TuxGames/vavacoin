@@ -693,6 +693,20 @@ label {
     box-shadow: 0 0 0 3px rgba(242,193,78,.14);
 }
 /* ── REINO ── */
+/* A posição no ranking, na coluna onde a ficha do extrato ficaria. Dígito de
+   largura fixa para as posições alinharem quando passarem de nove. */
+.posicao {
+    flex: 0 0 auto;
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: var(--card-2); border: 1px solid var(--border);
+    color: var(--muted); font-family: var(--num);
+    font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+/* O pódio, discreto: só a cor muda. */
+.row:nth-child(2) > .posicao { color: var(--gold); border-color: rgba(242,193,78,.35); }
+
 /* A caixa de marcar na lista de cidadãos: alvo de toque de verdade, na
    coluna onde a ficha do extrato ficaria. */
 .marca-cidadao {

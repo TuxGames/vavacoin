@@ -4,28 +4,46 @@
 <h1>{{ reino.nome }}</h1>
 
 <div class="card">
-  <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Cidadãos</div>
-  {% if cidadaos %}
-    {% for pessoa in cidadaos %}
-    {# Nome sempre; número só de quem deixou público. Quem escondeu fica na
-       lista mesmo assim — sumir revelaria a escolha pela ausência. #}
+  <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Ranking</div>
+  {% if ranking %}
+    {% for posicao, pessoa in ranking %}
     <div class="row row-evt">
-      <span class="row-chip" aria-hidden="true">{{ pessoa.nome_exibicao[0]|upper }}</span>
+      <span class="posicao" aria-hidden="true">{{ posicao }}</span>
       <div class="row-main">
         <div>{{ pessoa.nome_exibicao }}</div>
         <div class="ei-sub">{{ pessoa.nome_usuario }}</div>
       </div>
-      {% if pessoa.saldo_visivel_para(current_user) %}
       <div class="row-val">{{ pessoa.saldo }}</div>
-      {% else %}
-      <div class="row-val text-muted">—</div>
-      {% endif %}
     </div>
     {% endfor %}
   {% else %}
-    <p class="vazio">Nenhum cidadão ainda.</p>
+    <p class="vazio">Ninguém no ranking ainda.</p>
   {% endif %}
 </div>
+
+{% if escondidos %}
+{# Sem posição e em ordem alfabética: qualquer lugar na ordem seria uma
+   informação sobre quanto a pessoa tem. O número aparece só para quem a regra
+   única deixa ver — a própria pessoa e o Banco Central —, e mesmo para eles
+   não há posição. #}
+<div class="card">
+  <div class="section-title"><i class="ti ti-user" aria-hidden="true"></i>Cidadãos</div>
+  {% for pessoa in escondidos %}
+  <div class="row row-evt">
+    <span class="row-chip" aria-hidden="true">{{ pessoa.nome_exibicao[0]|upper }}</span>
+    <div class="row-main">
+      <div>{{ pessoa.nome_exibicao }}</div>
+      <div class="ei-sub">{{ pessoa.nome_usuario }}</div>
+    </div>
+    {% if pessoa.saldo_visivel_para(current_user) %}
+    <div class="row-val">{{ pessoa.saldo }}</div>
+    {% else %}
+    <div class="row-val text-muted">—</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 <a class="btn btn-outline btn-sm" href="{{ url_for('reino.ver', nome=reino.nome_normalizado) }}">Voltar</a>
 {% endblock %}

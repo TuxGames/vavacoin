@@ -44,6 +44,7 @@ from ..reinos import (
     pendencias_da_pessoa,
     pendencias_do_reino,
     pode_responder,
+    ranking_de_cidadaos,
     recusar_pedido,
     faixa_de_negociacao,
     negociar_divida,
@@ -199,16 +200,21 @@ def lista_de_cidadaos(nome):
     Sumir da tabela revelaria a escolha pela ausência, que é o contrário de
     esconder.
 
-    Ordem alfabética, não por saldo: ordenar por dinheiro transformaria isto
-    num ranking, e ranking é decisão que ninguém tomou.
+    Ranking por saldo, do maior para o menor — decisão do dono, que mudou de
+    ideia sobre a ordem alfabética.
+
+    **Só quem está público é posicionado.** A posição vaza o valor: quem
+    escondeu, aparecendo entre o terceiro e o quinto, teria o número entre os
+    dois vizinhos. Os escondidos ficam numa parte separada, sem posição, em
+    ordem alfabética — continuam na lista, mas fora da ordenação. A conta das
+    posições mora em ``ranking_de_cidadaos``, junto com o motivo.
     """
     reino = _reino_ou_404(nome)
+    # `cidadaos()` já exclui conta de sistema por construção: cofre, Banco
+    # Central e cassino não são cidadãos de reino nenhum.
+    ranking, escondidos = ranking_de_cidadaos(reino)
     return render_template(
-        "reino_cidadaos.html",
-        reino=reino,
-        # `cidadaos()` já exclui conta de sistema por construção: cofre,
-        # Banco Central e cassino não são cidadãos de reino nenhum.
-        cidadaos=cidadaos(reino),
+        "reino_cidadaos.html", reino=reino, ranking=ranking, escondidos=escondidos
     )
 
 

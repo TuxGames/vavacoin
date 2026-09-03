@@ -15,7 +15,12 @@ import pytest
 from vavacoin.extensoes import db
 from vavacoin.limite import limpar_tudo
 from vavacoin.modelos import CHAVE_REINOS_VISIVEIS, Usuario, definir_config
-from vavacoin.reinos import criar_reino, definir_operador, entrar_no_reino
+from vavacoin.reinos import (
+    criar_reino,
+    definir_operador,
+    entrar_no_reino,
+    ranking_de_cidadaos,
+)
 
 SENHA = "senha-boa-123"
 SENHA_BC = "senha-do-painel"
@@ -192,16 +197,119 @@ def test_contas_de_sistema_ficam_fora_da_tabela(app, bc, cena):
     assert "banco_central" not in corpo
 
 
-def test_a_tabela_e_alfabetica_e_nao_um_ranking(app, bc, cena):
-    """Ordenar por dinheiro faria disto um ranking, que ninguém pediu.
+def test_a_tabela_e_um_ranking_por_saldo(app, bc, cena):
+    """Decisão nova do dono: ordenado por dinheiro, do maior para o menor.
 
-    A ordem é por nome de usuário: ana, bia, rei. A bia tem cinco vezes o
-    saldo da ana e mesmo assim vem depois; a rei tem o menor de todos e vem
-    por último.
+    bia 678,90 > ana 123,45 > rei 10,00.
+
+    Quem olha é a rei, e não a ana: a barra de cima mostra o nome de quem está
+    logado, antes da tabela, e comparar posições no HTML inteiro acharia esse
+    nome primeiro.
     """
-    corpo = _entrar(app, "ana").get("/reino/alfheim/cidadaos").get_data(as_text=True)
+    corpo = _entrar(app, "rei").get("/reino/alfheim/cidadaos").get_data(as_text=True)
 
-    assert corpo.index("Aninha") < corpo.index("Bianca") < corpo.index("Zulmira")
+    assert corpo.index("Bianca") < corpo.index("Aninha")
+
+
+# --- o vazamento que o ranking cria, e que o desenho fecha ------------------
+
+
+def test_quem_escondeu_nao_e_posicionado(app, bc, cena):
+    """**A posição vaza o valor.**
+
+    Se a bia aparecesse entre a ana e a rei, o saldo dela estaria entre 123,45
+    e 10,00 — e esconder deixaria de esconder. Ela sai da ordenação inteira.
+    """
+    bia = cena["bia"]
+    bia.saldo_publico = False
+    db.session.commit()
+
+    ranking, escondidos = ranking_de_cidadaos(cena["reino"])
+
+    assert [p.nome_usuario for _, p in ranking] == ["ana", "rei"]
+    assert [p.nome_usuario for p in escondidos] == ["bia"]
+
+
+def test_as_posicoes_nao_tem_buracos(app, bc, cena):
+    """Um buraco onde alguém foi pulado também contaria alguma coisa."""
+    cena["bia"].saldo_publico = False
+    db.session.commit()
+
+    ranking, _ = ranking_de_cidadaos(cena["reino"])
+
+    assert [posicao for posicao, _ in ranking] == [1, 2]
+
+
+def test_a_posicao_publica_nao_e_a_posicao_real_e_isso_e_de_proposito(app, bc, cena):
+    """O preço de esconder funcionar, e está escrito no código.
+
+    Com a bia escondida, a ana é "primeira" — mas de verdade é a segunda da
+    turma. Somar os escondidos de volta para "corrigir" reintroduziria o
+    vazamento.
+    """
+    cena["bia"].saldo_publico = False
+    db.session.commit()
+
+    ranking, _ = ranking_de_cidadaos(cena["reino"])
+
+    primeira = ranking[0][1]
+    assert primeira.nome_usuario == "ana"
+    assert cena["bia"].saldo > primeira.saldo, "a de verdade é a bia, e é escondida"
+
+
+def test_as_posicoes_sao_iguais_para_todo_mundo(app, bc, cena):
+    """Posição sai de ``saldo_publico``, e não de quem está olhando.
+
+    Computação por observador é onde um vazamento se esconderia: o Banco
+    Central veria uma ordem, a turma veria outra, e a diferença entre as duas
+    diria quem escondeu o quê.
+    """
+    cena["bia"].saldo_publico = False
+    db.session.commit()
+
+    da_turma = _entrar(app, "rei").get("/reino/alfheim/cidadaos").get_data(as_text=True)
+    do_bc = _entrar(app, "banco_central", SENHA_BC).get(
+        "/reino/alfheim/cidadaos"
+    ).get_data(as_text=True)
+
+    # A bia não é posicionada em nenhuma das duas visões.
+    assert da_turma.index("Aninha") < da_turma.index("Bianca")
+    assert do_bc.index("Aninha") < do_bc.index("Bianca")
+
+
+def test_o_banco_central_ve_o_numero_do_escondido_mas_nunca_a_posicao(app, bc, cena):
+    """A regra única governa o NÚMERO; ``saldo_publico`` governa a POSIÇÃO."""
+    cena["bia"].saldo_publico = False
+    db.session.commit()
+
+    corpo = _entrar(app, "banco_central", SENHA_BC).get(
+        "/reino/alfheim/cidadaos"
+    ).get_data(as_text=True)
+
+    assert "678.90" in corpo, "o BC vê o número, como em todo lugar"
+    ranking, _ = ranking_de_cidadaos(cena["reino"])
+    assert "bia" not in [p.nome_usuario for _, p in ranking]
+
+
+def test_saldos_iguais_dividem_a_posicao(app, bc, cena):
+    """Empate não conta nada a mais: os dois saldos já estão à vista."""
+    cena["bia"].saldo = cena["ana"].saldo
+    db.session.commit()
+
+    ranking, _ = ranking_de_cidadaos(cena["reino"])
+
+    assert [posicao for posicao, _ in ranking] == [1, 1, 3]
+
+
+def test_com_todo_mundo_escondido_o_ranking_fica_vazio(app, bc, cena):
+    for pessoa in (cena["ana"], cena["bia"], cena["rei"]):
+        pessoa.saldo_publico = False
+    db.session.commit()
+
+    ranking, escondidos = ranking_de_cidadaos(cena["reino"])
+
+    assert ranking == []
+    assert len(escondidos) == 3
 
 
 # --- a mesa do operador usa a mesma regra -----------------------------------
