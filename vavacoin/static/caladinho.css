@@ -318,3 +318,8 @@ button.cal-porta-aberta:active { transform: scale(.96); }
 /* O <select> herda a caixa do .cal-entrada, mas o Chrome desenha a seta com
    a cor do sistema se a gente não pedir o contrário. */
 select.cal-entrada { appearance: none; -webkit-appearance: none; }
+
+/* Interruptor do jogo, logo abaixo da vantagem dele: mesma linha visual, sem
+   borda entre os dois, para os dois lerem como uma configuração só. */
+.cal-linha-jogo { border-bottom: none; padding-top: 0; }
+.cal-linha-jogo .cal-rot { font-size: 13px; }

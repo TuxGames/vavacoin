@@ -88,6 +88,14 @@ from ..torre import (
     TETO_DO_MULTIPLICADOR as TETO_TORRE,
     tabela_de_multiplicadores as tabela_da_torre,
 )
+from ..tributo import liquidar, panorama
+from ..jogos import (
+    JOGOS,
+    definir_ligado,
+    ligado,
+    ligados,
+    todos as jogos_no_ar,
+)
 from ..modelos import (
     CHAVE_CAIXA_VISIVEL,
     RodadaCrash,
@@ -97,7 +105,6 @@ from ..modelos import (
     config_ligada,
 )
 from ..vantagem import (
-    JOGOS,
     MAXIMA,
     MINIMA,
     definir_vantagem,
@@ -129,10 +136,23 @@ def _eh_dono():
     return conta is not None and conta.id == current_user.id
 
 
+def _exigir_jogo_no_ar(jogo):
+    """Jogo desligado não tem rota. O dono continua vendo, para conferir.
+
+    Esconder o link do lobby não seria tranca nenhuma: quem já tem o endereço
+    continuaria apostando. Quem fecha o jogo é isto.
+    """
+    if not ligado(jogo) and not _eh_dono():
+        abort(404)
+
+
 @bp.route("/")
 def lobby():
     return render_template(
-        "caladinho.html", caixa=_caixa_visivel(), eh_dono=_eh_dono()
+        "caladinho.html",
+        caixa=_caixa_visivel(),
+        eh_dono=_eh_dono(),
+        no_ar=ligados(),
     )
 
 
@@ -153,9 +173,47 @@ def painel_da_casa():
         formulario=FormularioCaixaDoDono(),
         jogos=JOGOS,
         vantagens=vantagens_vigentes(),
+        no_ar=jogos_no_ar(),
+        **_panorama_do_periodo(),
         vantagem_min=MINIMA,
         vantagem_max=MAXIMA,
     )
+
+
+def _periodo_pedido():
+    """O período que a tela está olhando, vindo da query string.
+
+    Datas nunca no código: o combinado de hoje é 3 a 12 de setembro, mas isso
+    é escolha de quem opera, não constante. Sem parâmetro, os últimos 30 dias
+    — janela que mostra alguma coisa sem fingir que sabe o acordo.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from ..modelos import agora
+
+    def ler(nome, padrao):
+        cru = (request.args.get(nome) or "").strip()
+        if not cru:
+            return padrao
+        try:
+            return datetime.fromisoformat(cru).replace(tzinfo=timezone.utc)
+        except ValueError:
+            return padrao
+
+    fim = ler("fim", agora())
+    inicio = ler("inicio", fim - timedelta(days=30))
+    return inicio, fim
+
+
+def _panorama_do_periodo():
+    inicio, fim = _periodo_pedido()
+    visao = panorama(inicio, fim)
+    return {
+        "periodo_inicio": inicio,
+        "periodo_fim": fim,
+        "por_reino": visao["reinos"],
+        "fora_de_reino": visao["fora_de_reino"],
+    }
 
 
 @bp.route("/casa/aportar", methods=["POST"])
@@ -216,6 +274,54 @@ def casa_vantagem(jogo):
     return redirect(url_for("caladinho.painel_da_casa"))
 
 
+@bp.route("/casa/imposto/<int:reino_id>", methods=["POST"])
+def casa_imposto(reino_id):
+    """Envia o imposto do período para o cofre daquele reino.
+
+    Não desconta nada sozinho: o valor é calculado e fica na tela, e sai só
+    quando o dono aperta. A liquidação marca o período, então o mesmo lucro
+    não é cobrado de novo no próximo clique.
+    """
+    from ..modelos import Reino
+
+    if not _eh_dono():
+        abort(403)
+    reino = db.session.get(Reino, reino_id)
+    if reino is None:
+        abort(404)
+
+    inicio, fim = _periodo_pedido()
+    try:
+        linha = liquidar(reino, inicio, fim, current_user)
+        db.session.commit()
+        flash(f"{reino.nome}: {linha.imposto} VVC de imposto.", "ok")
+    except (ValorInvalido, ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.painel_da_casa"))
+
+
+@bp.route("/casa/jogo/<jogo>", methods=["POST"])
+def casa_jogo(jogo):
+    """Liga ou desliga um jogo. Editar na linha e salvar, como a vantagem.
+
+    Desligar **liquida as rodadas abertas** daquele jogo antes de fechar a
+    rota: senão o caixa ficaria preso pela exposição de rodadas que ninguém
+    mais consegue encerrar, e quem estava jogando perderia o multiplicador
+    que já era dele.
+    """
+    if not _eh_dono():
+        abort(403)
+    try:
+        novo = definir_ligado(jogo, request.form.get("ligado") == "1", current_user)
+        db.session.commit()
+        flash(f"{jogo}: {'no ar' if novo else 'fora do ar'}.", "ok")
+    except (ValorInvalido, ErroDeJogo, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("caladinho.painel_da_casa"))
+
+
 @bp.route("/mines")
 def mines():
     """A rodada ativa, o resultado da última encerrada, ou o formulário.
@@ -235,6 +341,7 @@ def mines():
     é fechar o que já passou do prazo, pagando o conquistado, para o caixa da
     casa não ficar preso por quem fechou a aba.
     """
+    _exigir_jogo_no_ar("mines")
     try:
         expirar_mines_abandonadas()
         db.session.commit()
@@ -280,6 +387,7 @@ def mines():
 
 @bp.route("/mines/comecar", methods=["POST"])
 def comecar():
+    _exigir_jogo_no_ar("mines")
     try:
         criar_rodada(
             current_user,
@@ -295,6 +403,7 @@ def comecar():
 
 @bp.route("/mines/revelar", methods=["POST"])
 def revelar():
+    _exigir_jogo_no_ar("mines")
     encerrada = None
     try:
         rodada = revelar_casa(current_user, request.form.get("casa"))
@@ -318,6 +427,7 @@ def revelar():
 
 @bp.route("/mines/retirar", methods=["POST"])
 def sacar():
+    _exigir_jogo_no_ar("mines")
     encerrada = None
     try:
         rodada = retirar(current_user)
@@ -345,6 +455,7 @@ def crash():
     fechar a aba deixaria a rodada aberta para sempre, prendendo o caixa da
     casa na exposição comprometida.
     """
+    _exigir_jogo_no_ar("crash")
     try:
         resolver_crash(current_user)
         db.session.commit()
@@ -379,6 +490,7 @@ def crash():
 
 @bp.route("/crash/comecar", methods=["POST"])
 def crash_comecar():
+    _exigir_jogo_no_ar("crash")
     try:
         criar_rodada_crash(
             current_user,
@@ -394,6 +506,7 @@ def crash_comecar():
 
 @bp.route("/crash/sacar", methods=["POST"])
 def crash_sacar():
+    _exigir_jogo_no_ar("crash")
     encerrada = None
     try:
         rodada = sacar_crash(current_user)
@@ -424,6 +537,7 @@ def torre():
     pagando o que ela tinha conquistado, para que o caixa da casa não fique
     preso por quem fechou a aba.
     """
+    _exigir_jogo_no_ar("torre")
     try:
         expirar_torres_abandonadas()
         db.session.commit()
@@ -465,6 +579,7 @@ def torre():
 
 @bp.route("/torre/comecar", methods=["POST"])
 def torre_comecar():
+    _exigir_jogo_no_ar("torre")
     try:
         criar_rodada_torre(
             current_user,
@@ -480,6 +595,7 @@ def torre_comecar():
 
 @bp.route("/torre/abrir", methods=["POST"])
 def torre_abrir():
+    _exigir_jogo_no_ar("torre")
     encerrada = None
     try:
         rodada = abrir_porta(current_user, request.form.get("porta"))
@@ -501,6 +617,7 @@ def torre_abrir():
 
 @bp.route("/torre/sacar", methods=["POST"])
 def torre_sacar():
+    _exigir_jogo_no_ar("torre")
     encerrada = None
     try:
         rodada = sacar_torre(current_user)
@@ -523,6 +640,7 @@ def dados():
     precisa é conseguir reler o último resultado depois de um refresh, e é o
     que ``ultima_rodada_dados`` faz — a mesma lição do tabuleiro em branco.
     """
+    _exigir_jogo_no_ar("dados")
     rodada = None
     encerrada_id = request.args.get("rodada", type=int)
     if encerrada_id is not None:
@@ -566,6 +684,7 @@ def dados():
 
 @bp.route("/dados/jogar", methods=["POST"])
 def dados_jogar():
+    _exigir_jogo_no_ar("dados")
     rodada_id = None
     try:
         rodada = jogar_dados(

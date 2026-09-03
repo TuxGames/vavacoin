@@ -28,6 +28,7 @@ from ..modelos import (
     CHAVE_REINOS_VISIVEIS,
     Cobranca,
     Divida,
+    PedidoDeCidadania,
     Usuario,
     buscar_usuario,
     config_ligada,
@@ -35,8 +36,15 @@ from ..modelos import (
 from ..reinos import (
     JUROS_MAXIMO,
     JUROS_MINIMO,
+    aceitar_pedido,
     cidadania_de,
     cidadaos,
+    convidar,
+    pedir_cidadania,
+    pendencias_da_pessoa,
+    pendencias_do_reino,
+    pode_responder,
+    recusar_pedido,
     faixa_de_negociacao,
     negociar_divida,
     perdoar_divida,
@@ -148,11 +156,114 @@ def ver(nome):
         cidadaos=cidadaos(reino),
         sou_cidadao=eh_cidadao(reino, current_user),
         outro_reino=outro,
+        # Convites esperando esta pessoa e pedidos que ela mandou.
+        pendencias=[
+            p for p in pendencias_da_pessoa(current_user) if p.reino_id == reino.id
+        ],
         sou_operador=eh_operador(reino, current_user),
         operadores=operadores(reino),
         dividas=[(d, devido(d), restante(d)) for d in minhas],
         total=total_devido(current_user, reino=reino),
     )
+
+
+def _convidaveis(reino):
+    """Contas que podem receber convite: gente, sem cidadania e sem pendência.
+
+    Conta de sistema e conta encerrada ficam de fora — nenhuma das duas é
+    pessoa que possa aceitar.
+    """
+    pendentes = {p.usuario_id for p in pendencias_do_reino(reino)}
+    fora = pendentes | {p.id for p in cidadaos(reino)}
+    return [
+        pessoa
+        for pessoa in db.session.execute(
+            db.select(Usuario).order_by(Usuario.nome_usuario)
+        ).scalars()
+        if pessoa.id not in fora
+        and not pessoa.eh_conta_de_sistema
+        and not pessoa.encerrada
+    ]
+
+
+@bp.route("/<nome>/convidar", methods=["POST"])
+def convidar_para_o_reino(nome):
+    """O reino convida. Quem aceita é a pessoa — o convite não dá cidadania."""
+    reino = _reino_ou_404(nome)
+    if not eh_operador(reino, current_user):
+        abort(403)
+
+    alvo = db.session.get(Usuario, request.form.get("pessoa", type=int) or 0)
+    if alvo is None:
+        flash("Pessoa não encontrada.", "erro")
+        return redirect(url_for("reino.operar", nome=nome))
+
+    try:
+        convidar(reino, alvo, current_user)
+        db.session.commit()
+        flash(f"Convite enviado para {alvo.nome_exibicao}.", "ok")
+    except ErroMonetario as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("reino.operar", nome=nome))
+
+
+@bp.route("/<nome>/pedir", methods=["POST"])
+def pedir(nome):
+    """A pessoa pede. Quem aprova é um operador — pedir não dá cidadania."""
+    reino = _reino_ou_404(nome)
+    try:
+        pedir_cidadania(reino, current_user)
+        db.session.commit()
+        flash(f"Pedido enviado para {reino.nome}.", "ok")
+    except ErroMonetario as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("reino.ver", nome=nome))
+
+
+@bp.route("/pedido/<int:pedido_id>/aceitar", methods=["POST"])
+def aceitar(pedido_id):
+    """Fecha a pendência e cria a cidadania. É o lado que não começou."""
+    pedido = db.session.get(PedidoDeCidadania, pedido_id)
+    if pedido is None or not pode_responder(pedido, current_user):
+        flash("Pedido não encontrado.", "erro")
+        return redirect(url_for("publico.inicio"))
+
+    destino = pedido.reino.nome_normalizado
+    try:
+        aceitar_pedido(pedido, current_user)
+        db.session.commit()
+        flash("Cidadania aceita.", "ok")
+    except ErroMonetario as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("reino.ver", nome=destino))
+
+
+@bp.route("/pedido/<int:pedido_id>/recusar", methods=["POST"])
+def recusar(pedido_id):
+    """Recusa. Os dois lados podem — inclusive quem enviou, desistindo."""
+    pedido = db.session.get(PedidoDeCidadania, pedido_id)
+    if pedido is None or not (
+        pode_responder(pedido, current_user)
+        or pedido.criado_por_id == current_user.id
+    ):
+        flash("Pedido não encontrado.", "erro")
+        return redirect(url_for("publico.inicio"))
+
+    destino = pedido.reino.nome_normalizado
+    eh_operador_aqui = eh_operador(pedido.reino, current_user)
+    try:
+        recusar_pedido(pedido, current_user)
+        db.session.commit()
+        flash("Pedido recusado.", "ok")
+    except ErroMonetario as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    if eh_operador_aqui:
+        return redirect(url_for("reino.operar", nome=destino))
+    return redirect(url_for("reino.ver", nome=destino))
 
 
 @bp.route("/<nome>/entrar", methods=["POST"])
@@ -236,6 +347,9 @@ def operar(nome):
         cidadaos=lista_de_cidadaos,
         devidos=devidos,
         negociaveis=negociaveis,
+        pendencias=pendencias_do_reino(reino),
+        # Quem ainda não é cidadão nem tem pendência: os convidáveis.
+        convidaveis=_convidaveis(reino),
         juros_min=JUROS_MINIMO,
         juros_max=JUROS_MAXIMO,
         token=_novo_token(),

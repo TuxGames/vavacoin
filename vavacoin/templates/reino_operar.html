@@ -86,6 +86,51 @@
   </div>
 </form>
 
+{% if pendencias %}
+<div class="card">
+  <div class="section-title"><i class="ti ti-ticket" aria-hidden="true"></i>Pendências</div>
+  {% for pedido in pendencias %}
+  <div class="row row-evt">
+    <span class="row-chip" aria-hidden="true">{{ pedido.usuario.nome_exibicao[0]|upper }}</span>
+    <div class="row-main">
+      <div>{{ pedido.usuario.nome_exibicao }}</div>
+      <div class="ei-sub">{{ 'convite enviado' if pedido.eh_convite else 'pediu cidadania' }}</div>
+    </div>
+    <div class="linha-pagar">
+      {% if not pedido.eh_convite %}
+      <form method="post" action="{{ url_for('reino.aceitar', pedido_id=pedido.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-gold btn-sm">Aceitar</button>
+      </form>
+      {% endif %}
+      <form method="post" action="{{ url_for('reino.recusar', pedido_id=pedido.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="botao-perigo">recusar</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if convidaveis %}
+<div class="card">
+  <div class="section-title"><i class="ti ti-user" aria-hidden="true"></i>Convidar</div>
+  <form method="post" action="{{ url_for('reino.convidar_para_o_reino', nome=reino.nome_normalizado) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="campo">
+      <label for="pessoa">Quem</label>
+      <select class="form-control" id="pessoa" name="pessoa">
+        {% for pessoa in convidaveis %}
+        <option value="{{ pessoa.id }}">{{ pessoa.nome_exibicao }} ({{ pessoa.nome_usuario }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-outline btn-full">Convidar</button>
+  </form>
+</div>
+{% endif %}
+
 {% if negociaveis %}
 <div class="card">
   <div class="section-title"><i class="ti ti-pencil" aria-hidden="true"></i>Suas cobranças</div>

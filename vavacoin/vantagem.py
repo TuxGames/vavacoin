@@ -79,9 +79,9 @@ from .dinheiro import para_decimal
 from .erros import ValorInvalido
 from .modelos import config_texto, definir_config_texto, registrar_acao
 
-#: Os jogos do Caladinho. O mines existe; os outros entram um a um, e cada um
-#: já nasce com a vantagem editável porque o mecanismo é este, não um por jogo.
-JOGOS = ("mines", "crash", "torre", "dados")
+#: Os jogos do Caladinho, vindos da lista única do projeto. Cada um já nasce
+#: com a vantagem editável porque o mecanismo é este, não um por jogo.
+from .jogos import JOGOS  # noqa: E402  (lista única; ver `jogos.py`)
 
 #: Onde o mines começou. Continua sendo o padrão de todo jogo que ainda não
 #: teve a vantagem mexida.

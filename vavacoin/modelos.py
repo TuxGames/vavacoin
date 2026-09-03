@@ -445,6 +445,18 @@ class RodadaMines(db.Model):
         db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
     )
     aposta = db.Column(Dinheiro, nullable=False)
+    #: De qual reino era o jogador **no instante da aposta**. Congelado aqui,
+    #: e nulo quando ele não era de reino nenhum — nulo é o "não cidadão", e é
+    #: um valor legítimo, não ausência de dado.
+    #:
+    #: Congelado porque o acordo é o cassino pagar 10% do lucro tirado dos
+    #: cidadãos daquele reino, e calcular isso depois, consultando a cidadania
+    #: atual, faria alguém entrando ou saindo reescrever imposto de rodada
+    #: passada. A conta do mês mudaria sozinha, que é exatamente o que gera
+    #: briga entre o dono e o amigo. Mesmo princípio da vantagem congelada.
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=True, index=True
+    )
     minas_escolhidas = db.Column(db.Integer, nullable=False)
 
     #: Posições das minas (0..24), em CSV. SEGREDO DO SERVIDOR enquanto ativa.
@@ -573,6 +585,18 @@ class RodadaCrash(db.Model):
         db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
     )
     aposta = db.Column(Dinheiro, nullable=False)
+    #: De qual reino era o jogador **no instante da aposta**. Congelado aqui,
+    #: e nulo quando ele não era de reino nenhum — nulo é o "não cidadão", e é
+    #: um valor legítimo, não ausência de dado.
+    #:
+    #: Congelado porque o acordo é o cassino pagar 10% do lucro tirado dos
+    #: cidadãos daquele reino, e calcular isso depois, consultando a cidadania
+    #: atual, faria alguém entrando ou saindo reescrever imposto de rodada
+    #: passada. A conta do mês mudaria sozinha, que é exatamente o que gera
+    #: briga entre o dono e o amigo. Mesmo princípio da vantagem congelada.
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=True, index=True
+    )
     #: A vantagem da casa no instante da aposta, em pontos percentuais. Mesma
     #: disciplina da rodada de mines: o dono muda a vantagem quando quiser, e
     #: rodada aberta não sente.
@@ -668,6 +692,18 @@ class RodadaTorre(db.Model):
         db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
     )
     aposta = db.Column(Dinheiro, nullable=False)
+    #: De qual reino era o jogador **no instante da aposta**. Congelado aqui,
+    #: e nulo quando ele não era de reino nenhum — nulo é o "não cidadão", e é
+    #: um valor legítimo, não ausência de dado.
+    #:
+    #: Congelado porque o acordo é o cassino pagar 10% do lucro tirado dos
+    #: cidadãos daquele reino, e calcular isso depois, consultando a cidadania
+    #: atual, faria alguém entrando ou saindo reescrever imposto de rodada
+    #: passada. A conta do mês mudaria sozinha, que é exatamente o que gera
+    #: briga entre o dono e o amigo. Mesmo princípio da vantagem congelada.
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=True, index=True
+    )
     #: A vantagem da casa no instante da aposta, em pontos percentuais.
     #: Congelada pela mesma razão dos outros jogos: rodada aberta não muda de
     #: tabela no meio, nem para melhor nem para pior.
@@ -779,6 +815,18 @@ class RodadaDados(db.Model):
         db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
     )
     aposta = db.Column(Dinheiro, nullable=False)
+    #: De qual reino era o jogador **no instante da aposta**. Congelado aqui,
+    #: e nulo quando ele não era de reino nenhum — nulo é o "não cidadão", e é
+    #: um valor legítimo, não ausência de dado.
+    #:
+    #: Congelado porque o acordo é o cassino pagar 10% do lucro tirado dos
+    #: cidadãos daquele reino, e calcular isso depois, consultando a cidadania
+    #: atual, faria alguém entrando ou saindo reescrever imposto de rodada
+    #: passada. A conta do mês mudaria sozinha, que é exatamente o que gera
+    #: briga entre o dono e o amigo. Mesmo princípio da vantagem congelada.
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=True, index=True
+    )
     #: A vantagem no instante da aposta, em pontos percentuais. Aqui ela não
     #: precisa proteger rodada aberta — não existe rodada aberta —, mas fica
     #: gravada porque é o que explica o multiplicador desta linha seis meses
@@ -859,6 +907,18 @@ class Reino(db.Model):
     cofre_id = db.Column(
         db.Integer, db.ForeignKey("usuario.id"), unique=True, nullable=False
     )
+    #: Quanto do lucro que o cassino tira dos cidadãos DESTE reino vira
+    #: imposto, em pontos percentuais. O combinado de hoje é 10%, mas ele é
+    #: valor inicial de uma coluna, não constante no código: cada reino
+    #: negocia o seu, e mudar fica registrado.
+    aliquota_cassino = db.Column(Dinheiro, nullable=False, default=Decimal("10.00"))
+    #: Prejuízo acumulado que ainda vai abater lucro futuro. Cresce quando o
+    #: cassino perde com os cidadãos deste reino num período liquidado, e é
+    #: consumido quando um período seguinte dá lucro.
+    #:
+    #: Abate o **lucro tributável**, não o imposto: abater 100 de lucro com
+    #: alíquota de 10% reduz o imposto em 10, não em 100.
+    abatimento = db.Column(Dinheiro, nullable=False, default=ZERO)
     #: Juros por dia sobre dívida em aberto, em pontos percentuais.
     #: Editável pelo operador dentro de uma faixa, com registro — mesmo
     #: desenho da vantagem do cassino.
@@ -928,6 +988,153 @@ class Cidadania(db.Model):
     @property
     def ativa(self):
         return self.saiu_em is None
+
+
+class LiquidacaoDeImposto(db.Model):
+    """Um período de imposto do cassino já acertado com um reino.
+
+    A linha é a **guarda de status** do pagamento: ``(reino, início, fim)`` é
+    UNIQUE, e ela entra antes de o dinheiro sair. Clicar duas vezes no mesmo
+    período bate no índice e nenhum centavo se move — que é o que impede o
+    mesmo lucro de ser cobrado de novo.
+
+    Guarda a conta inteira, e não só o valor pago, porque a pergunta que vem
+    depois é "por que o imposto desse período foi esse?". Com ``lucro_bruto``,
+    ``abatimento_usado``, ``lucro_tributavel`` e ``aliquota`` na linha, a
+    resposta está aqui e não em refazer a soma na mão.
+    """
+
+    __tablename__ = "liquidacao_de_imposto"
+
+    id = db.Column(db.Integer, primary_key=True)
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=False, index=True
+    )
+    inicio = db.Column(db.DateTime(timezone=True), nullable=False)
+    fim = db.Column(db.DateTime(timezone=True), nullable=False)
+
+    #: Apostas menos prêmios das rodadas atribuídas ao reino no período.
+    #: Negativo quando o cassino perdeu para os cidadãos dele.
+    lucro_bruto = db.Column(Dinheiro, nullable=False)
+    #: Quanto do prejuízo acumulado foi consumido para abater este período.
+    abatimento_usado = db.Column(Dinheiro, nullable=False, default=ZERO)
+    #: ``max(0, lucro_bruto - abatimento_usado)``. É sobre isto que a alíquota
+    #: incide.
+    lucro_tributavel = db.Column(Dinheiro, nullable=False, default=ZERO)
+    aliquota = db.Column(Dinheiro, nullable=False)
+    imposto = db.Column(Dinheiro, nullable=False, default=ZERO)
+
+    #: Quem apertou o botão, e o lançamento que pagou (nulo se o imposto deu
+    #: zero — período sem lucro tributável não move dinheiro).
+    liquidado_por_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False
+    )
+    transacao_id = db.Column(
+        db.Integer, db.ForeignKey("transacao.id"), nullable=True
+    )
+    criada_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+
+    reino = db.relationship("Reino", foreign_keys=[reino_id])
+
+    __table_args__ = (
+        CheckConstraint("fim > inicio", name="ck_liquidacao_periodo"),
+        CheckConstraint("imposto >= 0", name="ck_liquidacao_imposto"),
+        CheckConstraint("abatimento_usado >= 0", name="ck_liquidacao_abatimento"),
+        # Um período por reino, liquidado uma vez só.
+        db.UniqueConstraint(
+            "reino_id", "inicio", "fim", name="uq_um_periodo_por_reino"
+        ),
+    )
+
+    def __repr__(self):
+        return f"<LiquidacaoDeImposto reino={self.reino_id} imposto={self.imposto}>"
+
+
+class PedidoDeCidadania(db.Model):
+    """Uma cidadania que falta um lado confirmar.
+
+    **Uma tabela para os dois caminhos**, e não duas quase iguais: o reino
+    convida e a pessoa aceita, ou a pessoa pede e o operador aprova. Muda quem
+    começou (``origem``) e, por consequência, quem confirma — o resto é
+    idêntico, e duas tabelas gêmeas acabariam divergindo numa regra só.
+
+    O invariante é o mesmo dos dois lados: **ninguém entra sozinho e ninguém é
+    colocado à força**. Sempre são as duas partes, em alguma ordem.
+
+    Quem confirma:
+
+    - ``origem = "reino"`` (convite): confirma a **pessoa**. O reino já falou
+      quando enviou.
+    - ``origem = "pessoa"`` (pedido): confirma um **operador**. A pessoa já
+      falou quando pediu.
+
+    A exclusividade de cidadania é conferida **na confirmação**, nunca no
+    envio: entre convidar e aceitar podem passar dias, e o que vale é o
+    estado de quem aceita na hora em que aceita. Convidar quem já é cidadão de
+    outro reino é legítimo — ela é que decide sair de lá ou recusar.
+    """
+
+    __tablename__ = "pedido_de_cidadania"
+
+    REINO = "reino"
+    PESSOA = "pessoa"
+
+    PENDENTE = "pendente"
+    ACEITO = "aceito"
+    RECUSADO = "recusado"
+
+    id = db.Column(db.Integer, primary_key=True)
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=False, index=True
+    )
+    usuario_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    #: Qual lado começou. Decide quem pode confirmar.
+    origem = db.Column(db.String(8), nullable=False)
+    #: Quem apertou o botão de enviar. Do lado do reino é o operador — nunca o
+    #: cofre, que não autentica; do lado da pessoa é ela mesma.
+    criado_por_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False)
+    criado_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+
+    estado = db.Column(db.String(10), nullable=False, default=PENDENTE, index=True)
+    respondido_em = db.Column(db.DateTime(timezone=True), nullable=True)
+    respondido_por_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=True
+    )
+
+    reino = db.relationship("Reino", foreign_keys=[reino_id])
+    usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
+
+    __table_args__ = (
+        CheckConstraint("origem IN ('reino', 'pessoa')", name="ck_pedido_origem"),
+        CheckConstraint(
+            "estado IN ('pendente', 'aceito', 'recusado')", name="ck_pedido_estado"
+        ),
+        # Uma pendência por dupla pessoa/reino. Convidar de novo quem já tem
+        # convite aberto não é estado novo, é o mesmo convite — e sem isto a
+        # tela do outro lado encheria de linhas idênticas.
+        db.Index(
+            "uq_uma_pendencia_por_pessoa_no_reino",
+            "reino_id",
+            "usuario_id",
+            unique=True,
+            sqlite_where=db.text("estado = 'pendente'"),
+            postgresql_where=db.text("estado = 'pendente'"),
+        ),
+    )
+
+    @property
+    def pendente(self):
+        return self.estado == self.PENDENTE
+
+    @property
+    def eh_convite(self):
+        """Partiu do reino, então quem confirma é a pessoa."""
+        return self.origem == self.REINO
+
+    def __repr__(self):
+        return f"<PedidoDeCidadania {self.id} {self.origem} {self.estado}>"
 
 
 class OperadorDoReino(db.Model):

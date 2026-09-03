@@ -51,15 +51,40 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-outline btn-full">Sair de {{ reino.nome }}</button>
     </form>
+  {% elif pendencias %}
+    {# Já existe uma conversa aberta com este reino. Convite espera a pessoa;
+       pedido espera o operador — e desistir do que se mandou é legítimo. #}
+    {% for pedido in pendencias %}
+    <div class="row row-evt">
+      <span class="row-chip" aria-hidden="true">{{ reino.nome[0]|upper }}</span>
+      <div class="row-main">
+        <div>{{ reino.nome }}</div>
+        <div class="ei-sub">{{ 'convite' if pedido.eh_convite else 'pedido enviado' }}</div>
+      </div>
+      <div class="linha-pagar">
+        {% if pedido.eh_convite %}
+        <form method="post" action="{{ url_for('reino.aceitar', pedido_id=pedido.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-gold btn-sm">Aceitar</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('reino.recusar', pedido_id=pedido.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="botao-perigo">recusar</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
   {% elif outro_reino %}
     {# Cidadania é exclusiva: em vez de um botão que só daria erro, o caminho
        de onde ela precisa sair primeiro. #}
     <a class="btn btn-outline btn-full"
        href="{{ url_for('reino.ver', nome=outro_reino.nome_normalizado) }}">{{ outro_reino.nome }}</a>
   {% else %}
-    <form method="post" action="{{ url_for('reino.entrar', nome=reino.nome_normalizado) }}">
+    {# Pedir, não entrar: quem aprova é o operador. Ninguém entra sozinho. #}
+    <form method="post" action="{{ url_for('reino.pedir', nome=reino.nome_normalizado) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="btn btn-gold btn-full">Entrar em {{ reino.nome }}</button>
+      <button type="submit" class="btn btn-gold btn-full">Pedir cidadania</button>
     </form>
   {% endif %}
   {% if sou_operador %}

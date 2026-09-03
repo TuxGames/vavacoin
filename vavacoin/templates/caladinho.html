@@ -14,11 +14,21 @@
     </div>
     {% endif %}
     <h2>Jogos</h2>
+    {# Só os jogos no ar. Esconder o link não é a tranca — a rota do jogo
+       desligado devolve 404 —, mas é o que faz o lobby dizer a verdade. #}
     <div class="cal-jogos">
+      {% if 'mines' in no_ar %}
       <a class="cal-btn cal-btn-verde" href="{{ url_for('caladinho.mines') }}">💣 Mines</a>
+      {% endif %}
+      {% if 'crash' in no_ar %}
       <a class="cal-btn cal-btn-verde" href="{{ url_for('caladinho.crash') }}">🚀 Crash</a>
+      {% endif %}
+      {% if 'torre' in no_ar %}
       <a class="cal-btn cal-btn-verde" href="{{ url_for('caladinho.torre') }}">🗼 Torre</a>
+      {% endif %}
+      {% if 'dados' in no_ar %}
       <a class="cal-btn cal-btn-verde" href="{{ url_for('caladinho.dados') }}">🎲 Dados</a>
+      {% endif %}
       {% if eh_dono %}
         <a class="cal-btn cal-btn-neutro" href="{{ url_for('caladinho.painel_da_casa') }}">Casa</a>
       {% endif %}

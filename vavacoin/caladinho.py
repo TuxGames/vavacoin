@@ -351,6 +351,22 @@ def limite_de_aposta(sessao=None):
 # --- rodada -----------------------------------------------------------------
 
 
+def _reino_do_jogador(jogador, sessao):
+    """De qual reino a pessoa é AGORA — para congelar na rodada.
+
+    Nulo é resposta legítima: é o "não cidadão", e o acordo com cada reino
+    fala só do lucro tirado dos cidadãos dele.
+
+    Lido aqui, no instante da aposta, e nunca depois: calcular a atribuição
+    consultando a cidadania atual faria alguém entrando ou saindo do reino
+    reescrever imposto de rodada passada.
+    """
+    from .reinos import cidadania_de
+
+    cidadania = cidadania_de(jogador, sessao)
+    return cidadania.reino_id if cidadania is not None else None
+
+
 def rodada_ativa(jogador, sessao=None, travada=False):
     """A rodada em andamento do jogador, se houver.
 
@@ -447,6 +463,7 @@ def criar_rodada(jogador, aposta, minas_escolhidas, sessao=None):
     rodada = RodadaMines(
         jogador_id=jogador.id,
         aposta=aposta,
+        reino_id=_reino_do_jogador(jogador, sessao),
         # A vantagem vigente AGORA, congelada na rodada. A partir daqui o dono
         # pode mudá-la à vontade que esta rodada não sente.
         vantagem=vantagem_vigente("mines", sessao),
@@ -810,6 +827,7 @@ def criar_rodada_crash(jogador, aposta, alvo, sessao=None):
     rodada = RodadaCrash(
         jogador_id=jogador.id,
         aposta=aposta,
+        reino_id=_reino_do_jogador(jogador, sessao),
         vantagem=vantagem_da_rodada,
         alvo=alvo,
         ponto_de_estouro=sortear_ponto_de_estouro(
@@ -1112,6 +1130,7 @@ def criar_rodada_torre(jogador, aposta, portas, sessao=None):
     rodada = RodadaTorre(
         jogador_id=jogador.id,
         aposta=aposta,
+        reino_id=_reino_do_jogador(jogador, sessao),
         vantagem=vantagem_da_rodada,
         portas=portas,
         armadilhas=",".join(str(a) for a in armadilhas),
@@ -1432,6 +1451,7 @@ def jogar_dados(jogador, aposta, sentido, alvo, sessao=None, aleatorio=None):
     rodada = RodadaDados(
         jogador_id=jogador.id,
         aposta=aposta,
+        reino_id=_reino_do_jogador(jogador, sessao),
         vantagem=vantagem_da_rodada,
         sentido=sentido,
         alvo=alvo,

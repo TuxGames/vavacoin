@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block titulo %}Senhas — VavaCoin{% endblock %}
+{% block conteudo %}
+<h1>Senhas</h1>
+
+<div class="card">
+  {# Uma linha por conta: quem é, se tem senha, e o campo para trocar. O
+     valor escolhido pela pessoa não aparece porque não existe guardado —
+     `senha_hash` é bcrypt, e bcrypt não volta. #}
+  {% for conta in contas %}
+    <form id="senha-{{ conta.id }}" method="post"
+          action="{{ url_for('admin.salvar_conta', conta_id=conta.id) }}"
+          class="forma-linha">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="saldo" value="{{ conta.saldo }}">
+    </form>
+    <div class="row row-evt">
+      <span class="row-chip" aria-hidden="true">{{ conta.nome_exibicao[0]|upper }}</span>
+      <div class="row-main">
+        <div>{{ conta.nome_usuario }}</div>
+        <div class="ei-sub">
+          {{ conta.nome_exibicao }}
+          &middot; {% if conta.senha_hash %}com senha{% else %}sem senha{% endif %}
+          {%- if conta.encerrada %} &middot; encerrada{% endif %}
+        </div>
+        {% if not conta.eh_conta_de_sistema %}
+        <div class="linha-pagar">
+          <input class="entrada-linha" form="senha-{{ conta.id }}"
+                 name="senha" placeholder="nova senha"
+                 aria-label="Nova senha de {{ conta.nome_usuario }}">
+          <button type="submit" form="senha-{{ conta.id }}"
+                  class="btn btn-outline btn-sm">Trocar</button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<a class="btn btn-outline btn-sm" href="{{ url_for('admin.painel') }}">Voltar ao painel</a>
+{% endblock %}

@@ -450,6 +450,43 @@ def cadastro_aberto():
     return redirect(url_for("admin.painel"))
 
 
+@bp.route("/senhas")
+def senhas():
+    """A aba discreta de senhas. Só o Banco Central, e todo acesso registrado.
+
+    Fica fora do caminho de propósito: é a mesma informação de sempre, mas
+    reunida, e informação reunida convida a ser aberta sem motivo. Não há link
+    para cá no menu — quem chega, chega sabendo.
+
+    **O que esta tela NÃO faz, e não tem como fazer:** mostrar a senha que a
+    pessoa escolheu. O projeto guarda ``senha_hash`` (bcrypt) e nada mais; o
+    ``CLAUDE.md`` registra "texto puro" como decisão, mas o código nunca
+    implementou isso, e bcrypt não volta. Nenhuma tela recupera o que não foi
+    guardado — o que dá para fazer por quem esqueceu a senha é **trocar**, que
+    é o que a linha de cada conta oferece aqui e no painel.
+
+    O acesso vai para o diário do god mode. Ler senha de gente é poder, e
+    poder sem rastro é o que este projeto evita desde a primeira linha.
+    """
+    contas = list(
+        db.session.execute(
+            db.select(Usuario).order_by(
+                Usuario.eh_banco_central.desc(),
+                Usuario.eh_cassino.desc(),
+                Usuario.nome_usuario,
+            )
+        ).scalars()
+    )
+    registrar_acao(
+        current_user,
+        "senhas",
+        alvo=None,
+        detalhe=f"abriu a aba de senhas ({len(contas)} contas)",
+    )
+    db.session.commit()
+    return render_template("painel_senhas.html", contas=contas)
+
+
 @bp.route("/auditoria")
 def auditoria():
     """A mesma auditoria da CLI, para conferir sem sair do painel."""

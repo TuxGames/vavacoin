@@ -37,6 +37,7 @@ from .erros import (
 from .extensoes import db
 from .modelos import (
     Cidadania,
+    PedidoDeCidadania,
     Cobranca,
     Distribuicao,
     Divida,
@@ -342,6 +343,207 @@ def sair_do_reino(reino, pessoa, sessao=None):
     cidadania.saiu_em = agora()
     sessao.flush()
     return cidadania
+
+
+# --- convite e pedido de cidadania ------------------------------------------
+#
+# Dois caminhos para a mesma coisa, e os dois exigem as DUAS partes: o reino
+# convida e a pessoa aceita, ou a pessoa pede e o operador aprova. Ninguém
+# entra sozinho e ninguém é colocado à força — é o princípio de sempre, agora
+# com as duas ordens possíveis.
+#
+# `entrar_no_reino` continua existindo e é o que ambos os caminhos chamam ao
+# confirmar: há um lugar só onde alguém vira cidadão, e é lá que a
+# exclusividade é conferida.
+
+
+def _pendencia(reino, pessoa, sessao):
+    return sessao.execute(
+        select(PedidoDeCidadania).where(
+            PedidoDeCidadania.reino_id == reino.id,
+            PedidoDeCidadania.usuario_id == pessoa.id,
+            PedidoDeCidadania.estado == PedidoDeCidadania.PENDENTE,
+        )
+    ).scalar_one_or_none()
+
+
+def _abrir_pendencia(reino, pessoa, origem, quem, sessao):
+    """Cria a pendência, ou devolve a que já existe. Idempotente.
+
+    Enviar duas vezes não cria duas linhas: o índice único parcial recusa, e
+    antes dele esta função já devolve a pendência aberta. Sem isso a tela do
+    outro lado encheria de convites idênticos.
+    """
+    if pessoa.eh_conta_de_sistema:
+        raise ValorInvalido("conta de sistema não é cidadã")
+    if pessoa.encerrada:
+        raise ValorInvalido("conta encerrada não entra em reino")
+    if eh_cidadao(reino, pessoa, sessao):
+        raise ValorInvalido(f"{pessoa.nome_usuario} já é cidadão de {reino.nome}")
+
+    aberta = _pendencia(reino, pessoa, sessao)
+    if aberta is not None:
+        return aberta
+
+    pedido = PedidoDeCidadania(
+        reino_id=reino.id,
+        usuario_id=pessoa.id,
+        origem=origem,
+        criado_por_id=quem.id,
+    )
+    sessao.add(pedido)
+    try:
+        sessao.flush()
+    except IntegrityError as erro:
+        sessao.rollback()
+        raise ValorInvalido("já existe um pedido em aberto") from erro
+    return pedido
+
+
+def convidar(reino, pessoa, operador, sessao=None):
+    """O reino convida; quem aceita é a pessoa.
+
+    Quem envia é o **operador**, não o cofre: o cofre guarda dinheiro e não
+    autentica, e o registro precisa dizer qual pessoa convidou.
+
+    Convidar quem já é cidadão de outro reino é legítimo — a exclusividade é
+    conferida quando ela aceitar, e a decisão de sair de lá é dela.
+    """
+    sessao = sessao or db.session
+    exigir_operador(reino, operador, sessao)
+    pedido = _abrir_pendencia(
+        reino, pessoa, PedidoDeCidadania.REINO, operador, sessao
+    )
+    registrar_acao(
+        operador,
+        "reino",
+        alvo=pessoa.nome_usuario,
+        detalhe=f"convite para {reino.nome}",
+        sessao=sessao,
+    )
+    return pedido
+
+
+def pedir_cidadania(reino, pessoa, sessao=None):
+    """A pessoa pede; quem aprova é um operador.
+
+    Pedir não dá cidadania nenhuma — dá uma linha para o reino responder.
+    """
+    sessao = sessao or db.session
+    return _abrir_pendencia(
+        reino, pessoa, PedidoDeCidadania.PESSOA, pessoa, sessao
+    )
+
+
+def pode_responder(pedido, pessoa, sessao=None):
+    """Quem fecha esta pendência.
+
+    O lado que **não** começou. Convite do reino é a pessoa que aceita;
+    pedido da pessoa é o operador que aprova. Deixar o mesmo lado confirmar o
+    que ele mesmo abriu seria entrar sozinho com passo a mais.
+    """
+    sessao = sessao or db.session
+    if pessoa is None or not getattr(pessoa, "id", None):
+        return False
+    if not pedido.pendente:
+        return False
+    if pedido.eh_convite:
+        return pedido.usuario_id == pessoa.id
+    return eh_operador(pedido.reino, pessoa, sessao)
+
+
+def _fechar(pedido, estado, quem, sessao):
+    """Fecha a pendência por ``UPDATE`` condicional. Idempotente.
+
+    Dois cliques, ou o reenvio do POST, encontram a linha já fora de
+    ``pendente`` e não passam.
+    """
+    aplicado = sessao.execute(
+        update(PedidoDeCidadania)
+        .where(
+            PedidoDeCidadania.id == pedido.id,
+            PedidoDeCidadania.estado == PedidoDeCidadania.PENDENTE,
+        )
+        .values(estado=estado, respondido_em=agora(), respondido_por_id=quem.id)
+    )
+    if aplicado.rowcount != 1:
+        raise ValorInvalido("esse pedido já foi respondido")
+    sessao.expire(pedido)
+
+
+def aceitar_pedido(pedido, quem, sessao=None):
+    """Fecha a pendência e cria a cidadania. É aqui que alguém vira cidadão.
+
+    A exclusividade é conferida **agora**, e não quando o convite foi enviado:
+    entre uma coisa e outra podem passar dias. Quem já é cidadão de outro
+    reino recebe a recusa de ``entrar_no_reino``, e a pendência continua de pé
+    para depois de ela sair de lá.
+    """
+    sessao = sessao or db.session
+    if not pode_responder(pedido, quem, sessao):
+        raise SemAutoridade("este pedido não é seu para responder")
+
+    reino = pedido.reino
+    pessoa = pedido.usuario
+
+    # Primeiro a cidadania: se ela for recusada (exclusividade, conta
+    # encerrada), a pendência fica intacta para uma segunda tentativa.
+    cidadania = entrar_no_reino(reino, pessoa, sessao=sessao)
+    _fechar(pedido, PedidoDeCidadania.ACEITO, quem, sessao)
+    registrar_acao(
+        quem,
+        "reino",
+        alvo=pessoa.nome_usuario,
+        detalhe=f"cidadania em {reino.nome} aceita",
+        sessao=sessao,
+    )
+    return cidadania
+
+
+def recusar_pedido(pedido, quem, sessao=None):
+    """Fecha a pendência sem criar cidadania. Os dois lados podem recusar.
+
+    Quem recusa é quem responderia — e também quem enviou, porque desistir do
+    convite que se mandou é tão legítimo quanto recusá-lo.
+    """
+    sessao = sessao or db.session
+    if not (
+        pode_responder(pedido, quem, sessao) or pedido.criado_por_id == quem.id
+    ):
+        raise SemAutoridade("este pedido não é seu para responder")
+
+    _fechar(pedido, PedidoDeCidadania.RECUSADO, quem, sessao)
+    return pedido
+
+
+def pendencias_da_pessoa(pessoa, sessao=None):
+    """Convites esperando a pessoa, e pedidos que ela mandou."""
+    sessao = sessao or db.session
+    return list(
+        sessao.execute(
+            select(PedidoDeCidadania)
+            .where(
+                PedidoDeCidadania.usuario_id == pessoa.id,
+                PedidoDeCidadania.estado == PedidoDeCidadania.PENDENTE,
+            )
+            .order_by(PedidoDeCidadania.id)
+        ).scalars()
+    )
+
+
+def pendencias_do_reino(reino, sessao=None):
+    """Pedidos esperando o operador, e convites que o reino mandou."""
+    sessao = sessao or db.session
+    return list(
+        sessao.execute(
+            select(PedidoDeCidadania)
+            .where(
+                PedidoDeCidadania.reino_id == reino.id,
+                PedidoDeCidadania.estado == PedidoDeCidadania.PENDENTE,
+            )
+            .order_by(PedidoDeCidadania.id)
+        ).scalars()
+    )
 
 
 # --- juros ------------------------------------------------------------------

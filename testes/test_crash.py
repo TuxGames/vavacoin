@@ -40,6 +40,7 @@ from vavacoin.crash import (
 )
 from vavacoin.erros import ApostaAlta, RodadaEmAndamento, SemRodadaAtiva, ValorInvalido
 from vavacoin.extensoes import db
+from vavacoin.jogos import definir_ligado
 from vavacoin.limite import limpar_tudo
 from vavacoin.modelos import RodadaCrash, Transacao, agora
 from vavacoin.operacoes import ajustar_saldo
@@ -67,6 +68,11 @@ def cassino(app, bc, nova_pessoa):
     db.session.commit()
 
     ana = nova_pessoa(nome="ana", saldo="100.00")
+
+    # O crash nasce DESLIGADO — decisão do dono, até existir tempo real. O
+    # jogo continua inteiro e testado; a fixture o liga para exercitá-lo.
+    definir_ligado("crash", True, gustavo)
+    db.session.commit()
     return {"casa": conta, "dono": gustavo, "ana": ana}
 
 

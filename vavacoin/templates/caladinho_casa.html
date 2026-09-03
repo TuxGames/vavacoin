@@ -65,6 +65,57 @@
         <button type="submit" class="cal-btn cal-btn-amarelo cal-btn-curto">Salvar</button>
       </div>
     </form>
+    {# O interruptor do jogo, na mesma linha da vantagem: é a outra decisão
+       de quem toca o cassino. Formulário próprio porque um form não aninha
+       outro, e o valor vai no botão — um clique, sem passo intermediário. #}
+    <form class="cal-linha cal-linha-jogo" method="post"
+          action="{{ url_for('caladinho.casa_jogo', jogo=jogo) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="ligado" value="{{ '0' if no_ar[jogo] else '1' }}">
+      <span class="cal-rot">{{ 'no ar' if no_ar[jogo] else 'fora do ar' }}</span>
+      <button type="submit"
+              class="cal-btn cal-btn-curto {{ 'cal-btn-neutro' if no_ar[jogo] else 'cal-btn-verde' }}">
+        {{ 'Desligar' if no_ar[jogo] else 'Ligar' }}</button>
+    </form>
+    {% endfor %}
+  </div>
+
+  {# Lucro por reino, imposto devido e o botão que envia. Nada desconta
+     sozinho: o número fica na tela até o dono apertar. #}
+  <div class="cal-card">
+    <h2>Imposto por reino</h2>
+    <div class="cal-stats">
+      <div>Período: <b>{{ periodo_inicio.strftime("%d/%m") }}</b>
+        a <b>{{ periodo_fim.strftime("%d/%m") }}</b></div>
+      <div>Fora de reino: <b>{{ fora_de_reino }}</b> VVC</div>
+    </div>
+    {% for reino, conta in por_reino %}
+    <div class="cal-linha">
+      <div>
+        <div>{{ reino.nome }} &middot; {{ conta.aliquota }}%</div>
+        <div class="cal-linha-sub">
+          lucro {{ conta.lucro }}
+          {%- if conta.abatimento_usado > 0 %} &middot; abate {{ conta.abatimento_usado }}{% endif %}
+          {%- if conta.abatimento_depois > 0 %} &middot; a abater {{ conta.abatimento_depois }}{% endif %}
+        </div>
+      </div>
+      <div class="cal-linha-form">
+        <b class="{{ 'cal-ganhou' if conta.imposto > 0 else '' }}">{{ conta.imposto }}</b>
+        {% if conta.ja_liquidado %}
+          <span class="cal-rot">pago</span>
+        {% else %}
+        <form method="post"
+              action="{{ url_for('caladinho.casa_imposto', reino_id=reino.id,
+                                 inicio=periodo_inicio.isoformat(),
+                                 fim=periodo_fim.isoformat()) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="cal-btn cal-btn-amarelo cal-btn-curto">Enviar</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <div class="cal-vazio">Nenhum reino ainda.</div>
     {% endfor %}
   </div>
 
