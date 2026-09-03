@@ -702,8 +702,14 @@ label {
     cursor: pointer;
 }
 .row-main label { cursor: pointer; }
-/* Pagar dívida direto na linha: campo curto e botão, como o painel do BC. */
-.linha-pagar { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+/* Ação direto na linha da dívida — pagar, fixar valor, perdoar. Campo curto e
+   botão, como a edição na linha do painel do BC.
+
+   Os `<form>` de dentro também são flex: sem isso cada um vira bloco e o
+   campo cai em cima do botão, porque um formulário não pode aninhar outro e
+   as ações precisam ser formulários irmãos. */
+.linha-pagar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.linha-pagar form { display: flex; gap: 8px; align-items: center; margin: 0; }
 .linha-pagar .entrada-linha { min-width: 0; max-width: 7rem; }
 
 /* Apagar e encerrar: texto, não botão cheio. São ações raras e destrutivas,
