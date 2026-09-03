@@ -68,11 +68,75 @@ UM_DIA = timedelta(days=1)
 # --- o reino ----------------------------------------------------------------
 
 
-def criar_reino(nome, autoridade=None, sessao=None):
-    """Cria o reino e o cofre dele. Poder do Banco Central.
+def exigir_adotavel(conta, sessao=None):
+    """Esta conta pode virar cofre de um reino?
 
-    O cofre nasce sem senha, como a casa do cassino: conta de sistema não
-    entra pela tela.
+    Recusa cada caso por um motivo diferente, e a mensagem diz qual — porque
+    "não pode" sozinho manda a pessoa adivinhar.
+    """
+    sessao = sessao or db.session
+
+    if conta.eh_banco_central:
+        raise ValorInvalido("o Banco Central não vira cofre de reino")
+    if conta.eh_cassino:
+        raise ValorInvalido("a casa do Caladinho não vira cofre de reino")
+    if conta.encerrada:
+        raise ValorInvalido(f"{conta.nome_usuario} está encerrada")
+
+    ja_cofre = sessao.execute(
+        select(Reino).where(Reino.cofre_id == conta.id)
+    ).scalar_one_or_none()
+    if ja_cofre is not None:
+        raise ValorInvalido(
+            f"{conta.nome_usuario} já é o cofre de {ja_cofre.nome}"
+        )
+    if conta.eh_cofre:
+        raise ValorInvalido(f"{conta.nome_usuario} já é cofre")
+
+    cidadania = cidadania_de(conta, sessao)
+    if cidadania is not None:
+        raise ValorInvalido(
+            f"{conta.nome_usuario} é cidadão de {cidadania.reino.nome}; "
+            "saia de lá antes"
+        )
+
+    # Cofre que opera um reino é contradição: ele não autentica, então o papel
+    # ficaria inerte e mentindo. Recusar é melhor do que tirar o papel por
+    # conta própria — quem deu o papel decide se tira.
+    papel = sessao.execute(
+        select(OperadorDoReino).where(OperadorDoReino.usuario_id == conta.id)
+    ).scalars().first()
+    if papel is not None:
+        raise ValorInvalido(
+            f"{conta.nome_usuario} opera um reino; tire o papel antes"
+        )
+    return conta
+
+
+def criar_reino(nome, autoridade=None, sessao=None, cofre=None):
+    """Cria o reino. O cofre nasce vazio, ou é uma conta que já existe.
+
+    Poder do Banco Central, e idempotente: rodar de novo com o mesmo nome
+    devolve o reino que já está lá, sem tocar em nada.
+
+    ## Adotar uma conta como cofre
+
+    ``cofre`` recebe uma conta existente — o caso real de quem montou o reino
+    na mão pelo painel antes de existir a tabela, com o dinheiro já dentro e
+    histórico no extrato. Adotar **não move um centavo**: o saldo fica onde
+    está e os lançamentos continuam explicando exatamente o que explicavam.
+    Muda o **papel** da conta, não o dinheiro dela.
+
+    O que passa a valer, tudo de uma vez: a conta entra em
+    ``eh_conta_de_sistema``, **perde a senha** e para de autenticar, não
+    resgata convite, não vira cidadã nem operadora, e o painel do Banco
+    Central recusa dar senha a ela.
+
+    Perder a senha é o efeito colateral que fecha uma porta na cara de alguém:
+    quem usava essa conta para entrar deixa de conseguir. É o desenho certo —
+    se o jeito de mandar no reino fosse entrar na conta do cofre, quem
+    soubesse a senha seria rei —, mas é destrutivo, e por isso a CLI avisa
+    antes de fazer.
     """
     from .autoridade import exigir_banco_central
 
@@ -90,10 +154,22 @@ def criar_reino(nome, autoridade=None, sessao=None):
     if existente is not None:
         return existente
 
-    cofre = Usuario(nome_exibicao=f"Cofre de {nome}", eh_cofre=True, saldo=ZERO)
-    cofre.definir_nome(f"cofre_{normalizado}")
-    sessao.add(cofre)
-    sessao.flush()
+    if cofre is None:
+        cofre = Usuario(nome_exibicao=f"Cofre de {nome}", eh_cofre=True, saldo=ZERO)
+        cofre.definir_nome(f"cofre_{normalizado}")
+        sessao.add(cofre)
+        sessao.flush()
+        detalhe = "reino criado"
+    else:
+        exigir_adotavel(cofre, sessao)
+        # Só o papel muda. Saldo e ledger ficam exatamente onde estavam.
+        cofre.eh_cofre = True
+        cofre.senha_hash = None
+        sessao.flush()
+        detalhe = (
+            f"reino criado; conta {cofre.nome_usuario} adotada como cofre "
+            f"com {cofre.saldo} VVC (senha removida)"
+        )
 
     reino = Reino(
         nome=nome,
@@ -103,7 +179,7 @@ def criar_reino(nome, autoridade=None, sessao=None):
     )
     sessao.add(reino)
     sessao.flush()
-    registrar_acao(bc, "reino", alvo=nome, detalhe="reino criado", sessao=sessao)
+    registrar_acao(bc, "reino", alvo=nome, detalhe=detalhe, sessao=sessao)
     return reino
 
 

@@ -210,22 +210,74 @@ def comando_dono_cassino(nome_usuario, sem_dono):
 
 @click.command("criar-reino")
 @click.argument("nome")
+@click.option(
+    "--cofre",
+    default=None,
+    help="Conta existente que vira o cofre, em vez de criar uma vazia.",
+)
+@click.option(
+    "--sim",
+    is_flag=True,
+    default=False,
+    help="Confirma a adoção sem perguntar.",
+)
 @with_appcontext
-def comando_criar_reino(nome):
-    """Cria um reino e o cofre dele. Idempotente: rodar de novo não duplica.
+def comando_criar_reino(nome, cofre, sim):
+    """Cria um reino. Idempotente: rodar de novo não duplica.
 
     O nome vem por argumento porque reino é dado, não código: "Alfheim" é uma
     linha da tabela, e o segundo reino tem de nascer sem tocar no primeiro.
 
-    O cofre nasce sem senha, como a casa do Caladinho — conta de sistema não
-    entra pela tela. Nasce também com saldo zero: pôr dinheiro nele é ajuste
-    do Banco Central pelo painel, e assim o cofre entra em circulação pelo
-    mesmo caminho registrado que todo mundo.
+    Sem ``--cofre``, o cofre nasce vazio e sem senha, como a casa do
+    Caladinho: pôr dinheiro nele é ajuste do Banco Central pelo painel, e
+    assim o dinheiro entra em circulação pelo mesmo caminho registrado que
+    todo mundo.
+
+    Com ``--cofre <conta>``, uma conta que **já existe** vira o cofre — o caso
+    de quem montou o reino na mão antes de existir a tabela, com o dinheiro já
+    dentro. Adotar não move um centavo: o saldo fica onde está e o extrato
+    continua explicando o que explicava.
+
+    A adoção **apaga a senha da conta**, porque cofre não entra pela tela. É
+    uma porta que fecha na cara de quem usava essa conta para entrar, então o
+    comando avisa e pergunta antes — ``--sim`` responde de antemão.
     """
-    from .reinos import criar_reino
+    from .reinos import criar_reino, exigir_adotavel, reino_por_nome
+
+    if reino_por_nome(nome) is not None:
+        reino = reino_por_nome(nome)
+        click.echo(
+            f"Reino {reino.nome} já existe: cofre {reino.cofre.nome_usuario} — "
+            f"{reino.cofre.saldo} VVC. Nada foi alterado."
+        )
+        return
+
+    conta = None
+    if cofre:
+        conta = buscar_usuario(cofre)
+        if conta is None:
+            raise click.ClickException(f"conta não encontrada: {cofre}")
+        try:
+            exigir_adotavel(conta)
+        except ErroMonetario as erro:
+            raise click.ClickException(str(erro)) from erro
+
+        click.echo(f"A conta {conta.nome_usuario} vai virar o cofre de {nome}.")
+        click.echo(f"  saldo que fica onde está: {conta.saldo} VVC")
+        click.echo(
+            f"  lançamentos no extrato, intactos: "
+            f"{_quantos_lancamentos(conta)}"
+        )
+        if conta.senha_hash:
+            click.echo(
+                "  ATENÇÃO: a senha vai ser apagada e a conta deixa de entrar "
+                "pelo site. Quem usava esta conta para entrar perde o acesso."
+            )
+        if not sim:
+            click.confirm("Adotar mesmo assim?", abort=True)
 
     try:
-        reino = criar_reino(nome, autoridade=_autoridade())
+        reino = criar_reino(nome, autoridade=_autoridade(), cofre=conta)
     except ErroMonetario as erro:
         raise click.ClickException(str(erro)) from erro
     db.session.commit()
@@ -233,6 +285,19 @@ def comando_criar_reino(nome):
         f"Reino {reino.nome}: cofre {reino.cofre.nome_usuario} — "
         f"{reino.cofre.saldo} VVC, juros {reino.juros_diarios}% ao dia"
     )
+
+
+def _quantos_lancamentos(conta):
+    """Quantas linhas do ledger falam desta conta. Só para a mensagem."""
+    from .modelos import Transacao
+
+    return db.session.execute(
+        db.select(db.func.count(Transacao.id)).where(
+            (Transacao.origem_id == conta.id)
+            | (Transacao.destino_id == conta.id)
+            | (Transacao.ator_id == conta.id)
+        )
+    ).scalar_one()
 
 
 @click.command("operador-reino")
