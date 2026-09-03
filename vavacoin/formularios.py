@@ -209,6 +209,13 @@ class FormularioReinosVisiveis(FlaskForm):
     enviar = SubmitField("Salvar")
 
 
+class FormularioSaldoPublico(FlaskForm):
+    """O interruptor do próprio saldo, no perfil. Rótulo curto e mais nada."""
+
+    publico = BooleanField("Mostrar meu saldo para os outros")
+    enviar = SubmitField("Salvar")
+
+
 class FormularioCadastroAberto(FlaskForm):
     """Liga e desliga a exigência de convite. Só o Banco Central vê."""
 

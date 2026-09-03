@@ -34,7 +34,10 @@
                aria-label="Marcar {{ pessoa.nome_exibicao }}">
         <div class="row-main">
           <label for="marca-{{ pessoa.id }}">{{ pessoa.nome_exibicao }}</label>
-          <div class="ei-sub">{{ pessoa.nome_usuario }} &middot; {{ pessoa.saldo }} VVC</div>
+          {# A mesma preferência de sempre: o operador não é exceção. Ele
+             cobra por alíquota, não precisa do número de cada um. #}
+          <div class="ei-sub">{{ pessoa.nome_usuario }}
+            {%- if pessoa.saldo_visivel_para(current_user) %} &middot; {{ pessoa.saldo }} VVC{% endif %}</div>
         </div>
         <div class="row-val {{ 'neg' if devidos[pessoa.id] > 0 }}">{{ devidos[pessoa.id] }}</div>
       </div>

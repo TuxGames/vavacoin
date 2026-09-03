@@ -74,6 +74,16 @@ class Usuario(db.Model, UserMixin):
     #: emite) nem a conta pessoal do dono (que joga). Nasce sem senha, então
     #: não entra pelo site.
     eh_cassino = db.Column(db.Boolean, nullable=False, default=False)
+    #: O saldo desta pessoa aparece para os outros?
+    #:
+    #: **Nasce ligado** e a pessoa desliga no perfil — é opt-out, por decisão
+    #: do dono. (O ``CLAUDE.md`` descreve o ranking antigo como opt-in; esta é
+    #: uma decisão nova dele, não uma contradição a resolver no código.)
+    #:
+    #: Uma preferência só, e não uma por tela: quem decide se um saldo aparece
+    #: é sempre :meth:`saldo_visivel_para`. Regra por tela é como duas telas
+    #: começam a discordar sobre a mesma escolha da pessoa.
+    saldo_publico = db.Column(db.Boolean, nullable=False, default=True)
     #: O cofre de um reino. Conta de verdade no ledger, com saldo próprio — e
     #: conta de sistema: não joga, não é renomeada e **não entra pela tela**.
     #: Quem opera o reino é uma pessoa com o papel de operador; o cofre é só
@@ -137,6 +147,30 @@ class Usuario(db.Model, UserMixin):
     @property
     def encerrada(self):
         return self.encerrada_em is not None
+
+    def saldo_visivel_para(self, quem):
+        """O saldo desta conta aparece para ``quem``?
+
+        **A regra única.** Todo lugar que mostra saldo de outra pessoa passa
+        por aqui — se um dia uma tela decidir sozinha, é aqui que ela deveria
+        ter perguntado.
+
+        Três casos, nesta ordem:
+
+        - a própria pessoa vê o próprio saldo, sempre;
+        - o Banco Central vê tudo, porque audita tudo e isso já está
+          registrado como o poder dele;
+        - qualquer outro só vê se a pessoa deixou público.
+
+        Fora do login não vê nada: sem alguém autenticado não há "quem".
+        """
+        if quem is None or not getattr(quem, "is_authenticated", False):
+            return False
+        if getattr(quem, "id", None) == self.id:
+            return True
+        if quem.eh_admin:
+            return True
+        return self.saldo_publico
 
     @property
     def is_active(self):

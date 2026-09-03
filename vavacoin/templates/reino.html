@@ -95,6 +95,8 @@
 
 <div class="card">
   <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Cidadãos</div>
+  <a class="link-fim" href="{{ url_for('reino.lista_de_cidadaos', nome=reino.nome_normalizado) }}">Ver a tabela</a>
+  <hr>
   {% if cidadaos %}
     {% for pessoa in cidadaos %}
     <div class="row row-evt">

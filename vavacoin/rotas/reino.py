@@ -186,6 +186,32 @@ def _convidaveis(reino):
     ]
 
 
+@bp.route("/<nome>/cidadaos")
+def lista_de_cidadaos(nome):
+    """A tabela pública de cidadãos: nome sempre, saldo de quem deixou.
+
+    Pública entre quem tem conta, não na web aberta — o blueprint inteiro
+    exige login. Com o cadastro aberto, "público" já significa "qualquer um
+    que criar conta vê"; deixar sem login seria outra coisa: aberto e
+    indexável.
+
+    Quem escondeu o saldo **continua na lista**, com o nome e sem o número.
+    Sumir da tabela revelaria a escolha pela ausência, que é o contrário de
+    esconder.
+
+    Ordem alfabética, não por saldo: ordenar por dinheiro transformaria isto
+    num ranking, e ranking é decisão que ninguém tomou.
+    """
+    reino = _reino_ou_404(nome)
+    return render_template(
+        "reino_cidadaos.html",
+        reino=reino,
+        # `cidadaos()` já exclui conta de sistema por construção: cofre,
+        # Banco Central e cassino não são cidadãos de reino nenhum.
+        cidadaos=cidadaos(reino),
+    )
+
+
 @bp.route("/<nome>/convidar", methods=["POST"])
 def convidar_para_o_reino(nome):
     """O reino convida. Quem aceita é a pessoa — o convite não dá cidadania."""

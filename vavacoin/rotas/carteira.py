@@ -23,7 +23,11 @@ from ..auditoria import linhas_extrato, resumo_da_conta
 from ..dinheiro import para_decimal
 from ..erros import ErroMonetario
 from ..extensoes import db
-from ..formularios import FormularioConfirmacao, FormularioTransferencia
+from ..formularios import (
+    FormularioConfirmacao,
+    FormularioSaldoPublico,
+    FormularioTransferencia,
+)
 from ..modelos import Convite, Transacao, Usuario, buscar_usuario
 from ..operacoes import transferir
 
@@ -116,7 +120,29 @@ def perfil():
         usuario=current_user,
         resumo=resumo_da_conta(current_user),
         convite=convite,
+        form_publico=FormularioSaldoPublico(publico=current_user.saldo_publico),
     )
+
+
+@bp.route("/perfil/saldo-publico", methods=["POST"])
+@login_required
+def saldo_publico():
+    """Liga e desliga a visibilidade do próprio saldo.
+
+    Ato da pessoa sobre a própria conta, e de mais ninguém: nem o Banco
+    Central esconde ou revela saldo alheio por aqui.
+    """
+    formulario = FormularioSaldoPublico()
+    if formulario.validate_on_submit():
+        current_user.saldo_publico = bool(formulario.publico.data)
+        db.session.commit()
+        flash(
+            "Seu saldo aparece para os outros."
+            if current_user.saldo_publico
+            else "Seu saldo ficou escondido.",
+            "ok",
+        )
+    return redirect(url_for("carteira.perfil"))
 
 
 @bp.route("/transferir", methods=["GET", "POST"])
