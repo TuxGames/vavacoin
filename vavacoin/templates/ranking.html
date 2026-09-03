@@ -9,7 +9,7 @@
     {# Quatro informações em 375px: posição, nome, reino e valor. O reino vai
        embaixo do nome, como o nome público na tabela do painel — em uma linha
        só ele espremeria o nome e o valor até os dois cortarem. #}
-    <div class="row row-evt">
+    <div class="row row-evt{% if eh_voce(pessoa, current_user) %} voce{% endif %}">
       <span class="posicao" aria-hidden="true">{{ posicao }}</span>
       <div class="row-main">
         <div>{{ pessoa.nome_exibicao }}</div>
@@ -31,7 +31,7 @@
 <div class="card">
   <div class="section-title"><i class="ti ti-user" aria-hidden="true"></i>Sem ranking</div>
   {% for pessoa in escondidos %}
-  <div class="row row-evt">
+  <div class="row row-evt{% if eh_voce(pessoa, current_user) %} voce{% endif %}">
     <span class="row-chip" aria-hidden="true">{{ pessoa.nome_exibicao[0]|upper }}</span>
     <div class="row-main">
       <div>{{ pessoa.nome_exibicao }}</div>

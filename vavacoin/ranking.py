@@ -80,6 +80,31 @@ def ranquear(pessoas):
     return ranking, escondidos
 
 
+def eh_voce(pessoa, quem):
+    """Esta linha é a de quem está olhando?
+
+    **Identidade, nunca posição.** O destaque anterior era uma regra de CSS
+    (``.row:nth-child(2) > .posicao``), e o bug que ela causou é o argumento
+    inteiro para esta função existir: a mesma regra pintava o **1º** lugar na
+    tela do reino, onde o cartão começa com um título, e o **2º** na tela do
+    ranking geral, onde não começa. Nenhuma das duas era a pessoa logada.
+    Coincidiu enquanto o dono era o segundo colocado; ele perdeu 20 VVC, caiu
+    para terceiro, e o dourado ficou na Letícia.
+
+    Regra que depende de onde a linha caiu no HTML não é a mesma regra em duas
+    telas, ainda que seja o mesmo seletor. Esta compara ``id``, e por isso as
+    duas telas não têm como divergir.
+
+    Vale também na parte de baixo, onde ficam quem escondeu o saldo: lá não há
+    posição nenhuma, e a pessoa continua precisando se achar.
+    """
+    if pessoa is None or quem is None:
+        return False
+    if not getattr(quem, "is_authenticated", False):
+        return False
+    return getattr(quem, "id", None) == pessoa.id
+
+
 def gente(sessao=None):
     """Todas as contas que são pessoas, para o ranking geral.
 

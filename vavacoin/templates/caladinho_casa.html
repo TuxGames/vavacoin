@@ -94,9 +94,15 @@
       <div>
         <div>{{ reino.nome }} &middot; {{ conta.aliquota }}%</div>
         <div class="cal-linha-sub">
+          {# "a abater" aparece sempre, inclusive zerado: era condicional, e o
+             mecanismo ficava invisível justamente para quem nunca teve
+             prejuízo — o dono chegou a pedir de novo um abatimento que já
+             existia. O número mostrado é o acumulado de HOJE
+             (`abatimento_disponivel`), não a projeção do depois: essa
+             mudaria sozinha ao mexer no período e não é saldo de nada. #}
           lucro {{ conta.lucro }}
           {%- if conta.abatimento_usado > 0 %} &middot; abate {{ conta.abatimento_usado }}{% endif %}
-          {%- if conta.abatimento_depois > 0 %} &middot; a abater {{ conta.abatimento_depois }}{% endif %}
+          &middot; a abater {{ conta.abatimento_disponivel }}
         </div>
       </div>
       <div class="cal-linha-form">

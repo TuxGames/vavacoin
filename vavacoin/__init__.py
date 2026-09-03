@@ -82,6 +82,13 @@ def criar_app(config=Config):
     # CSP e companhia em toda resposta, inclusive nas de erro.
     app.after_request(aplicar_cabecalhos)
 
+    # "Sou eu?" é uma pergunta de toda tela que lista gente, e a resposta tem
+    # de ser a mesma em todas — ver `ranking.eh_voce`. Global do Jinja, e não
+    # context processor, porque não custa consulta nenhuma.
+    from .ranking import eh_voce
+
+    app.jinja_env.globals["eh_voce"] = eh_voce
+
     @app.context_processor
     def interruptores_do_menu():
         """O que o menu precisa saber para não oferecer porta trancada.

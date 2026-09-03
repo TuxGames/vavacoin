@@ -7,7 +7,7 @@
   <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Ranking</div>
   {% if ranking %}
     {% for posicao, pessoa in ranking %}
-    <div class="row row-evt">
+    <div class="row row-evt{% if eh_voce(pessoa, current_user) %} voce{% endif %}">
       <span class="posicao" aria-hidden="true">{{ posicao }}</span>
       <div class="row-main">
         <div>{{ pessoa.nome_exibicao }}</div>
@@ -29,7 +29,7 @@
 <div class="card">
   <div class="section-title"><i class="ti ti-user" aria-hidden="true"></i>Cidadãos</div>
   {% for pessoa in escondidos %}
-  <div class="row row-evt">
+  <div class="row row-evt{% if eh_voce(pessoa, current_user) %} voce{% endif %}">
     <span class="row-chip" aria-hidden="true">{{ pessoa.nome_exibicao[0]|upper }}</span>
     <div class="row-main">
       <div>{{ pessoa.nome_exibicao }}</div>

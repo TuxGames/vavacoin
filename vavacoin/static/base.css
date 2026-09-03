@@ -704,8 +704,15 @@ label {
     color: var(--muted); font-family: var(--num);
     font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
-/* O pódio, discreto: só a cor muda. */
-.row:nth-child(2) > .posicao { color: var(--gold); border-color: rgba(242,193,78,.35); }
+/* A linha de quem está olhando. Quem decide é `ranking.eh_voce`, comparando
+   identidade — aqui só existe a cor.
+
+   Havia aqui `.row:nth-child(2) > .posicao`, escrito como "o pódio,
+   discreto". Ele pintava a segunda linha do cartão, o que na tela do reino
+   calhava de ser o 1º lugar (o cartão abre com um título) e na do ranking
+   geral era o 2º. Seletor estrutural não sabe quem é quem; este sabe. */
+.row.voce > .posicao { color: var(--gold); border-color: rgba(242,193,78,.35); }
+.row.voce { background: rgba(242,193,78,.06); border-radius: 10px; }
 
 /* A caixa de marcar na lista de cidadãos: alvo de toque de verdade, na
    coluna onde a ficha do extrato ficaria. */

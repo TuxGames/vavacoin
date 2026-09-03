@@ -503,3 +503,73 @@ def test_o_panorama_separa_por_reino_e_fora_de_reino(app, bc, cena):
     assert conta["lucro"] == Decimal("50.00")
     assert conta["imposto"] == Decimal("5.00")
     assert visao["fora_de_reino"] == Decimal("30.00")
+
+
+# --- o abatimento na tela do dono -------------------------------------------
+#
+# O mecanismo já existia inteiro e o dono pediu que fosse construído — sinal
+# de que a tela não contava que ele existe. Era condicional: só aparecia
+# depois do primeiro prejuízo, ou seja, invisível justamente para quem ainda
+# não tinha tido nenhum.
+
+
+def _tela_do_dono(app, cena):
+    cena["dono"].definir_senha("senha-boa-123")
+    db.session.commit()
+    cliente = app.test_client()
+    cliente.post(
+        "/entrar",
+        data={"nome_usuario": "gustavo", "senha": "senha-boa-123"},
+        follow_redirects=True,
+    )
+    return cliente.get("/caladinho/casa").get_data(as_text=True)
+
+
+def test_a_tela_do_dono_mostra_o_saldo_a_abater_mesmo_zerado(app, bc, cena):
+    """Sem isto o mecanismo é invisível até o primeiro prejuízo."""
+    assert cena["reino"].abatimento == ZERO
+
+    corpo = _tela_do_dono(app, cena)
+
+    assert "a abater" in corpo
+
+
+def test_a_tela_do_dono_mostra_o_prejuizo_acumulado(app, bc, cena):
+    cena["reino"].abatimento = Decimal("37.50")
+    db.session.commit()
+
+    corpo = _tela_do_dono(app, cena)
+
+    assert "37.50" in corpo
+
+
+def test_a_tela_mostra_quando_o_imposto_veio_reduzido(app, bc, cena):
+    """Dá para ver que o abatimento agiu, e quanto dele foi consumido."""
+    cena["reino"].abatimento = Decimal("4.00")
+    db.session.commit()
+    _perder(cena["cidadao"], "10.00")
+
+    corpo = _tela_do_dono(app, cena)
+
+    assert "abate" in corpo
+    assert "4.00" in corpo
+
+
+def test_o_numero_mostrado_e_o_acumulado_de_hoje(app, bc, cena):
+    """E não a projeção do depois, que muda ao mexer no período.
+
+    O saldo a abater é um fato do reino agora; ``abatimento_depois`` é o que
+    sobraria *se* este período fosse liquidado, e trocar as datas na tela o
+    faria dançar sem nada ter acontecido.
+    """
+    cena["reino"].abatimento = Decimal("100.00")
+    db.session.commit()
+    _perder(cena["cidadao"], "10.00")
+    inicio, fim = _janela()
+    conta = previsao(cena["reino"], inicio, fim)
+
+    corpo = _tela_do_dono(app, cena)
+
+    assert conta["abatimento_disponivel"] == Decimal("100.00")
+    assert conta["abatimento_depois"] == Decimal("90.00")
+    assert "100.00" in corpo
