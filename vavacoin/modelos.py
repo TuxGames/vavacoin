@@ -74,6 +74,11 @@ class Usuario(db.Model, UserMixin):
     #: emite) nem a conta pessoal do dono (que joga). Nasce sem senha, então
     #: não entra pelo site.
     eh_cassino = db.Column(db.Boolean, nullable=False, default=False)
+    #: O cofre de um reino. Conta de verdade no ledger, com saldo próprio — e
+    #: conta de sistema: não joga, não é renomeada e **não entra pela tela**.
+    #: Quem opera o reino é uma pessoa com o papel de operador; o cofre é só
+    #: onde o dinheiro mora.
+    eh_cofre = db.Column(db.Boolean, nullable=False, default=False)
     #: De quem é esta conta, quando ela é de uma casa de jogo. Anulável de
     #: propósito: "sem dono" é um estado, não um caso especial — e é por aqui
     #: que uma transferência de posse entra depois, sem reescrever nada.
@@ -153,12 +158,13 @@ class Usuario(db.Model, UserMixin):
 
     @property
     def eh_conta_de_sistema(self):
-        """Banco Central e casa do cassino: não são jogadores.
+        """Banco Central, casa do cassino e cofre de reino: não são jogadores.
 
-        Nenhum dos dois resgata convite nem recebe transferência de gente. O
-        dinheiro chega neles por caminho próprio — ajuste, aposta.
+        Nenhum resgata convite nem recebe transferência de gente. O dinheiro
+        chega neles por caminho próprio — ajuste, aposta, imposto. E nenhum
+        entra pela tela: é o que impede "quem sabe a senha do cofre é rei".
         """
-        return self.eh_banco_central or self.eh_cassino
+        return self.eh_banco_central or self.eh_cassino or self.eh_cofre
 
     def __repr__(self):
         return f"<Usuario {self.nome_usuario} saldo={self.saldo}>"
@@ -337,6 +343,10 @@ class Configuracao(db.Model):
 
 #: Se o saldo da casa aparece para os jogadores.
 CHAVE_CAIXA_VISIVEL = "caladinho_caixa_visivel"
+
+#: Se a página dos reinos aparece para a turma. Mesmo interruptor das outras
+#: visibilidades: o Banco Central liga quando o RPG começar.
+CHAVE_REINOS_VISIVEIS = "reinos_visiveis"
 
 #: Se dá para criar conta sem código de convite. **Nasce ligado**, por decisão
 #: do dono: como quem entra começa com saldo zero, o convite deixou de ser o
@@ -819,6 +829,284 @@ class RodadaDados(db.Model):
 
     def __repr__(self):
         return f"<RodadaDados {self.id} {self.estado} aposta={self.aposta}>"
+
+
+class Reino(db.Model):
+    """Um reino: um cofre, cidadãos que pediram para entrar, e um operador.
+
+    Genérico desde o primeiro dia. "Alfheim" é o nome de uma linha desta
+    tabela, não uma constante no código — vão existir outros reinos, e o
+    segundo não pode exigir reescrever o primeiro.
+
+    **O poder é do reino, não da pessoa.** Quem opera é uma conta pessoal com
+    o papel de operador *deste* reino (:class:`OperadorDoReino`); tirar o papel
+    tira o poder. O cofre é só onde o dinheiro mora, e **não autentica pela
+    tela** — se a maneira de exercer o poder fosse entrar na conta do cofre,
+    quem soubesse a senha seria rei e o ledger diria "o cofre cobrou", nunca
+    quem digitou. É o bug das contas de tesouraria do Benbals, e ele não entra
+    aqui.
+    """
+
+    __tablename__ = "reino"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(60), nullable=False)
+    #: Forma comparável do nome, como em ``Usuario``: é esta que é única.
+    nome_normalizado = db.Column(db.String(60), unique=True, nullable=False, index=True)
+    #: A conta onde o dinheiro do reino mora. Conta de verdade no ledger, com
+    #: saldo próprio, para que o cofre participe da mesma conservação de massa
+    #: que todo mundo.
+    cofre_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), unique=True, nullable=False
+    )
+    #: Juros por dia sobre dívida em aberto, em pontos percentuais.
+    #: Editável pelo operador dentro de uma faixa, com registro — mesmo
+    #: desenho da vantagem do cassino.
+    juros_diarios = db.Column(Dinheiro, nullable=False, default=Decimal("1.00"))
+    criado_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+
+    cofre = db.relationship("Usuario", foreign_keys=[cofre_id])
+
+    def __repr__(self):
+        return f"<Reino {self.nome}>"
+
+
+class Cidadania(db.Model):
+    """Alguém pediu para entrar num reino — e pode pedir para sair.
+
+    **Opt-in com saída**, que é o princípio que rege o projeto inteiro:
+    ninguém vira cidadão sem pedir, e ninguém fica preso.
+
+    A linha não é apagada na saída: ``saiu_em`` é carimbado. Assim a pergunta
+    "esta pessoa era cidadã quando aquela cobrança aconteceu?" continua tendo
+    resposta depois, que é o que uma cobrança contestada precisa.
+
+    **Sair não apaga dívida.** A dívida é uma relação entre quem cobrou e quem
+    deve, não um atributo da cidadania — por isso ela não mora aqui, e por
+    isso sair não a toca em nada.
+
+    **Um reino por pessoa**, por decisão do dono, e a garantia é do banco: o
+    índice único parcial é por ``usuario_id`` onde ``saiu_em IS NULL``, sem o
+    ``reino_id``. Duas requisições simultâneas pedindo entrada em dois reinos
+    diferentes não passam as duas — o que a rota confere, o banco impede.
+
+    O modelo em si continua genérico: são N reinos, e a exclusividade é UM
+    índice. Se um dia a dupla cidadania for liberada, é esse índice que ganha
+    o ``reino_id`` de volta, e nada mais muda. A restrição está num lugar só,
+    de propósito.
+    """
+
+    __tablename__ = "cidadania"
+
+    id = db.Column(db.Integer, primary_key=True)
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=False, index=True
+    )
+    usuario_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    entrou_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+    saiu_em = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    reino = db.relationship("Reino", foreign_keys=[reino_id])
+    usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
+
+    __table_args__ = (
+        # UMA cidadania ativa por pessoa, em qualquer reino. Sem `reino_id`
+        # na chave: é isso que faz a exclusividade ser do banco e não da
+        # rota. Entrar de novo onde já se está, ou entrar num segundo reino,
+        # batem os dois aqui.
+        db.Index(
+            "uq_uma_cidadania_ativa_por_pessoa",
+            "usuario_id",
+            unique=True,
+            sqlite_where=db.text("saiu_em IS NULL"),
+            postgresql_where=db.text("saiu_em IS NULL"),
+        ),
+    )
+
+    @property
+    def ativa(self):
+        return self.saiu_em is None
+
+
+class OperadorDoReino(db.Model):
+    """Quem pode exercer os poderes de um reino.
+
+    Tabela separada, e não uma coluna em ``Reino``, porque o papel é de
+    quantas pessoas o reino quiser: dar um ministro a alguém é inserir uma
+    linha. O poder continua sendo do reino — perdeu o papel, perdeu o poder.
+    """
+
+    __tablename__ = "operador_do_reino"
+
+    id = db.Column(db.Integer, primary_key=True)
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=False, index=True
+    )
+    usuario_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    desde = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+
+    reino = db.relationship("Reino", foreign_keys=[reino_id])
+    usuario = db.relationship("Usuario", foreign_keys=[usuario_id])
+
+    __table_args__ = (
+        db.Index(
+            "uq_um_papel_por_pessoa_no_reino", "reino_id", "usuario_id", unique=True
+        ),
+    )
+
+
+class Cobranca(db.Model):
+    """Um lote de cobrança: um clique do operador, N dívidas.
+
+    Existe para o lote ser **idempotente**. O ``token`` é gerado quando a tela
+    é desenhada e é único no banco: o segundo POST do mesmo botão bate no
+    índice e não cobra ninguém de novo. Guarda também o que foi pedido, para
+    a pergunta "de onde saiu esse valor?" ter resposta.
+    """
+
+    __tablename__ = "cobranca"
+
+    ABSOLUTA = "absoluta"
+    PERCENTUAL = "percentual"
+
+    id = db.Column(db.Integer, primary_key=True)
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=False, index=True
+    )
+    #: Quem clicou. Nunca o cofre — o ledger registra a pessoa.
+    operador_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False)
+    tipo = db.Column(db.String(12), nullable=False)
+    #: VVC por cidadão na absoluta; pontos percentuais na percentual.
+    parametro = db.Column(Dinheiro, nullable=False)
+    motivo = db.Column(db.String(200), nullable=False)
+    #: Chave de idempotência do lote.
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    criada_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+
+    __table_args__ = (
+        CheckConstraint(
+            "tipo IN ('absoluta', 'percentual')", name="ck_cobranca_tipo"
+        ),
+        CheckConstraint("parametro > 0", name="ck_cobranca_parametro"),
+    )
+
+
+class Divida(db.Model):
+    """O que uma pessoa deve a um reino.
+
+    **Cobrar não tira dinheiro de ninguém**: cria esta linha. Pagar é ato do
+    devedor, e é o que move VVC. É a decisão do dono, e é o que mantém a
+    coerência com "nada acontece com uma pessoa sem que ela tenha pedido".
+
+    ## A taxa congela na criação
+
+    Cada dívida carrega ``juros_diarios``, a taxa que valia quando ela nasceu.
+    Mudar a taxa do reino depois **não reprecifica cobrança antiga** — mesmo
+    princípio da vantagem congelada na aposta do cassino, e pelo mesmo motivo:
+    senão dá para encarecer retroativamente a dívida de alguém.
+
+    ## Negociar e perdoar
+
+    Quem criou a dívida pode fixar o **valor de quitação** em qualquer ponto
+    entre o principal (juros zerados) e o total com os juros corridos até ali,
+    e pode simplesmente perdoar, apagando a linha.
+
+    Nem desconto nem perdão movem dinheiro: **dívida nunca foi dinheiro no
+    ledger**, é uma cobrança pendente. Só o pagamento move, por ``mover()``.
+    Por isso perdoar pode apagar a linha sem deixar a auditoria acusando —
+    não há lançamento nenhum apontando para ela.
+
+    ``quitacao`` é o total a pagar **acumulado**, incluindo o que já foi pago;
+    guardá-lo assim deixa ``pago`` como o único contador que anda, e
+    ``restante`` como uma subtração. Com ele preenchido os juros param: o
+    credor fixou um número, e número fixado não cresce.
+
+    ## Como os juros são contados
+
+    Sem tarefa agendada — o plano do PythonAnywhere dá uma por dia e ela não
+    vai ser gasta nisso. Os juros saem dos **carimbos de tempo**, na leitura:
+
+        devido = principal + juros_cristalizados - pago + juros_correntes
+
+    ``juros_correntes`` é ``restante × taxa × dias inteiros`` desde
+    ``juros_desde``. Simples e linear, não composto, por um motivo de
+    engenharia e não de gosto: linear é aritmética exata em ``Decimal``, e
+    composto exigiria potência fracionária — a mesma classe de erro que já
+    custou um centavo na curva do crash.
+
+    Dias **inteiros** para que o número não mude enquanto a pessoa olha a
+    tela. Dívida criada agora não rende nada hoje.
+
+    Pagamento parcial crava o que já correu (``juros_cristalizados``) e
+    reinicia o relógio: assim pagar metade não apaga retroativamente juro que
+    já tinha corrido.
+
+    ## O que NÃO existe aqui
+
+    Punição. O dono ainda não decidiu o que se pode ameaçar a quem não paga, e
+    inventar isso agora seria decidir por ele. Hoje a dívida é registro, juros
+    e pedido. O ponto de extensão é este modelo: quem for implementar sanção
+    lê ``devido_em()`` e ``vencida``, sem mexer no resto.
+    """
+
+    __tablename__ = "divida"
+
+    id = db.Column(db.Integer, primary_key=True)
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=False, index=True
+    )
+    devedor_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    cobranca_id = db.Column(
+        db.Integer, db.ForeignKey("cobranca.id"), nullable=True, index=True
+    )
+    #: Quem cobrou. Uma pessoa, sempre — nunca o cofre.
+    cobrada_por_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False)
+
+    principal = db.Column(Dinheiro, nullable=False)
+    #: Juros já cravados por um pagamento parcial ou pelo congelamento.
+    juros_cristalizados = db.Column(Dinheiro, nullable=False, default=ZERO)
+    pago = db.Column(Dinheiro, nullable=False, default=ZERO)
+    #: De quando os juros correntes contam. Anda a cada pagamento.
+    juros_desde = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+
+    motivo = db.Column(db.String(200), nullable=False)
+    cobrada_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
+    quitada_em = db.Column(db.DateTime(timezone=True), nullable=True)
+    #: A taxa com que ESTA dívida nasceu, em pontos percentuais ao dia.
+    #: Congelada: mudar a taxa do reino depois não mexe aqui.
+    juros_diarios = db.Column(Dinheiro, nullable=False, default=Decimal("1.00"))
+    #: O valor de quitação fixado pelo credor, acumulado (inclui o já pago).
+    #: Nulo enquanto ninguém negociou. Preenchido, manda em ``restante`` e
+    #: para os juros.
+    quitacao = db.Column(Dinheiro, nullable=True)
+
+    reino = db.relationship("Reino", foreign_keys=[reino_id])
+    devedor = db.relationship("Usuario", foreign_keys=[devedor_id])
+
+    __table_args__ = (
+        CheckConstraint("principal > 0", name="ck_divida_principal"),
+        CheckConstraint("pago >= 0", name="ck_divida_pago"),
+        CheckConstraint("juros_cristalizados >= 0", name="ck_divida_juros"),
+    )
+
+    @property
+    def quitada(self):
+        return self.quitada_em is not None
+
+    @property
+    def negociada(self):
+        return self.quitacao is not None
+
+    def __repr__(self):
+        return f"<Divida {self.id} principal={self.principal}>"
 
 
 def buscar_usuario(nome, sessao=None):

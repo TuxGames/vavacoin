@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block titulo %}{{ reino.nome }} — VavaCoin{% endblock %}
+{% block conteudo %}
+<div class="perfil-head">
+  <span class="moeda avatar-mono avatar-grande" aria-hidden="true">{{ reino.nome[0]|upper }}</span>
+  <div class="perfil-ident">
+    <div class="perfil-nome">{{ reino.nome }}</div>
+    <div class="perfil-user">{{ cidadaos|length }} cidadão{{ '' if cidadaos|length == 1 else 's' }}</div>
+  </div>
+</div>
+
+<dl class="numeros">
+  <div class="numero"><dt>Cofre</dt><dd>{{ cofre }}</dd></div>
+  <div class="numero"><dt>Juros</dt><dd>{{ reino.juros_diarios }}%</dd></div>
+  <div class="numero"><dt>Você deve</dt>
+    <dd class="{{ 'text-red' if total > 0 }}">{{ total }}</dd></div>
+</dl>
+
+{% if dividas %}
+<div class="card">
+  <div class="section-title"><i class="ti ti-ticket" aria-hidden="true"></i>Suas dívidas</div>
+  {% for divida, valor, sem_juros in dividas %}
+  <div class="row row-out">
+    <span class="row-chip" aria-hidden="true">{{ reino.nome[0]|upper }}</span>
+    <div class="row-main">
+      <div>{{ divida.motivo }}</div>
+      <div class="ei-sub">
+        {{ divida.cobrada_em.strftime("%d/%m") }}
+        &middot; {{ divida.principal }} + juros
+        {%- if divida.negociada %} &middot; acordo{% endif %}
+      </div>
+      <form class="linha-pagar" method="post"
+            action="{{ url_for('reino.pagar', divida_id=divida.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input class="entrada-linha entrada-numero" name="quanto" type="number"
+               step="0.01" min="0.01" max="{{ valor }}" placeholder="{{ valor }}"
+               aria-label="Quanto pagar desta dívida">
+        <button type="submit" class="btn btn-outline btn-sm">Pagar</button>
+      </form>
+    </div>
+    <div class="row-val neg">{{ valor }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="section-title"><i class="ti ti-user" aria-hidden="true"></i>Cidadania</div>
+  {% if sou_cidadao %}
+    <form method="post" action="{{ url_for('reino.sair', nome=reino.nome_normalizado) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-outline btn-full">Sair de {{ reino.nome }}</button>
+    </form>
+  {% elif outro_reino %}
+    {# Cidadania é exclusiva: em vez de um botão que só daria erro, o caminho
+       de onde ela precisa sair primeiro. #}
+    <a class="btn btn-outline btn-full"
+       href="{{ url_for('reino.ver', nome=outro_reino.nome_normalizado) }}">{{ outro_reino.nome }}</a>
+  {% else %}
+    <form method="post" action="{{ url_for('reino.entrar', nome=reino.nome_normalizado) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-gold btn-full">Entrar em {{ reino.nome }}</button>
+    </form>
+  {% endif %}
+  {% if sou_operador %}
+  <hr>
+  <a class="link-fim" href="{{ url_for('reino.operar', nome=reino.nome_normalizado) }}">Operar o reino</a>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Cidadãos</div>
+  {% if cidadaos %}
+    {% for pessoa in cidadaos %}
+    <div class="row row-evt">
+      <span class="row-chip" aria-hidden="true">{{ pessoa.nome_exibicao[0]|upper }}</span>
+      <div class="row-main">
+        <div>{{ pessoa.nome_exibicao }}</div>
+        <div class="ei-sub">{{ pessoa.nome_usuario }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="vazio">Nenhum cidadão ainda.</p>
+  {% endif %}
+</div>
+{% endblock %}

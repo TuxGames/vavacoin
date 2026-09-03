@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block titulo %}Reinos — VavaCoin{% endblock %}
+{% block conteudo %}
+<h1>Reinos</h1>
+<div class="card">
+  {% if reinos %}
+    {% for r in reinos %}
+    <div class="row row-evt">
+      <span class="row-chip" aria-hidden="true">{{ r.nome[0]|upper }}</span>
+      <div class="row-main">
+        <div><a href="{{ url_for('reino.ver', nome=r.nome_normalizado) }}">{{ r.nome }}</a></div>
+        <div class="ei-sub">{{ r.juros_diarios }}% ao dia</div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="vazio">Nenhum reino ainda.</p>
+  {% endif %}
+</div>
+{% endblock %}

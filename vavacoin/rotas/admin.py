@@ -237,8 +237,11 @@ def salvar_conta(conta_id):
             conta.definir_nome(novo_nome)
 
         if nova_senha:
-            if conta.eh_cassino:
-                raise ValorInvalido("a casa do Caladinho não entra pelo site")
+            # Vale para TODA conta de sistema, e não só para o cassino: é o
+            # que impede o cofre de um reino ganhar senha e virar "quem sabe
+            # a senha é rei" — o bug das contas de tesouraria do Benbals.
+            if conta.eh_conta_de_sistema:
+                raise ValorInvalido("conta de sistema não entra pelo site")
             conta.definir_senha(nova_senha)
 
         if formulario.saldo.decimal != conta.saldo:

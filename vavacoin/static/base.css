@@ -692,6 +692,20 @@ label {
     border-color: var(--gold);
     box-shadow: 0 0 0 3px rgba(242,193,78,.14);
 }
+/* ── REINO ── */
+/* A caixa de marcar na lista de cidadãos: alvo de toque de verdade, na
+   coluna onde a ficha do extrato ficaria. */
+.marca-cidadao {
+    flex: 0 0 auto;
+    width: 22px; height: 22px;
+    accent-color: var(--gold);
+    cursor: pointer;
+}
+.row-main label { cursor: pointer; }
+/* Pagar dívida direto na linha: campo curto e botão, como o painel do BC. */
+.linha-pagar { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.linha-pagar .entrada-linha { min-width: 0; max-width: 7rem; }
+
 /* Apagar e encerrar: texto, não botão cheio. São ações raras e destrutivas,
    e um botão vermelho grande na linha convida o dedo errado — o vermelho
    entra no hover, quando a intenção já existe. */
