@@ -36,6 +36,7 @@ from .erros import (
 )
 from .extensoes import db
 from .modelos import (
+    com_fuso,
     Cidadania,
     PedidoDeCidadania,
     Cobranca,
@@ -668,15 +669,8 @@ def dias_de_juros(divida, momento=None):
     if divida.negociada:
         return 0
     fim = momento or agora()
-    inicio = divida.juros_desde
-    if inicio.tzinfo is None:  # o SQLite devolve ingênuo; o relógio é UTC
-        from datetime import timezone as _tz
-
-        inicio = inicio.replace(tzinfo=_tz.utc)
-    if fim.tzinfo is None:
-        from datetime import timezone as _tz
-
-        fim = fim.replace(tzinfo=_tz.utc)
+    inicio = com_fuso(divida.juros_desde)
+    fim = com_fuso(fim)
     if fim <= inicio:
         return 0
     return (fim - inicio) // UM_DIA

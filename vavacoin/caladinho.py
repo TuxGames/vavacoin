@@ -84,6 +84,7 @@ from .mines import (
     validar_minas,
 )
 from .modelos import (
+    com_fuso,
     RodadaCrash,
     RodadaDados,
     RodadaMines,
@@ -777,10 +778,7 @@ def ultima_rodada_crash(jogador, sessao=None):
 def segundos_decorridos(rodada, momento=None):
     """Há quanto tempo a rodada começou, pelo relógio do servidor."""
     momento = momento or agora()
-    inicio = rodada.iniciada_em
-    if inicio.tzinfo is None:
-        # O SQLite devolve datetime ingênuo; o relógio do projeto é UTC.
-        inicio = inicio.replace(tzinfo=timezone.utc)
+    inicio = com_fuso(rodada.iniciada_em)
     return Decimal(str((momento - inicio).total_seconds()))
 
 

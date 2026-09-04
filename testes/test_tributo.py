@@ -39,15 +39,19 @@ from vavacoin.modelos import (
 )
 from vavacoin.operacoes import ajustar_saldo
 from vavacoin.reinos import criar_reino, definir_operador, entrar_no_reino, sair_do_reino
+from vavacoin.modelos import com_fuso
 from vavacoin.tributo import (
     ALIQUOTA_MAXIMA,
     ALIQUOTA_MINIMA,
     TIPO_IMPOSTO_CASSINO,
     definir_aliquota,
+    fim_efetivo,
+    inicio_do_periodo,
     liquidar,
     lucro_do_periodo,
     panorama,
     previsao,
+    ultima_liquidacao,
 )
 
 SENHA = "senha-boa-123"
@@ -94,8 +98,24 @@ def cena(app, bc, nova_pessoa):
     }
 
 
+def _datar(rodada, momento):
+    """Move a rodada no tempo. Só o carimbo muda; o dinheiro já andou."""
+    db.session.execute(
+        db.update(type(rodada))
+        .where(type(rodada).id == rodada.id)
+        .values(criada_em=momento)
+    )
+    db.session.commit()
+    return rodada
+
+
 def _janela():
-    """Um período que cobre agora, com folga dos dois lados."""
+    """Um período que cobre agora, com folga dos dois lados.
+
+    O fim continua no futuro de propósito: ``liquidar`` **apara** isso para o
+    instante da liquidação, e é essa aparagem que impede o período de engolir
+    de véspera lucro que ainda não existe.
+    """
     return agora() - timedelta(days=1), agora() + timedelta(days=1)
 
 
@@ -388,28 +408,27 @@ def test_o_ciclo_inteiro_prejuizo_depois_lucro(app, bc, cena):
     reino, dono, cidadao = cena["reino"], cena["dono"], cena["cidadao"]
     antes = conservacao()
 
+    # Os dois períodos são passado e se encostam no `marco`: é como eles
+    # existem de verdade agora — o segundo começa onde o primeiro terminou.
+    marco = agora() - timedelta(hours=1)
+
     # --- período 1: a casa perde ---
     p1_inicio = agora() - timedelta(days=2)
-    p1_fim = agora() + timedelta(hours=1)
     ganha = _ganhar(cidadao, "75.00")
     prejuizo = ganha.premio - ganha.aposta
+    _datar(ganha, marco - timedelta(minutes=30))
 
-    liquidar(reino, p1_inicio, p1_fim, dono)
+    liquidar(reino, p1_inicio, marco, dono)
     db.session.commit()
     db.session.expire_all()
     reino = db.session.get(type(reino), reino.id)
     assert reino.abatimento == prejuizo
 
-    # --- período 2: a casa ganha 100 ---
-    p2_inicio = agora() + timedelta(hours=2)
-    p2_fim = agora() + timedelta(days=2)
-    rodada = _perder(cidadao, "75.00")
-    db.session.execute(
-        db.update(RodadaMines)
-        .where(RodadaMines.id == rodada.id)
-        .values(criada_em=p2_inicio + timedelta(minutes=1))
-    )
-    db.session.commit()
+    # --- período 2: a casa ganha 75, e começa exatamente no `marco` ---
+    p2_inicio = inicio_do_periodo(reino)
+    assert p2_inicio == com_fuso(marco), "o período 2 encosta no 1, sem vão"
+    p2_fim = agora()
+    _datar(_perder(cidadao, "75.00"), marco + timedelta(minutes=1))
     db.session.expire_all()
     reino = db.session.get(type(reino), reino.id)
 

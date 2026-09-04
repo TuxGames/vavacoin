@@ -85,14 +85,17 @@
   <div class="cal-card">
     <h2>Imposto por reino</h2>
     <div class="cal-stats">
-      <div>Período: <b>{{ periodo_inicio.strftime("%d/%m") }}</b>
-        a <b>{{ periodo_fim.strftime("%d/%m") }}</b></div>
+      <div>Até: <b>{{ periodo_fim.strftime("%d/%m") }}</b></div>
       <div>Fora de reino: <b>{{ fora_de_reino }}</b> VVC</div>
     </div>
     {% for reino, conta in por_reino %}
     <div class="cal-linha">
       <div>
-        <div>{{ reino.nome }} &middot; {{ conta.aliquota }}%</div>
+        {# O período é de cada reino: ele começa onde a última liquidação
+           daquele reino terminou, então dois reinos na mesma tela mostram
+           datas diferentes. #}
+        <div>{{ reino.nome }} &middot; {{ conta.aliquota }}%
+          &middot; desde {{ conta.inicio.strftime("%d/%m") }}</div>
         <div class="cal-linha-sub">
           {# "a abater" aparece sempre, inclusive zerado: era condicional, e o
              mecanismo ficava invisível justamente para quem nunca teve
@@ -111,8 +114,8 @@
           <span class="cal-rot">pago</span>
         {% else %}
         <form method="post"
+              {# Sem `inicio` na URL: quem decide o começo é o servidor. #}
               action="{{ url_for('caladinho.casa_imposto', reino_id=reino.id,
-                                 inicio=periodo_inicio.isoformat(),
                                  fim=periodo_fim.isoformat()) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="cal-btn cal-btn-amarelo cal-btn-curto">Enviar</button>

@@ -88,7 +88,7 @@ from ..torre import (
     TETO_DO_MULTIPLICADOR as TETO_TORRE,
     tabela_de_multiplicadores as tabela_da_torre,
 )
-from ..tributo import liquidar, panorama
+from ..tributo import inicio_do_periodo, liquidar, panorama
 from ..jogos import (
     JOGOS,
     definir_ligado,
@@ -290,9 +290,12 @@ def casa_imposto(reino_id):
     if reino is None:
         abort(404)
 
-    inicio, fim = _periodo_pedido()
+    # O começo não vem da URL: é o fim da última liquidação deste reino. A
+    # rota nem oferece a chance de mandar outro — e, se mandasse, `liquidar`
+    # recusaria do mesmo jeito.
+    _, fim = _periodo_pedido()
     try:
-        linha = liquidar(reino, inicio, fim, current_user)
+        linha = liquidar(reino, inicio_do_periodo(reino), fim, current_user)
         db.session.commit()
         flash(f"{reino.nome}: {linha.imposto} VVC de imposto.", "ok")
     except (ValorInvalido, ErroDeJogo, ErroMonetario) as erro:

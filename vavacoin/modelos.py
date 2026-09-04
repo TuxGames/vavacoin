@@ -40,6 +40,23 @@ def agora():
     return datetime.now(timezone.utc)
 
 
+def com_fuso(momento):
+    """O mesmo instante, garantidamente com fuso. ``None`` passa reto.
+
+    O SQLite devolve ``datetime`` ingênuo mesmo em coluna declarada
+    ``timezone=True``, e comparar ingênuo com consciente estoura em
+    ``TypeError``. O relógio do projeto é UTC em todo lugar, então o que
+    falta é só a etiqueta.
+
+    Estava escrito à mão em três lugares (juros da dívida, tempo de rodada do
+    crash, e agora o período do imposto). Três cópias da mesma regra é o
+    número em que ela começa a divergir.
+    """
+    if momento is None or momento.tzinfo is not None:
+        return momento
+    return momento.replace(tzinfo=timezone.utc)
+
+
 class Usuario(db.Model, UserMixin):
     """Uma conta com saldo. O Banco Central é uma delas.
 
