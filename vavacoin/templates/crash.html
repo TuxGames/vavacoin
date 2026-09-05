@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block titulo %}Crash — VavaCoin{% endblock %}
 {% block estilos %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='caladinho.css') }}">
+  <link rel="stylesheet" href="{{ estatico('caladinho.css') }}">
 {% endblock %}
 {% block conteudo %}
-<div class="caladinho">
+<div class="caladinho" data-jogo="{{ url_for('caladinho.crash') }}">
 <div class="cal-grid">
 
   {# ---------------- Coluna esquerda: controles ---------------- #}
@@ -110,5 +110,6 @@
 {% endblock %}
 
 {% block scripts %}
-  <script src="{{ url_for('static', filename='crash.js') }}" defer></script>
+  <script src="{{ estatico('jogo.js') }}" defer></script>
+  <script src="{{ estatico('crash.js') }}" defer></script>
 {% endblock %}

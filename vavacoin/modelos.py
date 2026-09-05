@@ -430,6 +430,59 @@ CHAVE_REINOS_VISIVEIS = "reinos_visiveis"
 CHAVE_CADASTRO_ABERTO = "cadastro_aberto"
 
 
+#: Onde a tabela de configuração inteira fica durante **uma** requisição.
+_MEMORIA_DE_CONFIG = "_configuracao_da_requisicao"
+
+
+def _configuracoes(sessao=None):
+    """``{chave: valor}`` da tabela inteira, **uma consulta por requisição**.
+
+    A tabela tem um punhado de linhas (os interruptores dos quatro jogos, o
+    cadastro aberto, o caixa visível, os reinos, o ranking, a vantagem de cada
+    jogo) e era lida uma vez **por chave**: sete a dez consultas idênticas em
+    toda página, mais duas do menu em cada tela do site. Com um worker só, é
+    fila para a turma inteira em troca de nada.
+
+    A memória vale só dentro da requisição e some com ela — não é cache de
+    dado que envelhece. Quem grava (``definir_config``, ``definir_config_texto``)
+    apaga a memória na hora, então nem dentro da mesma requisição dá para ler
+    um valor velho depois de escrever.
+
+    Fora de requisição (CLI, testes) não há memória nenhuma: cada leitura vai
+    ao banco, como antes. Passar uma ``sessao`` própria também escapa da
+    memória, porque aí a pergunta é sobre outra transação.
+    """
+    if sessao is not None:
+        return None
+    try:
+        from flask import g, has_request_context
+
+        if not has_request_context():
+            return None
+    except (ImportError, RuntimeError):
+        return None
+
+    memoria = getattr(g, _MEMORIA_DE_CONFIG, None)
+    if memoria is None:
+        memoria = {
+            registro.chave: registro.valor
+            for registro in db.session.execute(db.select(Configuracao)).scalars()
+        }
+        setattr(g, _MEMORIA_DE_CONFIG, memoria)
+    return memoria
+
+
+def _esquecer_configuracoes():
+    """Chamado por quem grava, para a leitura seguinte não vir velha."""
+    try:
+        from flask import g, has_request_context
+
+        if has_request_context():
+            g.pop(_MEMORIA_DE_CONFIG, None)
+    except (ImportError, RuntimeError):
+        pass
+
+
 def config_texto(chave, padrao=None, sessao=None):
     """O valor cru de uma configuração, ou ``padrao`` se ela nunca foi gravada.
 
@@ -437,6 +490,10 @@ def config_texto(chave, padrao=None, sessao=None):
     nem toda configuração é interruptor: a vantagem da casa, por exemplo, é um
     número que o dono escolhe dentro de uma faixa.
     """
+    memoria = _configuracoes(sessao)
+    if memoria is not None:
+        return memoria.get(chave, padrao)
+
     sessao = sessao or db.session
     registro = sessao.execute(
         db.select(Configuracao).where(Configuracao.chave == chave)
@@ -459,18 +516,20 @@ def definir_config_texto(chave, valor, sessao=None):
         registro.valor = str(valor)
         registro.atualizado_em = agora()
     sessao.flush()
+    _esquecer_configuracoes()
     return registro
 
 
 def config_ligada(chave, padrao=False, sessao=None):
-    """A configuração está ligada? Guardada como "1"/"0"."""
-    sessao = sessao or db.session
-    registro = sessao.execute(
-        db.select(Configuracao).where(Configuracao.chave == chave)
-    ).scalar_one_or_none()
-    if registro is None:
+    """A configuração está ligada? Guardada como "1"/"0".
+
+    Sai de :func:`config_texto`, que é a leitura única — assim o interruptor
+    e o valor cru nunca discordam sobre o que está gravado.
+    """
+    valor = config_texto(chave, padrao=None, sessao=sessao)
+    if valor is None:
         return padrao
-    return registro.valor == "1"
+    return valor == "1"
 
 
 def definir_config(chave, ligada, sessao=None):
@@ -487,6 +546,7 @@ def definir_config(chave, ligada, sessao=None):
         registro.valor = valor
         registro.atualizado_em = agora()
     sessao.flush()
+    _esquecer_configuracoes()
     return registro
 
 

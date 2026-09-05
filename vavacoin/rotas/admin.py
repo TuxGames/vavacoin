@@ -65,6 +65,7 @@ from ..operacoes import (
     criar_convite,
     criar_usuario,
     destino_da_conta,
+    destinos_das_contas,
     encerrar_conta,
     referencias_da_conta,
     remover_conta,
@@ -152,7 +153,7 @@ def _pagina(**extras):
         "convites_livres": convites_livres,
         # Qual dos dois a conta aceita — calculado no servidor, para o botão
         # de apagar nem existir onde apagar não vale.
-        "destino_da_conta": {c.id: destino_da_conta(c) for c in contas},
+        "destino_da_conta": destinos_das_contas(contas),
         # O link é montado aqui, e não no template, porque o `url_for`
         # externo precisa do host da requisição — que o template tem, mas
         # repetido em cada linha do laço.

@@ -424,13 +424,15 @@ def ajustar_saldo(alvo, novo_saldo, motivo, autoridade=None, sessao=None):
 #   de quem transacionou com ela continua fazendo sentido.
 
 
-def _conta_tem_rastro(alvo, sessao):
-    """A conta aparece em alguma linha que precisaria explicá-la depois?
+def _colunas_de_rastro():
+    """Toda ponta onde uma conta deixa rastro que precisaria explicá-la depois.
 
-    Varre TODAS as pontas: o ledger nas três (origem, destino e ator), o
-    diário do god mode, e as rodadas dos quatro jogos. É de propósito que a
-    lista seja explícita em vez de esperta — quando entrar o quinto jogo,
-    esta função tem de falhar em revisão de código, não em produção.
+    O ledger nas três (origem, destino e ator), o diário do god mode, e as
+    rodadas dos quatro jogos. **Explícita de propósito**, ao contrário de
+    ``_colunas_que_apontam_para_conta``, que sai do metadata: aqui esquecer
+    uma tabela faz uma conta com histórico passar por virgem e ser apagada em
+    silêncio. Quando entrar o quinto jogo, esta lista tem de falhar em revisão
+    de código — não em produção.
     """
     from .modelos import (
         RegistroAdministrativo,
@@ -441,35 +443,47 @@ def _conta_tem_rastro(alvo, sessao):
         Transacao,
     )
 
-    alvo_id = alvo.id
-    tem_lancamento = sessao.execute(
-        select(Transacao.id)
-        .where(
-            (Transacao.origem_id == alvo_id)
-            | (Transacao.destino_id == alvo_id)
-            | (Transacao.ator_id == alvo_id)
+    return [
+        Transacao.origem_id,
+        Transacao.destino_id,
+        Transacao.ator_id,
+        RegistroAdministrativo.ator_id,
+        RodadaMines.jogador_id,
+        RodadaCrash.jogador_id,
+        RodadaTorre.jogador_id,
+        RodadaDados.jogador_id,
+    ]
+
+
+def _contas_com_rastro(ids, sessao):
+    """Quais destes ids aparecem em alguma ponta. Uma consulta por ponta.
+
+    O painel do Banco Central pergunta isso de toda conta da tabela ao mesmo
+    tempo. Perguntando uma por uma, eram tantas idas ao banco quanto contas —
+    e o plano grátis tem um worker só, então cada ida é fila para a turma
+    inteira. Aqui o custo não cresce com o número de contas.
+
+    Para uma conta só a conta é a mesma: o laço para assim que ela é achada.
+    """
+    restantes = [conta_id for conta_id in ids if conta_id is not None]
+    achados = set()
+    for coluna in _colunas_de_rastro():
+        if not restantes:
+            break
+        achados.update(
+            valor
+            for (valor,) in sessao.execute(
+                select(coluna).where(coluna.in_(restantes)).distinct()
+            )
+            if valor is not None
         )
-        .limit(1)
-    ).first()
-    if tem_lancamento:
-        return True
+        restantes = [conta_id for conta_id in restantes if conta_id not in achados]
+    return achados
 
-    tem_registro = sessao.execute(
-        select(RegistroAdministrativo.id)
-        .where(RegistroAdministrativo.ator_id == alvo_id)
-        .limit(1)
-    ).first()
-    if tem_registro:
-        return True
 
-    for modelo in (RodadaMines, RodadaCrash, RodadaTorre, RodadaDados):
-        tem_rodada = sessao.execute(
-            select(modelo.id).where(modelo.jogador_id == alvo_id).limit(1)
-        ).first()
-        if tem_rodada:
-            return True
-
-    return False
+def _conta_tem_rastro(alvo, sessao):
+    """A conta aparece em alguma linha que precisaria explicá-la depois?"""
+    return alvo.id in _contas_com_rastro([alvo.id], sessao)
 
 
 def _exigir_conta_removivel(alvo, sessao):
@@ -521,9 +535,29 @@ def destino_da_conta(alvo, sessao=None):
     recebido dinheiro.
     """
     sessao = sessao or db.session
-    if alvo.saldo != ZERO or _conta_tem_rastro(alvo, sessao):
-        return "encerrar"
-    return "apagar"
+    return destinos_das_contas([alvo], sessao)[alvo.id]
+
+
+def destinos_das_contas(contas, sessao=None):
+    """O mesmo de :func:`destino_da_conta`, para uma lista inteira.
+
+    Existe porque o painel do Banco Central desenha uma tabela e precisava do
+    destino de cada linha. A **decisão** mora aqui e só aqui — a função de uma
+    conta chama esta com uma lista de um. Duas implementações da mesma regra
+    divergem, e aqui divergir seria oferecer "apagar" numa conta com
+    histórico: o botão que o Benbals tem e que faz saldo sumir.
+    """
+    sessao = sessao or db.session
+    contas = list(contas)
+    com_rastro = _contas_com_rastro([conta.id for conta in contas], sessao)
+    return {
+        conta.id: (
+            "encerrar"
+            if conta.saldo != ZERO or conta.id in com_rastro
+            else "apagar"
+        )
+        for conta in contas
+    }
 
 
 def apagar_conta(alvo, autoridade=None, sessao=None):

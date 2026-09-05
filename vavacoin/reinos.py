@@ -258,19 +258,40 @@ def tirar_operador(reino, pessoa, autoridade=None, sessao=None):
     return papel
 
 
-def eh_operador(reino, pessoa, sessao=None):
+def operadores_ids(reino, sessao=None):
+    """Os ids de quem opera este reino, numa consulta só.
+
+    É a **fonte única** de "quem manda aqui": :func:`eh_operador` e
+    :func:`pode_negociar` saem daqui, e nenhuma das duas tem consulta própria.
+
+    Existe separada porque a tela de operar pergunta isso uma vez por dívida
+    listada. Perguntando ao banco a cada linha, eram onze idas idênticas numa
+    tela só — e o plano grátis tem um worker, então cada ida é fila para a
+    turma inteira.
+    """
+    if reino is None:
+        return frozenset()
+    sessao = sessao or db.session
+    return frozenset(
+        sessao.execute(
+            select(OperadorDoReino.usuario_id).where(
+                OperadorDoReino.reino_id == reino.id
+            )
+        ).scalars()
+    )
+
+
+def eh_operador(reino, pessoa, sessao=None, ids=None):
+    """``ids`` é o conjunto de :func:`operadores_ids`, quando já se tem.
+
+    Passar o conjunto não é uma segunda regra: é a mesma consulta, feita uma
+    vez em vez de uma por linha. Sem ele, a função busca sozinha.
+    """
     if reino is None or pessoa is None or not getattr(pessoa, "id", None):
         return False
-    sessao = sessao or db.session
-    return (
-        sessao.execute(
-            select(OperadorDoReino.id).where(
-                OperadorDoReino.reino_id == reino.id,
-                OperadorDoReino.usuario_id == pessoa.id,
-            )
-        ).first()
-        is not None
-    )
+    if ids is None:
+        ids = operadores_ids(reino, sessao)
+    return pessoa.id in ids
 
 
 def exigir_operador(reino, pessoa, sessao=None):
@@ -846,11 +867,38 @@ def dividas_em_aberto(pessoa, reino=None, sessao=None):
     return list(sessao.execute(consulta.order_by(Divida.id)).scalars())
 
 
+def _somar_devido(dividas, momento=None):
+    """A soma, num lugar só. Quem calcula cada parcela é ``devido()``."""
+    return sum((devido(d, momento=momento) for d in dividas), ZERO)
+
+
 def total_devido(pessoa, reino=None, sessao=None, momento=None):
-    return sum(
-        (devido(d, momento=momento) for d in dividas_em_aberto(pessoa, reino, sessao)),
-        ZERO,
-    )
+    return _somar_devido(dividas_em_aberto(pessoa, reino, sessao), momento)
+
+
+def totais_devidos(reino, pessoas, sessao=None, momento=None):
+    """``{id: total}`` para a lista inteira, numa consulta só.
+
+    Mesmo resultado de chamar :func:`total_devido` pessoa por pessoa — e é
+    isso que a tela de operar fazia, uma ida ao banco por cidadão. A soma e o
+    juro continuam saindo de ``_somar_devido`` e ``devido``: aqui muda quantas
+    vezes se pergunta, não o que se responde.
+    """
+    sessao = sessao or db.session
+    pessoas = list(pessoas)
+    abertas = sessao.execute(
+        select(Divida)
+        .where(Divida.reino_id == reino.id, Divida.quitada_em.is_(None))
+        .order_by(Divida.id)
+    ).scalars()
+
+    por_pessoa = {}
+    for divida in abertas:
+        por_pessoa.setdefault(divida.devedor_id, []).append(divida)
+    return {
+        pessoa.id: _somar_devido(por_pessoa.get(pessoa.id, ()), momento)
+        for pessoa in pessoas
+    }
 
 
 def pagar_divida(divida, quanto=None, sessao=None, momento=None):
@@ -935,7 +983,7 @@ def pagar_divida(divida, quanto=None, sessao=None, momento=None):
 # parciais que já aconteceram continuam no ledger onde sempre estiveram.
 
 
-def pode_negociar(divida, pessoa, sessao=None):
+def pode_negociar(divida, pessoa, sessao=None, ids=None):
     """Quem mexe nesta dívida: o autor da cobrança, se ainda for operador.
 
     Duas condições, e cada uma tapa um buraco:
@@ -955,12 +1003,14 @@ def pode_negociar(divida, pessoa, sessao=None):
     if pessoa is None or not getattr(pessoa, "id", None):
         return False
     reino = divida.reino
-    if not eh_operador(reino, pessoa, sessao):
+    if ids is None:
+        ids = operadores_ids(reino, sessao)
+    if not eh_operador(reino, pessoa, sessao, ids):
         return False
     if divida.cobrada_por_id == pessoa.id:
         return True
     autor = sessao.get(Usuario, divida.cobrada_por_id)
-    return autor is None or not eh_operador(reino, autor, sessao)
+    return autor is None or not eh_operador(reino, autor, sessao, ids)
 
 
 def exigir_credor(divida, pessoa, sessao=None):

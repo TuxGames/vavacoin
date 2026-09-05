@@ -82,6 +82,23 @@ def criar_app(config=Config):
     # CSP e companhia em toda resposta, inclusive nas de erro.
     app.after_request(aplicar_cabecalhos)
 
+    # A tabela de configuração é lida uma vez por requisição, e a memória
+    # dessa leitura mora no `g`. O `g` é do **app context**, não da
+    # requisição: num contexto empilhado (é como os testes rodam, e como o
+    # conftest já documenta para o Flask-Login) ele sobreviveria de uma
+    # requisição para a outra e entregaria valor velho. Limpar aqui torna a
+    # memória per-requisição de verdade, sem depender de como o contexto foi
+    # montado.
+    @app.before_request
+    def _configuracao_fresca_a_cada_requisicao():
+        modelos._esquecer_configuracoes()
+
+    # Estáticos com a versão do conteúdo na URL e cache de um ano. É o que
+    # tira do worker único a rodada de revalidações que toda página abria.
+    from .estaticos import registrar as registrar_estaticos
+
+    registrar_estaticos(app)
+
     # "Sou eu?" é uma pergunta de toda tela que lista gente, e a resposta tem
     # de ser a mesma em todas — ver `ranking.eh_voce`. Global do Jinja, e não
     # context processor, porque não custa consulta nenhuma.

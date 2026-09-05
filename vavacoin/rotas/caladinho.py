@@ -136,6 +136,37 @@ def _eh_dono():
     return conta is not None and conta.id == current_user.id
 
 
+#: Cabeçalho que o ``jogo.js`` manda para pedir a tela em vez do redirect.
+CABECALHO_PARCIAL = "X-VavaCoin-Parcial"
+
+
+def _pediu_parcial():
+    return request.headers.get(CABECALHO_PARCIAL) == "1"
+
+
+def _depois_do_clique(vista, destino, **argumentos):
+    """A resposta de um POST de jogo: a tela pronta, ou o redirect de sempre.
+
+    **Só o transporte muda.** O resultado continua sendo decidido no servidor,
+    a rodada continua resolvendo uma vez só com trava de estado, e o dinheiro
+    continua passando por ``mover()``. O que este atalho evita é a segunda
+    viagem: sem ele, cada clique é POST, redirect e GET — duas idas ao
+    servidor, numa rede de celular, para mostrar uma casa aberta.
+
+    Sem JavaScript nada disso acontece: o cabeçalho não vem, e a resposta é o
+    mesmo POST-redirect-GET de antes. É de propósito que o caminho antigo
+    continue sendo o padrão — ele é o que funciona quando tudo falha.
+
+    A tela renderizada é a **mesma função do GET**, sem parâmetro nenhum: ela
+    já sabe resolver "rodada ativa → última encerrada" sozinha, que é a
+    correção do tabuleiro em branco. Se dependesse do ``?rodada=`` do
+    redirect, este atalho reabriria aquele bug.
+    """
+    if _pediu_parcial():
+        return vista()
+    return redirect(url_for(destino, **argumentos))
+
+
 def _exigir_jogo_no_ar(jogo):
     """Jogo desligado não tem rota. O dono continua vendo, para conferir.
 
@@ -401,7 +432,7 @@ def comecar():
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
-    return redirect(url_for("caladinho.mines"))
+    return _depois_do_clique(mines, "caladinho.mines")
 
 
 @bp.route("/mines/revelar", methods=["POST"])
@@ -425,7 +456,7 @@ def revelar():
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
-    return redirect(url_for("caladinho.mines", rodada=encerrada))
+    return _depois_do_clique(mines, "caladinho.mines", rodada=encerrada)
 
 
 @bp.route("/mines/retirar", methods=["POST"])
@@ -442,7 +473,7 @@ def sacar():
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
-    return redirect(url_for("caladinho.mines", rodada=encerrada))
+    return _depois_do_clique(mines, "caladinho.mines", rodada=encerrada)
 
 
 @bp.route("/crash")
@@ -504,7 +535,7 @@ def crash_comecar():
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
-    return redirect(url_for("caladinho.crash"))
+    return _depois_do_clique(crash, "caladinho.crash")
 
 
 @bp.route("/crash/sacar", methods=["POST"])
@@ -525,7 +556,7 @@ def crash_sacar():
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
-    return redirect(url_for("caladinho.crash", rodada=encerrada))
+    return _depois_do_clique(crash, "caladinho.crash", rodada=encerrada)
 
 
 @bp.route("/torre")
@@ -593,7 +624,7 @@ def torre_comecar():
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
-    return redirect(url_for("caladinho.torre"))
+    return _depois_do_clique(torre, "caladinho.torre")
 
 
 @bp.route("/torre/abrir", methods=["POST"])
@@ -615,7 +646,7 @@ def torre_abrir():
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
-    return redirect(url_for("caladinho.torre", rodada=encerrada))
+    return _depois_do_clique(torre, "caladinho.torre", rodada=encerrada)
 
 
 @bp.route("/torre/sacar", methods=["POST"])
@@ -632,7 +663,7 @@ def torre_sacar():
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
-    return redirect(url_for("caladinho.torre", rodada=encerrada))
+    return _depois_do_clique(torre, "caladinho.torre", rodada=encerrada)
 
 
 @bp.route("/dados")
@@ -701,4 +732,4 @@ def dados_jogar():
     except (ErroDeJogo, ErroMonetario) as erro:
         db.session.rollback()
         flash(str(erro), "erro")
-    return redirect(url_for("caladinho.dados", rodada=rodada_id))
+    return _depois_do_clique(dados, "caladinho.dados", rodada=rodada_id)

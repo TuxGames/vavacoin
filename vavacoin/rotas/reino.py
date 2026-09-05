@@ -57,6 +57,7 @@ from ..reinos import (
     definir_juros,
     eh_cidadao,
     eh_operador,
+    operadores_ids,
     entrar_no_reino,
     operadores,
     pagar_divida,
@@ -65,6 +66,7 @@ from ..reinos import (
     restante,
     sair_do_reino,
     total_devido,
+    totais_devidos,
 )
 
 bp = Blueprint("reino", __name__, url_prefix="/reino")
@@ -356,7 +358,10 @@ def operar(nome):
         abort(403)
 
     lista_de_cidadaos = cidadaos(reino)
-    devidos = {p.id: total_devido(p, reino=reino) for p in lista_de_cidadaos}
+    devidos = totais_devidos(reino, lista_de_cidadaos)
+    # Quem opera o reino, perguntado uma vez: `pode_negociar` consultava isso
+    # a cada dívida da lista.
+    ids_dos_operadores = operadores_ids(reino)
 
     # As dividas que ESTA pessoa pode negociar. A lista sai do que ela
     # criou (ou herdou, quando o autor nao e mais operador), nao do reino
@@ -367,7 +372,7 @@ def operar(nome):
         .where(Divida.reino_id == reino.id, Divida.quitada_em.is_(None))
         .order_by(Divida.id)
     ).scalars():
-        if not pode_negociar(divida, current_user):
+        if not pode_negociar(divida, current_user, ids=ids_dos_operadores):
             continue
         piso, teto = faixa_de_negociacao(divida)
         negociaveis.append((divida, devido(divida), piso, teto))
