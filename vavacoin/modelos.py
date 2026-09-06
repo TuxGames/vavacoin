@@ -1373,6 +1373,89 @@ class Distribuicao(db.Model):
     )
 
 
+#: Quanto cabe num aviso. Aviso é recado, não documento — e o limite é do
+#: servidor, não do campo na tela: campo com ``maxlength`` é conveniência,
+#: quem garante é aqui e o ``CHECK`` da tabela.
+TAMANHO_MAXIMO_DO_AVISO = 500
+
+
+class AvisoDoReino(db.Model):
+    """Um recado do operador para os cidadãos do reino.
+
+    **Texto puro.** Nada aqui é HTML: o que a pessoa escreve é escapado ao
+    aparecer na tela. É conteúdo escrito por uma pessoa e lido por vinte, e o
+    dia em que alguém mandar uma tag é o dia em que se descobre se isso valia.
+
+    **Não move dinheiro e não é lançamento.** Fica fora do ledger de
+    propósito: o ledger explica centavos, e um aviso não é centavo nenhum.
+
+    O ``token`` é UNIQUE pelo mesmo motivo da ``Distribuicao``: o clique duplo
+    não pode virar dois avisos. Aqui não há dinheiro em jogo, mas dois recados
+    idênticos na tela de vinte pessoas é o tipo de coisa que faz o próximo
+    aviso ser ignorado.
+    """
+
+    __tablename__ = "aviso_do_reino"
+
+    id = db.Column(db.Integer, primary_key=True)
+    reino_id = db.Column(
+        db.Integer, db.ForeignKey("reino.id"), nullable=False, index=True
+    )
+    #: Quem escreveu. Uma pessoa com o papel de operador — nunca o cofre, que
+    #: não autentica. Mesma disciplina da cobrança: o reino não fala sozinho.
+    autor_id = db.Column(db.Integer, db.ForeignKey("usuario.id"), nullable=False)
+    texto = db.Column(db.String(TAMANHO_MAXIMO_DO_AVISO), nullable=False)
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    criado_em = db.Column(
+        db.DateTime(timezone=True), nullable=False, default=agora, index=True
+    )
+
+    reino = db.relationship("Reino", foreign_keys=[reino_id])
+    autor = db.relationship("Usuario", foreign_keys=[autor_id])
+
+    __table_args__ = (
+        CheckConstraint("length(trim(texto)) > 0", name="ck_aviso_texto_nao_vazio"),
+        CheckConstraint(
+            f"length(texto) <= {TAMANHO_MAXIMO_DO_AVISO}", name="ck_aviso_tamanho"
+        ),
+    )
+
+    def __repr__(self):
+        return f"<AvisoDoReino {self.id} reino={self.reino_id}>"
+
+
+class AvisoVisto(db.Model):
+    """Esta pessoa já dispensou este aviso.
+
+    Existe para o aviso **sumir da carteira** depois de lido. Aviso que não
+    some vira paisagem em dois dias, e o próximo — o que importa — some junto
+    com ele.
+
+    É por pessoa, e não um "lido" global: o operador não marca nada por
+    ninguém. E é só dispensa de tela; a página do reino continua mostrando.
+    """
+
+    __tablename__ = "aviso_visto"
+
+    id = db.Column(db.Integer, primary_key=True)
+    aviso_id = db.Column(
+        db.Integer, db.ForeignKey("aviso_do_reino.id"), nullable=False, index=True
+    )
+    usuario_id = db.Column(
+        db.Integer, db.ForeignKey("usuario.id"), nullable=False, index=True
+    )
+    visto_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+
+    __table_args__ = (
+        # Marcar como visto duas vezes é o mesmo que uma. O índice faz disso
+        # um fato do banco, e não uma checagem que a rota pode esquecer.
+        db.Index("uq_um_visto_por_pessoa", "aviso_id", "usuario_id", unique=True),
+    )
+
+    def __repr__(self):
+        return f"<AvisoVisto aviso={self.aviso_id} de={self.usuario_id}>"
+
+
 class Divida(db.Model):
     """O que uma pessoa deve a um reino.
 

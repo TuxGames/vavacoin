@@ -25,6 +25,20 @@
   <input type="hidden" name="token" value="{{ token }}">
 
   <div class="card">
+    <div class="section-title"><i class="ti ti-speakerphone" aria-hidden="true"></i>Aviso</div>
+    <form method="post" action="{{ url_for('reino.avisar', nome=reino.nome_normalizado) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <div class="campo">
+        <textarea class="form-control" name="texto" rows="3"
+                  maxlength="{{ tamanho_do_aviso }}"
+                  aria-label="Aviso para o reino" required></textarea>
+      </div>
+      <button type="submit" class="btn btn-gold btn-sm">Enviar</button>
+    </form>
+  </div>
+
+  <div class="card">
     <div class="section-title"><i class="ti ti-user" aria-hidden="true"></i>Cidadãos</div>
     {% if cidadaos %}
       {% for pessoa in cidadaos %}

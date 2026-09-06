@@ -16,7 +16,30 @@
     <dd class="{{ 'text-red' if total > 0 }}">{{ total }}</dd></div>
 </dl>
 
+{% if avisos %}
+<div class="card">
+  <div class="section-title"><i class="ti ti-speakerphone" aria-hidden="true"></i>Avisos</div>
+  {% for aviso in avisos %}
+  <div class="row row-evt aviso-linha">
+    <div class="row-main">
+      <p class="aviso-texto">{{ aviso.texto }}</p>
+      <div class="ei-sub">{{ aviso.autor.nome_exibicao }} &middot;
+        {{ aviso.criado_em.strftime("%d/%m %H:%M") }}</div>
+    </div>
+    {% if aviso.id in apagaveis %}
+    <form method="post" action="{{ url_for('reino.apagar_o_aviso', aviso_id=aviso.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="botao-perigo">apagar</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if dividas %}
+
+
 <div class="card">
   <div class="section-title"><i class="ti ti-ticket" aria-hidden="true"></i>Suas dívidas</div>
   {% for divida, valor, sem_juros in dividas %}

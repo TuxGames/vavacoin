@@ -27,9 +27,17 @@ data sem mudar o byte não deve invalidar o cache de ninguém.
 
 Ler e resumir o arquivo a cada renderização seria trocar rede por disco. O
 resultado fica em memória, chaveado pelo caminho, e é refeito quando o
-``mtime`` muda — em produção nunca muda com o processo no ar; em
-desenvolvimento, muda a cada edição, que é justamente quando se quer ver a
-mudança na hora.
+``mtime`` **ou o tamanho** mudam — em produção nada disso muda com o processo
+no ar; em desenvolvimento, muda a cada edição, que é justamente quando se quer
+ver a mudança na hora.
+
+**O limite dessa chave, dito na cara:** duas escritas dentro do mesmo tique do
+relógio do sistema, com exatamente o mesmo tamanho em bytes, reusariam o
+resumo antigo. No Windows o ``mtime`` tem granularidade grossa o bastante para
+isso acontecer num teste que escreve duas vezes seguidas — foi assim que
+apareceu. Em deploy não acontece: o ``git pull`` carimba a hora corrente e o
+processo reinicia logo depois. Se um dia isso deixar de bastar, a saída é
+resumir o conteúdo sempre e aceitar a leitura de disco.
 """
 
 import hashlib
@@ -55,18 +63,19 @@ def versao(caminho):
     """
     caminho = Path(caminho)
     try:
-        mtime = caminho.stat().st_mtime_ns
+        estado = caminho.stat()
     except OSError:
         return None
+    marca = (estado.st_mtime_ns, estado.st_size)
 
     with _trava:
         gravado = _memoria.get(caminho)
-        if gravado is not None and gravado[0] == mtime:
+        if gravado is not None and gravado[0] == marca:
             return gravado[1]
 
     resumo = hashlib.sha256(caminho.read_bytes()).hexdigest()[:10]
     with _trava:
-        _memoria[caminho] = (mtime, resumo)
+        _memoria[caminho] = (marca, resumo)
     return resumo
 
 

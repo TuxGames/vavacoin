@@ -22,10 +22,19 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from ..erros import ErroMonetario
+from ..avisos import (
+    TAMANHO_MAXIMO_DO_AVISO,
+    apagar_aviso,
+    avisos_do_reino,
+    criar_aviso,
+    marcar_visto,
+    pode_apagar,
+)
+from ..erros import ErroMonetario, ValorInvalido
 from ..extensoes import db
 from ..modelos import (
     CHAVE_REINOS_VISIVEIS,
+    AvisoDoReino,
     Cobranca,
     Divida,
     PedidoDeCidadania,
@@ -167,7 +176,33 @@ def ver(nome):
         operadores=operadores(reino),
         dividas=[(d, devido(d), restante(d)) for d in minhas],
         total=total_devido(current_user, reino=reino),
+        **_avisos_da_tela(reino),
     )
+
+
+def _avisos_da_tela(reino):
+    """Os avisos que ESTA pessoa vê, e quais dela ela pode apagar.
+
+    Quem não é cidadão nem operador não vê nenhum — é o ``LookupError`` que
+    :func:`vavacoin.avisos.avisos_do_reino` levanta, e aqui ele vira lista
+    vazia porque a página do reino é aberta a quem só está olhando.
+
+    O conjunto de operadores sai uma vez e serve para as duas perguntas: sem
+    isso, ``pode_apagar`` consultaria o banco a cada aviso da lista.
+    """
+    ids = operadores_ids(reino)
+    try:
+        lista = avisos_do_reino(reino, current_user, ids=ids)
+    except LookupError:
+        return {"avisos": [], "apagaveis": set()}
+    return {
+        "avisos": lista,
+        "apagaveis": {
+            aviso.id
+            for aviso in lista
+            if pode_apagar(aviso, current_user, ids=ids)
+        },
+    }
 
 
 def _convidaveis(reino):
@@ -390,6 +425,7 @@ def operar(nome):
         juros_min=JUROS_MINIMO,
         juros_max=JUROS_MAXIMO,
         token=_novo_token(),
+        tamanho_do_aviso=TAMANHO_MAXIMO_DO_AVISO,
         absoluta=Cobranca.ABSOLUTA,
         percentual=Cobranca.PERCENTUAL,
     )
@@ -512,3 +548,69 @@ def juros(nome):
         db.session.rollback()
         flash(str(erro), "erro")
     return redirect(url_for("reino.operar", nome=nome))
+
+
+# --- avisos do reino --------------------------------------------------------
+
+
+@bp.route("/<nome>/aviso", methods=["POST"])
+def avisar(nome):
+    """O operador escreve um aviso para os cidadãos.
+
+    O texto é conferido aqui, não no campo da tela: ``maxlength`` no HTML é
+    conveniência de quem digita, não regra. E o token de uso único impede que
+    o clique duplo vire dois recados iguais na tela de vinte pessoas.
+    """
+    reino = _reino_ou_404(nome)
+    # O token gasto volta como None, e None faria `criar_aviso` sortear um
+    # novo — ou seja, o segundo clique criaria o segundo aviso. Aqui ele para.
+    token = _consumir_token(request.form.get("token"))
+    if token is None:
+        flash("Esse aviso já foi enviado.", "erro")
+        return redirect(url_for("reino.operar", nome=nome))
+    try:
+        criar_aviso(reino, current_user, request.form.get("texto"), token=token)
+        db.session.commit()
+        flash("Aviso enviado.", "ok")
+    except (ValorInvalido, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("reino.operar", nome=nome))
+
+
+@bp.route("/aviso/<int:aviso_id>/apagar", methods=["POST"])
+def apagar_o_aviso(aviso_id):
+    aviso = db.session.get(AvisoDoReino, aviso_id)
+    if aviso is None:
+        abort(404)
+    nome = aviso.reino.nome_normalizado
+    try:
+        apagar_aviso(aviso, current_user)
+        db.session.commit()
+        flash("Aviso apagado.", "ok")
+    except (ValorInvalido, ErroMonetario) as erro:
+        db.session.rollback()
+        flash(str(erro), "erro")
+    return redirect(url_for("reino.ver", nome=nome))
+
+
+@bp.route("/aviso/<int:aviso_id>/visto", methods=["POST"])
+def dispensar(aviso_id):
+    """Tira o aviso da carteira desta pessoa. De mais ninguém.
+
+    Só quem enxerga o aviso pode dispensá-lo — senão o número do endereço
+    viraria um jeito de descobrir que avisos existem em reinos alheios.
+    """
+    aviso = db.session.get(AvisoDoReino, aviso_id)
+    if aviso is None:
+        abort(404)
+    try:
+        visiveis = avisos_do_reino(aviso.reino, current_user)
+    except LookupError:
+        abort(404)
+    if aviso.id not in {visivel.id for visivel in visiveis}:
+        abort(404)
+
+    marcar_visto(aviso, current_user)
+    db.session.commit()
+    return redirect(url_for("carteira.minha_carteira"))

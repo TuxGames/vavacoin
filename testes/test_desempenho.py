@@ -316,15 +316,28 @@ def test_o_endereco_do_css_carrega_a_versao(app, bc, turma):
 
 
 def test_a_versao_muda_quando_o_arquivo_muda(app, tmp_path):
+    """É o que torna seguro pedir cache de um ano: conteúdo novo, URL nova."""
+    import os
+
     from vavacoin.estaticos import versao
 
     arquivo = tmp_path / "teste.css"
     arquivo.write_text("a{}", encoding="utf-8")
     primeira = versao(arquivo)
 
-    arquivo.write_text("b{}", encoding="utf-8")
+    arquivo.write_text("body{color:red}", encoding="utf-8")
 
     assert versao(arquivo) != primeira
+
+    # E também quando só o conteúdo muda, com o mesmo tamanho: aqui o mtime
+    # precisa ser distinguível, e é por isso que ele entra na chave. Duas
+    # escritas no mesmo tique do relógio com o mesmo tamanho reusariam o
+    # resumo — limite conhecido, anotado no módulo, inalcançável num deploy.
+    segunda = versao(arquivo)
+    arquivo.write_text("body{color:blue}", encoding="utf-8")
+    os.utime(arquivo, ns=(arquivo.stat().st_atime_ns, arquivo.stat().st_mtime_ns + 10**9))
+
+    assert versao(arquivo) != segunda
 
 
 def test_arquivo_que_nao_existe_nao_derruba_a_tela(app, tmp_path):

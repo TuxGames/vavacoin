@@ -968,3 +968,29 @@ label {
 .tema-caladinho .topbar { background: var(--card); border-bottom-color: var(--border); }
 /* E o casco do cassino usa a tipografia dele, não a do site. */
 .tema-caladinho { font-family: "Segoe UI", system-ui, Roboto, Arial, sans-serif; }
+
+/* ── AVISO DO REINO ──────────────────────────────────────────────────────
+   O recado do operador. Na carteira é um cartão discreto com o botão de
+   dispensar; na página do reino é uma linha da lista. O texto é o que a
+   pessoa escreveu — `white-space: pre-line` preserva as quebras dela sem
+   deixar HTML entrar, porque quem escapa é o Jinja. */
+.cartao-aviso { border-left: 2px solid var(--gold); }
+.aviso-topo {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 10px; margin-bottom: 6px;
+}
+.aviso-de { color: var(--gold); font-size: 12.5px; font-weight: 600; }
+.aviso-quando { color: var(--muted-2); font-size: 12px; font-family: var(--num); }
+.aviso-texto {
+    margin: 0; white-space: pre-line; overflow-wrap: anywhere;
+    font-size: 14.5px; line-height: 1.45;
+}
+.cartao-aviso form { margin: 10px 0 0; }
+.aviso-linha { align-items: flex-start; gap: 12px; }
+.aviso-linha .ei-sub { margin-top: 4px; }
+.botao-discreto {
+    background: none; border: 1px solid var(--border); border-radius: 8px;
+    padding: 4px 14px; font: inherit; font-size: 13px; font-weight: 600;
+    color: var(--muted); cursor: pointer;
+}
+.botao-discreto:hover { color: var(--text); border-color: var(--muted-2); }

@@ -12,6 +12,25 @@
   </div>
 </div>
 
+{% if avisos %}
+{# O que o reino mandou. Nada de texto nosso aqui: a tela diz o que o operador
+   escreveu, o nome dele e a data, e o botão de dispensar. Dispensar é por
+   pessoa e some só da carteira — na página do reino o aviso continua. #}
+{% for aviso in avisos %}
+<div class="card cartao-aviso">
+  <div class="aviso-topo">
+    <span class="aviso-de">{{ aviso.reino.nome }} &middot; {{ aviso.autor.nome_exibicao }}</span>
+    <span class="aviso-quando">{{ aviso.criado_em.strftime("%d/%m") }}</span>
+  </div>
+  <p class="aviso-texto">{{ aviso.texto }}</p>
+  <form method="post" action="{{ url_for('reino.dispensar', aviso_id=aviso.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="botao-discreto">Ok</button>
+  </form>
+</div>
+{% endfor %}
+{% endif %}
+
 <div class="card">
   <div class="section-title"><i class="ti ti-list-details" aria-hidden="true"></i>Extrato</div>
   {% if linhas %}

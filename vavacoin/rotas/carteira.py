@@ -20,6 +20,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ..auditoria import linhas_extrato, resumo_da_conta
+from ..avisos import avisos_pendentes
 from ..dinheiro import para_decimal
 from ..erros import ErroMonetario
 from ..extensoes import db
@@ -28,7 +29,14 @@ from ..formularios import (
     FormularioSaldoPublico,
     FormularioTransferencia,
 )
-from ..modelos import Convite, Transacao, Usuario, buscar_usuario
+from ..modelos import (
+    CHAVE_REINOS_VISIVEIS,
+    Convite,
+    Transacao,
+    Usuario,
+    buscar_usuario,
+    config_ligada,
+)
 from ..operacoes import transferir
 
 bp = Blueprint("carteira", __name__)
@@ -48,6 +56,15 @@ def minha_carteira():
         "carteira.html",
         saldo=current_user.saldo,
         linhas=linhas_extrato(current_user, limite=30),
+        # Aviso do reino é feature de reino: com os reinos desligados pelo
+        # Banco Central, ele some junto. O link some, a rota fecha, e a
+        # carteira não fica mostrando recado de uma parte do site que não
+        # existe mais.
+        avisos=(
+            avisos_pendentes(current_user)
+            if config_ligada(CHAVE_REINOS_VISIVEIS)
+            else []
+        ),
     )
 
 
