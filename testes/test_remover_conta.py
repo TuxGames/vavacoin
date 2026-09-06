@@ -15,13 +15,20 @@ import pytest
 
 from vavacoin.auditoria import conferir_ledger, linhas_extrato
 from vavacoin.caladinho import criar_casa, definir_dono
-from vavacoin.erros import ErroMonetario, MotivoObrigatorio, ValorInvalido
+from vavacoin.erros import (
+    ContaComHistorico,
+    ErroMonetario,
+    MotivoObrigatorio,
+    ValorInvalido,
+)
 from vavacoin.extensoes import db
 from vavacoin.limite import limpar_tudo
 from vavacoin.modelos import PedidoDeCidadania, Transacao, Usuario
 from vavacoin.moeda import supply_emitido
 from vavacoin.operacoes import (
     ajustar_saldo,
+    apagar_conta,
+    destino_da_conta,
     encerrar_conta,
     referencias_da_conta,
     remover_conta,
@@ -445,3 +452,159 @@ def test_gente_comum_nao_abre_a_tela(app, bc, nova_pessoa):
     resposta = cliente.get(f"/painel/conta/{pessoa.id}/remover")
 
     assert resposta.status_code in (302, 403, 404)
+
+
+# --- a conta virgem que só se ligou a um reino -------------------------------
+#
+# O buraco: `apagar_conta` decidia por uma lista escrita à mão, e cidadania não
+# estava nela. Apagar uma conta virgem que entrou num reino estourava em chave
+# estrangeira — um 500 esperando, e cada tabela nova abria mais uma porta.
+#
+# O conserto não foi derivar tudo do metadata: "ter rastro" e "ser
+# referenciado" são perguntas diferentes, e confundi-las tornaria impossível
+# apagar exatamente a conta que o dono quer apagar. O universo vem do
+# metadata; a decisão é escrita, e o teste abaixo obriga a escrevê-la.
+
+
+def test_toda_referencia_a_usuario_esta_classificada(app):
+    """A tranca contra a terceira vez.
+
+    Tabela nova que aponte para ``usuario`` entra sozinha no universo (sai do
+    metadata) e cai em ``RASTRO`` por omissão — o lado seguro, que recusa
+    apagar. Este teste quebra até alguém decidir de propósito o que ela é.
+    """
+    from vavacoin.operacoes import CLASSIFICACAO, referencias_classificadas
+
+    sem_decisao = [
+        f"{tabela.name}.{coluna.name}"
+        for tabela, coluna, _ in referencias_classificadas()
+        if (tabela.name, coluna.name) not in CLASSIFICACAO
+    ]
+
+    assert not sem_decisao, (
+        "estas referências a usuario.id não foram classificadas em "
+        f"CLASSIFICACAO: {sem_decisao}. Decida se são RASTRO (impede apagar), "
+        "ANEXO (some com a conta) ou PAPEL (recusado antes)."
+    )
+
+
+def test_as_categorias_nao_se_misturam(app):
+    """Uma coluna é de uma categoria só, e as três são as únicas que existem."""
+    from vavacoin.operacoes import ANEXO, PAPEL, RASTRO, referencias_classificadas
+
+    categorias = {categoria for _, _, categoria in referencias_classificadas()}
+
+    assert categorias <= {RASTRO, ANEXO, PAPEL}
+
+
+def test_conta_virgem_que_entrou_num_reino_ainda_apaga(app, bc, reino, nova_pessoa):
+    """Entrar num reino não é histórico: não mexeu em dinheiro nenhum."""
+    pessoa = nova_pessoa(nome="testa")
+    entrar_no_reino(reino, pessoa)
+    db.session.commit()
+    conta_id = pessoa.id
+
+    assert destino_da_conta(pessoa) == "apagar"
+    apagar_conta(pessoa, autoridade=bc)
+    db.session.commit()
+
+    assert db.session.get(Usuario, conta_id) is None
+    assert cidadaos(reino) == []
+
+
+def test_apagar_leva_junto_cidadania_pedido_e_aviso_dispensado(
+    app, bc, reino, rei, nova_pessoa
+):
+    """Os vínculos somem com a conta; nenhum deles explica dinheiro."""
+    from vavacoin.avisos import criar_aviso, marcar_visto
+    from vavacoin.modelos import AvisoVisto, Cidadania, PedidoDeCidadania
+
+    pessoa = nova_pessoa(nome="testa")
+    entrar_no_reino(reino, pessoa)
+    aviso = criar_aviso(reino, rei, "reunião")
+    db.session.commit()
+    marcar_visto(aviso, pessoa)
+    db.session.commit()
+    conta_id = pessoa.id
+
+    apagar_conta(pessoa, autoridade=bc)
+    db.session.commit()
+
+    for modelo, coluna in (
+        (Cidadania, Cidadania.usuario_id),
+        (PedidoDeCidadania, PedidoDeCidadania.usuario_id),
+        (AvisoVisto, AvisoVisto.usuario_id),
+    ):
+        sobrou = db.session.execute(
+            db.select(db.func.count()).select_from(modelo).where(coluna == conta_id)
+        ).scalar_one()
+        assert sobrou == 0, f"{modelo.__name__} ficou apontando para ninguém"
+
+
+def test_conta_com_pedido_de_cidadania_aberto_apaga(app, bc, reino, rei, nova_pessoa):
+    """Convite pendurado não é motivo para a conta virar permanente."""
+    pessoa = nova_pessoa(nome="testa")
+    convidar(reino, pessoa, rei)
+    db.session.commit()
+    conta_id = pessoa.id
+
+    apagar_conta(pessoa, autoridade=bc)
+    db.session.commit()
+
+    assert db.session.get(Usuario, conta_id) is None
+
+
+def test_quem_mexeu_em_dinheiro_continua_sendo_encerrado(app, bc, reino, nova_pessoa):
+    """O outro lado da regra: rastro impede apagar, e tem de continuar assim."""
+    pessoa = nova_pessoa(nome="testa", saldo="10.00")
+    entrar_no_reino(reino, pessoa)
+    db.session.commit()
+
+    assert destino_da_conta(pessoa) == "encerrar"
+    with pytest.raises(ContaComHistorico):
+        apagar_conta(pessoa, autoridade=bc)
+
+
+def test_quem_jogou_continua_sendo_encerrado(app, bc, nova_pessoa):
+    """Rodada é rastro mesmo com o saldo de volta em zero."""
+    from vavacoin.caladinho import criar_casa, criar_rodada, revelar_casa
+    from vavacoin.operacoes import ajustar_saldo
+
+    casa = criar_casa(autoridade=bc)
+    db.session.commit()
+    ajustar_saldo(casa, "3000.00", "caixa", autoridade=bc)
+    pessoa = nova_pessoa(nome="joga", saldo="10.00")
+    db.session.commit()
+    rodada = criar_rodada(pessoa, "10.00", minas_escolhidas=24)
+    db.session.commit()
+    revelar_casa(pessoa, rodada.casas_com_mina[0])
+    db.session.commit()
+
+    assert pessoa.saldo == 0
+    assert destino_da_conta(pessoa) == "encerrar"
+
+
+def test_a_sombra_nao_herda_a_cidadania_de_quem_foi_removido(
+    app, bc, reino, nova_pessoa
+):
+    """Sombra é lugar de linha do ledger, não morador de reino."""
+    from vavacoin.modelos import Cidadania
+
+    pessoa = nova_pessoa(nome="testa", saldo="30.00")
+    entrar_no_reino(reino, pessoa)
+    db.session.commit()
+    antes = conservacao()
+
+    remover_conta(pessoa, "teste", autoridade=bc)
+    db.session.commit()
+
+    sombra = db.session.execute(
+        db.select(Usuario).where(Usuario.eh_removida.is_(True))
+    ).scalar_one()
+    assert db.session.execute(
+        db.select(db.func.count())
+        .select_from(Cidadania)
+        .where(Cidadania.usuario_id == sombra.id)
+    ).scalar_one() == 0
+    assert conservacao() == antes
+    assert conferir_ledger()["ok"]

@@ -424,34 +424,98 @@ def ajustar_saldo(alvo, novo_saldo, motivo, autoridade=None, sessao=None):
 #   de quem transacionou com ela continua fazendo sentido.
 
 
-def _colunas_de_rastro():
-    """Toda ponta onde uma conta deixa rastro que precisaria explicá-la depois.
+#: A linha explica dinheiro ou história: apagar a conta deixaria um buraco.
+#: Obriga **encerrar** em vez de apagar.
+RASTRO = "rastro"
 
-    O ledger nas três (origem, destino e ator), o diário do god mode, e as
-    rodadas dos quatro jogos. **Explícita de propósito**, ao contrário de
-    ``_colunas_que_apontam_para_conta``, que sai do metadata: aqui esquecer
-    uma tabela faz uma conta com histórico passar por virgem e ser apagada em
-    silêncio. Quando entrar o quinto jogo, esta lista tem de falhar em revisão
-    de código — não em produção.
+#: A linha só existe por causa da conta e não significa nada sem ela. **Some
+#: junto** quando a conta é apagada.
+ANEXO = "anexo"
+
+#: A conta exerce um papel: cofre, casa, dono, operador. A remoção é
+#: **recusada antes** por ``_exigir_conta_removivel`` — a classificação aqui
+#: só registra que a ponta foi pensada.
+PAPEL = "papel"
+
+#: O que fazer com cada referência a ``usuario.id`` quando se apaga a conta.
+#:
+#: **Por que esta lista existe, se o universo dela sai do metadata.** "Ter
+#: rastro" e "ser referenciado" não são a mesma pergunta, e tratá-las como
+#: se fossem quebra dos dois lados: derivar tudo do metadata tornaria
+#: impossível apagar uma conta virgem que só entrou num reino hoje (a
+#: cidadania é referência e não é rastro), e ignorar o metadata deixa a
+#: tabela nova de amanhã fora da conta em silêncio.
+#:
+#: A saída é separar as duas coisas: **o universo vem do metadata** e
+#: **a decisão é escrita aqui**. Coluna não classificada cai em ``RASTRO``
+#: — o lado seguro, que recusa apagar — e
+#: ``test_toda_referencia_a_usuario_esta_classificada`` quebra até alguém
+#: decidir. Falha fechada em produção, alto em revisão.
+CLASSIFICACAO = {
+    # --- rastro: o ledger e o que explica dinheiro ---
+    ("transacao", "origem_id"): RASTRO,
+    ("transacao", "destino_id"): RASTRO,
+    ("transacao", "ator_id"): RASTRO,
+    ("registro_administrativo", "ator_id"): RASTRO,
+    ("rodada_mines", "jogador_id"): RASTRO,
+    ("rodada_crash", "jogador_id"): RASTRO,
+    ("rodada_torre", "jogador_id"): RASTRO,
+    ("rodada_dados", "jogador_id"): RASTRO,
+    # Dívida é relação entre duas pessoas e sobrevive até a quitação; quem
+    # cobrou, distribuiu ou liquidou decidiu algo que o reino precisa poder
+    # reconstruir depois.
+    ("divida", "devedor_id"): RASTRO,
+    ("divida", "cobrada_por_id"): RASTRO,
+    ("cobranca", "operador_id"): RASTRO,
+    ("distribuicao", "operador_id"): RASTRO,
+    ("liquidacao_de_imposto", "liquidado_por_id"): RASTRO,
+    # O aviso é texto assinado, lido por outras pessoas: sem o autor, a tela
+    # não teria nome para mostrar.
+    ("aviso_do_reino", "autor_id"): RASTRO,
+    # Quem respondeu a um pedido registrou uma decisão do reino.
+    ("pedido_de_cidadania", "respondido_por_id"): RASTRO,
+    # --- anexo: só existe por causa da conta ---
+    ("convite", "usuario_id"): ANEXO,
+    ("cidadania", "usuario_id"): ANEXO,
+    ("pedido_de_cidadania", "usuario_id"): ANEXO,
+    ("pedido_de_cidadania", "criado_por_id"): ANEXO,
+    ("aviso_visto", "usuario_id"): ANEXO,
+    # --- papel: recusado antes de chegar aqui ---
+    ("usuario", "dono_id"): PAPEL,
+    ("reino", "cofre_id"): PAPEL,
+    ("operador_do_reino", "usuario_id"): PAPEL,
+}
+
+
+def referencias_classificadas():
+    """``[(tabela, coluna, categoria)]`` para toda FK para ``usuario.id``.
+
+    O universo sai do metadata — é o que garante que a tabela nova de amanhã
+    apareça aqui sem ninguém lembrar. A categoria sai de :data:`CLASSIFICACAO`,
+    e o que não estiver lá vem como ``RASTRO``, que é o lado que recusa
+    apagar.
     """
-    from .modelos import (
-        RegistroAdministrativo,
-        RodadaCrash,
-        RodadaDados,
-        RodadaMines,
-        RodadaTorre,
-        Transacao,
-    )
-
     return [
-        Transacao.origem_id,
-        Transacao.destino_id,
-        Transacao.ator_id,
-        RegistroAdministrativo.ator_id,
-        RodadaMines.jogador_id,
-        RodadaCrash.jogador_id,
-        RodadaTorre.jogador_id,
-        RodadaDados.jogador_id,
+        (tabela, coluna, CLASSIFICACAO.get((tabela.name, coluna.name), RASTRO))
+        for tabela, coluna in _colunas_que_apontam_para_conta()
+    ]
+
+
+def _colunas_de_rastro():
+    """As pontas cuja existência impede apagar a conta."""
+    return [
+        coluna
+        for _, coluna, categoria in referencias_classificadas()
+        if categoria == RASTRO
+    ]
+
+
+def _colunas_de_anexo():
+    """As pontas que somem junto com a conta."""
+    return [
+        (tabela, coluna)
+        for tabela, coluna, categoria in referencias_classificadas()
+        if categoria == ANEXO
     ]
 
 
@@ -479,6 +543,22 @@ def _contas_com_rastro(ids, sessao):
         )
         restantes = [conta_id for conta_id in restantes if conta_id not in achados]
     return achados
+
+
+def _apagar_anexos(alvo, sessao):
+    """Apaga as linhas que só existem por causa desta conta.
+
+    Convite resgatado, cidadania, pedido de cidadania e marca de aviso
+    dispensado. Nenhuma delas explica dinheiro; todas ficariam apontando para
+    ninguém. É o que faz uma conta virgem que entrou num reino hoje continuar
+    apagável — recusar por causa da cidadania seria transformar "entrou no
+    reino" em histórico, que ele não é.
+    """
+    total = 0
+    for tabela, coluna in _colunas_de_anexo():
+        total += sessao.execute(tabela.delete().where(coluna == alvo.id)).rowcount
+    sessao.flush()
+    return total
 
 
 def _conta_tem_rastro(alvo, sessao):
@@ -596,7 +676,10 @@ def apagar_conta(alvo, autoridade=None, sessao=None):
     detalhe = "conta apagada"
     if convite is not None:
         detalhe = f"conta apagada; convite {convite.codigo} apagado junto"
-        sessao.delete(convite)
+
+    anexos = _apagar_anexos(alvo, sessao)
+    if anexos:
+        detalhe += f"; {anexos} vínculo(s) removido(s) junto"
 
     sessao.delete(alvo)
     sessao.flush()
@@ -850,12 +933,10 @@ def remover_conta(alvo, motivo, autoridade=None, sessao=None):
             encerrar_conta(alvo, motivo, autoridade=bc, sessao=sessao)
 
         nome = alvo.nome_usuario
-        convite = sessao.execute(
-            select(Convite).where(Convite.usuario_id == alvo.id)
-        ).scalar_one_or_none()
-        if convite is not None:
-            sessao.delete(convite)
-            sessao.flush()
+        # O que só existia por causa da conta some; o que explica dinheiro
+        # passa para a sombra. Sem isto a sombra herdaria a cidadania de quem
+        # foi removido e ficaria "morando" num reino.
+        _apagar_anexos(alvo, sessao)
 
         sombra = _nova_sombra(sessao)
         movidas = _reatribuir(alvo, sombra, sessao)
