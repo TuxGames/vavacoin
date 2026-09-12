@@ -14,6 +14,7 @@ from flask import (
     Blueprint,
     abort,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -40,11 +41,12 @@ from ..caladinho import (
     sacar_torre,
     ultima_rodada_torre,
     visao_da_rodada_torre,
-    resolver_crash,
+    liquidar_crash_vencido,
     rodada_crash_ativa,
-    sacar_crash,
     ultima_rodada_crash,
+    ultimas_rodadas,
     visao_da_rodada_crash,
+    visao_do_ciclo,
     dono,
     exposicao_comprometida,
     historico,
@@ -70,7 +72,6 @@ from ..mines import (
 )
 from ..crash import (
     ALVO_MINIMO,
-    SEGUNDOS_PARA_DOBRAR,
     TETO_DO_MULTIPLICADOR as TETO_CRASH,
 )
 from ..dados import (
@@ -98,7 +99,6 @@ from ..jogos import (
 )
 from ..modelos import (
     CHAVE_CAIXA_VISIVEL,
-    RodadaCrash,
     RodadaDados,
     RodadaMines,
     RodadaTorre,
@@ -478,52 +478,87 @@ def sacar():
 
 @bp.route("/crash")
 def crash():
-    """A rodada ativa, o resultado da última encerrada, ou o formulário.
+    """A rodada de agora, a aposta desta pessoa nela, e o histórico de todos.
 
-    Mesma ordem do mines, e pelo mesmo motivo: resultado que só existe no
-    ``?rodada=`` do redirect não sobrevive a rede ruim.
-
-    A diferença é que aqui o GET **resolve** a rodada cujo prazo venceu. Não é
-    sortear na leitura: o ponto de estouro foi sorteado na aposta e o alvo foi
-    declarado junto, então o desfecho já existia — o GET só aplica. Sem isso,
-    fechar a aba deixaria a rodada aberta para sempre, prendendo o caixa da
-    casa na exposição comprometida.
+    O GET **liquida o que já voou**, de todo mundo e não só de quem abriu a
+    tela. Não é sortear na leitura: o desfecho de cada aposta foi decidido no
+    instante em que ela entrou, e o tempo só disse quando escrever. Sem isso,
+    quem fecha a aba deixa ``premio_maximo`` preso na exposição da casa.
     """
     _exigir_jogo_no_ar("crash")
     try:
-        resolver_crash(current_user)
+        liquidar_crash_vencido()
         db.session.commit()
     except (ErroDeJogo, ErroMonetario):
         db.session.rollback()
 
-    rodada = rodada_crash_ativa(current_user)
+    ciclo = visao_do_ciclo()
+    db.session.commit()  # a rodada de agora pode ter acabado de nascer
 
-    encerrada_id = request.args.get("rodada", type=int)
-    if rodada is None and encerrada_id is not None:
-        encerrada = db.session.get(RodadaCrash, encerrada_id)
-        if encerrada is None or encerrada.jogador_id != current_user.id:
-            abort(404)
-        rodada = encerrada
-    elif rodada is None and not request.args.get("nova"):
-        rodada = ultima_rodada_crash(current_user)
-
-    vantagem = rodada.vantagem if rodada is not None else vantagem_do_jogo("crash")
+    minha = rodada_crash_ativa(current_user)
+    if minha is None:
+        ultima = ultima_rodada_crash(current_user)
+        # Só vale mostrar o resultado da rodada que a pessoa acabou de ver
+        # voar. O de uma hora atrás, aparecendo sozinho ao abrir a tela,
+        # parece resultado de uma aposta que ela não fez.
+        if ultima is not None and (
+            ultima.compartilhada is not None
+            and ultima.compartilhada.numero >= ciclo["numero"] - 1
+        ):
+            minha = ultima
 
     return render_template(
         "crash.html",
-        rodada=visao_da_rodada_crash(rodada),
+        ciclo=ciclo,
+        rodada=visao_da_rodada_crash(minha),
         teto=TETO_CRASH,
         alvo_minimo=ALVO_MINIMO,
-        segundos_para_dobrar=SEGUNDOS_PARA_DOBRAR,
-        vantagem=vantagem,
         aposta_max=limite_de_aposta(),
         caixa=_caixa_visivel(),
+        ultimas=ultimas_rodadas(),
         historico=historico_crash(current_user),
     )
 
 
-@bp.route("/crash/comecar", methods=["POST"])
-def crash_comecar():
+@bp.route("/crash/ciclo")
+def crash_ciclo():
+    """O relógio da rodada, e o ponto de estouro **só depois da janela**.
+
+    É o único pedido que o navegador faz durante uma rodada: um JSON pequeno,
+    uma vez por ciclo, com o relógio do servidor, a fase e — quando já não dá
+    mais para apostar — onde o avião explode. Com isso as vinte telas animam a
+    mesma curva sem que o servidor guarde nada por jogador.
+
+    **Não aceita número de rodada, e isso é metade da tranca.** Se aceitasse,
+    bastaria pedir a próxima para saber o futuro e apostar só quando fosse
+    favorável. Aqui só existe uma resposta possível: a de agora.
+
+    Quem decide o que pode sair é :func:`visao_do_ciclo`, não esta rota — a
+    regra mora junto do jogo, e não na camada que só serve HTTP.
+    """
+    _exigir_jogo_no_ar("crash")
+    ciclo = visao_do_ciclo()
+    db.session.commit()
+
+    return jsonify(
+        {
+            # Em milissegundos porque é o que o `Date.now()` do navegador fala.
+            "agora": int(ciclo["agora"] * 1000),
+            "numero": ciclo["numero"],
+            "voa_em": ciclo["voa_em"] * 1000,
+            "acaba_em": ciclo["acaba_em"] * 1000,
+            "dobrar": str(ciclo["dobrar"]),
+            "fase": ciclo["fase"],
+            "da_para_apostar": ciclo["da_para_apostar"],
+            "estouro": None if ciclo["estouro"] is None else str(ciclo["estouro"]),
+            "ultimas": [str(r.ponto_de_estouro) for r in ultimas_rodadas()],
+        }
+    )
+
+
+@bp.route("/crash/apostar", methods=["POST"])
+def crash_apostar():
+    """Entra na rodada de agora. Só durante a janela de aposta."""
     _exigir_jogo_no_ar("crash")
     try:
         criar_rodada_crash(
@@ -536,27 +571,6 @@ def crash_comecar():
         db.session.rollback()
         flash(str(erro), "erro")
     return _depois_do_clique(crash, "caladinho.crash")
-
-
-@bp.route("/crash/sacar", methods=["POST"])
-def crash_sacar():
-    _exigir_jogo_no_ar("crash")
-    encerrada = None
-    try:
-        rodada = sacar_crash(current_user)
-        db.session.commit()
-        if rodada is not None:
-            encerrada = rodada.id
-            if rodada.premio > 0:
-                flash(f"Retirou {rodada.premio} VVC.", "ok")
-    except SemRodadaAtiva:
-        # O mesmo clique chegou duas vezes, ou a rodada foi resolvida pela
-        # leitura da página no meio do caminho. A rede não é erro da pessoa.
-        db.session.rollback()
-    except (ErroDeJogo, ErroMonetario) as erro:
-        db.session.rollback()
-        flash(str(erro), "erro")
-    return _depois_do_clique(crash, "caladinho.crash", rodada=encerrada)
 
 
 @bp.route("/torre")

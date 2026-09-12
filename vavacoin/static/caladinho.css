@@ -237,6 +237,34 @@
 }
 .cal-crash-x { font-size: 1.4rem; font-weight: 700; opacity: .7; }
 .cal-crash-parado { color: var(--cal-vermelho); }
+/* O número da rodada e o quanto falta para a próxima. Discreto: é relógio,
+   não é o placar. */
+.cal-crash-relogio {
+    margin-top: 10px; text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-size: 13px; color: var(--cal-txt-mut);
+}
+/* A fileira de resultados que todo mundo vê igual — metade da graça do jogo
+   é olhar a sequência e achar que dá para adivinhar a próxima. */
+.cal-crash-ultimas {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    justify-content: center; margin-top: 14px;
+}
+.cal-pastilha {
+    font-variant-numeric: tabular-nums;
+    font-size: 12px; font-weight: 700;
+    padding: 3px 8px; border-radius: 999px;
+    border: 1px solid var(--cal-borda);
+}
+.cal-pastilha-alta  { color: var(--cal-verde);    background: rgba(46, 204, 113, .10); }
+.cal-pastilha-baixa { color: var(--cal-vermelho); background: rgba(231, 76, 60, .10); }
+/* O formulário fechado enquanto o avião voa. Fica visível, e visivelmente
+   fora de serviço: some seria pior, porque a tela dançaria a cada rodada. */
+.cal-fieldset { border: none; padding: 0; margin: 0; min-width: 0; }
+.cal-fieldset:disabled { opacity: .45; }
+/* O "Atualizar" é a saída de quem está sem JavaScript. Com script ele não
+   serve para nada, e o próprio script o esconde. */
+.crash-com-script .cal-sem-script { display: none; }
 
 /* ── Torre ──
    Do topo para o térreo. Cada andar é uma faixa com o multiplicador à

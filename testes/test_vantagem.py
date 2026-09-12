@@ -451,7 +451,9 @@ def test_a_casa_paga_de_verdade_o_que_prometeu_no_evento(app, bc, cassino):
 
 
 @pytest.mark.parametrize("pct", ["2.50", "-2.50", "7.25", "0.01", "-0.01"])
-def test_vantagem_com_centavos_funciona_nos_quatro_jogos(app, bc, cassino, pct):
+def test_vantagem_com_centavos_funciona_nos_quatro_jogos(
+    app, bc, cassino, pct, relogio
+):
     """O campo aceita ``step="0.01"``, então 2,50% é digitável — e quebrava.
 
     ``fator_de(2.50)`` vale ``0.975``, com três casas. O sorteio do crash
@@ -478,6 +480,9 @@ def test_vantagem_com_centavos_funciona_nos_quatro_jogos(app, bc, cassino, pct):
     db.session.commit()
     retirar_ou_ignorar(cassino["ana"])
 
+    # O crash só aceita aposta dentro da janela da rodada de agora, e a
+    # rodada é o relógio: sem prendê-lo, este teste passaria ou não conforme
+    # a hora em que a suíte rodasse.
     criar_rodada_crash(cassino["ana"], "1.00", "2.00")
     db.session.commit()
 

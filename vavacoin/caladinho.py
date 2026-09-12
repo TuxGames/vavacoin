@@ -29,8 +29,7 @@ Três coisas que este módulo não deixa acontecer:
 """
 
 import secrets
-from datetime import timedelta, timezone
-from decimal import Decimal
+from datetime import timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -49,14 +48,22 @@ from .erros import (
 )
 from .extensoes import db
 from .crash import (
-    MULTIPLICADOR_INICIAL as MULTIPLICADOR_INICIAL_CRASH,
+    DURACAO_DO_CICLO,
+    JANELA_DE_APOSTA,
+    SEGUNDOS_PARA_DOBRAR,
     TETO_DO_MULTIPLICADOR as TETO_CRASH,
+    comeco_do_voo,
+    da_para_apostar,
+    fase_da_rodada,
+    fim_do_ciclo,
     ganhou as crash_ganhou,
-    multiplicador_no_tempo,
+    inicio_da_rodada,
+    numero_da_rodada,
+    ponto_de_estouro_da_rodada,
     premio_maximo as premio_maximo_crash,
-    segundos_para_multiplicador,
-    sortear_ponto_de_estouro,
+    segundos_de_voo,
     validar_alvo,
+    voo_terminou,
 )
 from .dados import (
     ganhou as ganhou_nos_dados,
@@ -84,8 +91,10 @@ from .mines import (
     validar_minas,
 )
 from .modelos import (
-    com_fuso,
+    config_texto,
+    definir_config_texto,
     RodadaCrash,
+    RodadaCrashCompartilhada,
     RodadaDados,
     RodadaMines,
     RodadaTorre,
@@ -340,13 +349,41 @@ def exposicao_comprometida(sessao=None):
     return total
 
 
-def limite_de_aposta(sessao=None):
-    """Maior aposta aceita agora. Não depende do número de minas."""
+def limite_de_aposta(sessao=None, travar=False):
+    """Maior aposta aceita agora. Não depende do número de minas.
+
+    ``travar`` é para quem vai **decidir** em cima da resposta. Sem ele, duas
+    apostas simultâneas leem o mesmo caixa e a mesma exposição, cada uma se
+    acha dentro do limite, e as duas passam — a exposição somada estoura a
+    banca justamente quando muita gente aposta junto, que é o caso para o qual
+    o limite existe. Travar a linha da casa serializa as duas leituras, como
+    ``_encerrar_*`` já faz antes de pagar.
+
+    Continua solto na leitura de tela: desenhar a página não decide nada, e
+    tomar lock de linha em todo GET faria as telas esperarem umas pelas
+    outras à toa.
+    """
     sessao = sessao or db.session
-    conta = casa(sessao)
+    conta = casa(sessao, travada=travar)
     if conta is None:
         return ZERO
     return aposta_maxima(conta.saldo, comprometido=exposicao_comprometida(sessao))
+
+
+def exigir_que_caiba_na_banca(aposta, sessao):
+    """Recusa a aposta que a casa não aguenta agora. Uma regra, um lugar.
+
+    Os quatro jogos passam por aqui: a regra de banca é uma só do dono, e
+    quatro cópias da mesma checagem é como uma delas fica para trás no dia em
+    que o limite mudar.
+
+    A recusa diz o número e para. Quem está apostando quer saber quanto cabe,
+    não ler um parágrafo sobre exposição comprometida.
+    """
+    maximo = limite_de_aposta(sessao, travar=True)
+    if aposta > maximo:
+        raise ApostaAlta(f"Aposta máxima agora: {maximo} VVC")
+    return maximo
 
 
 # --- rodada -----------------------------------------------------------------
@@ -455,10 +492,7 @@ def criar_rodada(jogador, aposta, minas_escolhidas, sessao=None):
     if travado.saldo < aposta:
         raise ValorInvalido(f"você tem {travado.saldo} VVC")
 
-    # Teto de banca, com o caixa real e descontando as rodadas ativas.
-    maximo = limite_de_aposta(sessao)
-    if aposta > maximo:
-        raise ApostaAlta(f"aposta máxima para o caixa de agora: {maximo} VVC")
+    exigir_que_caiba_na_banca(aposta, sessao)
 
     minas = sorted(secrets.SystemRandom().sample(range(CASAS), minas_escolhidas))
     rodada = RodadaMines(
@@ -724,19 +758,112 @@ def visao_da_rodada(rodada):
 
 # --- crash ------------------------------------------------------------------
 #
-# O crash não tem tabuleiro: o que ele guarda de segredo é o ponto de estouro,
-# sorteado na aposta. E não tem "clique que revela": o resultado já está
-# decidido quando a rodada nasce, e o que o tempo faz é só chegar nele.
+# O crash é o único jogo do Caladinho em que a rodada não é de ninguém: ela é
+# do relógio, e todo mundo aposta na mesma. O que muda em relação aos outros:
 #
-# Por isso a liquidação aqui é **preguiçosa**: quem lê a página aplica o
-# desfecho de uma rodada cujo prazo venceu. Não é sortear no GET — é aplicar
-# uma decisão de antes, e aplicar tarde dá o mesmo resultado que aplicar na
-# hora. Sem isso, fechar a aba deixaria a rodada aberta para sempre, prendendo
-# o caixa da casa em `exposicao_comprometida`.
+# - a rodada existe como ideia (`floor(epoch / ciclo)`) antes de existir como
+#   linha, e a linha só nasce para congelar a vantagem e guardar o estouro;
+# - o estouro é DERIVADO de um segredo do servidor, não sorteado por aposta,
+#   e por isso é o mesmo para os vinte celulares sem o servidor guardar nada
+#   por jogador;
+# - não existe botão de sacar. O alvo é declarado na aposta e o servidor
+#   resolve sozinho. Sem clique, o navegador pode saber a curva inteira sem
+#   isso virar dinheiro de graça — e ninguém perde por lag de rede.
+#
+# A liquidação é **preguiçosa**, na leitura: quem abre a tela fecha as apostas
+# cujo voo já acabou, de todo mundo e não só as suas. Sem isso, quem fechou a
+# aba deixaria `premio_maximo` preso na exposição comprometida para sempre.
+
+
+#: Onde o segredo que gera os estouros mora. É do servidor e não sai dele.
+CHAVE_SEGREDO_CRASH = "caladinho_crash_segredo"
+
+
+def segredo_do_crash(sessao=None):
+    """O segredo que gera o ponto de estouro das rodadas. Nasce sozinho.
+
+    Não é a ``SECRET_KEY``, de propósito. Aquela tem outro dono e outro ciclo
+    de troca, e a do repositório é pública — derivar o estouro dela deixaria
+    qualquer pessoa que lesse o código calcular onde o avião explode em
+    desenvolvimento, e amarraria a honestidade do jogo à rotação de uma chave
+    que se troca por motivo nenhum relacionado a isto.
+
+    Gerado na primeira vez que alguém olha o crash e guardado como
+    configuração, porque ele precisa sobreviver a reinício: se mudasse a cada
+    processo, dois workers discordariam sobre a mesma rodada.
+
+    Trocar este valor muda todas as rodadas futuras e **nenhuma passada** — as
+    que já existem têm o estouro gravado na própria linha.
+    """
+    sessao = sessao or db.session
+    guardado = config_texto(CHAVE_SEGREDO_CRASH, sessao=sessao)
+    if guardado:
+        return guardado
+    novo = secrets.token_hex(32)
+    definir_config_texto(CHAVE_SEGREDO_CRASH, novo, sessao=sessao)
+    return novo
+
+
+def epoch_de(momento=None):
+    """O instante como segundos desde a época, que é a régua do ciclo."""
+    return (momento or agora()).timestamp()
+
+
+def rodada_compartilhada(numero, sessao=None):
+    """A rodada daquela janela do relógio, criando a linha se ainda não houver.
+
+    Criar é idempotente por construção: o ponto de estouro é derivado do
+    segredo e do número, então duas requisições simultâneas que criem a mesma
+    rodada chegam ao **mesmo** valor. A corrida perde no índice único e a
+    perdedora relê — sem o risco, que existiria com sorteio, de duas curvas
+    diferentes disputarem a mesma janela.
+
+    A vantagem é congelada aqui. Isto acontece no primeiro toque da rodada,
+    que é durante a janela de aposta: quem chega depois joga com a vantagem
+    que valia quando a janela abriu, e o dono mexendo no painel no meio do voo
+    não muda onde o avião explode.
+    """
+    sessao = sessao or db.session
+    numero = int(numero)
+    existente = sessao.execute(
+        select(RodadaCrashCompartilhada).where(
+            RodadaCrashCompartilhada.numero == numero
+        )
+    ).scalar_one_or_none()
+    if existente is not None:
+        return existente
+
+    vantagem_da_rodada = vantagem_vigente("crash", sessao)
+    rodada = RodadaCrashCompartilhada(
+        numero=numero,
+        vantagem=vantagem_da_rodada,
+        ponto_de_estouro=ponto_de_estouro_da_rodada(
+            segredo_do_crash(sessao), numero, fator_de(vantagem_da_rodada)
+        ),
+    )
+    sessao.add(rodada)
+    try:
+        sessao.flush()
+    except IntegrityError:
+        # Outra requisição criou a mesma rodada primeiro. Ela chegou ao mesmo
+        # estouro — a derivação não depende de quem chamou —, então basta ler
+        # a que ficou.
+        sessao.rollback()
+        return sessao.execute(
+            select(RodadaCrashCompartilhada).where(
+                RodadaCrashCompartilhada.numero == numero
+            )
+        ).scalar_one()
+    return rodada
+
+
+def rodada_compartilhada_de_agora(sessao=None, momento=None):
+    """A rodada que está correndo neste instante."""
+    return rodada_compartilhada(numero_da_rodada(epoch_de(momento)), sessao)
 
 
 def rodada_crash_ativa(jogador, sessao=None, travada=False):
-    """A rodada de crash em andamento do jogador, se houver."""
+    """A aposta de crash em andamento do jogador, se houver."""
     sessao = sessao or db.session
     jogador_id = jogador.id if isinstance(jogador, Usuario) else jogador
     consulta = (
@@ -753,7 +880,7 @@ def rodada_crash_ativa(jogador, sessao=None, travada=False):
 
 
 def ultima_rodada_crash(jogador, sessao=None):
-    """A rodada de crash encerrada mais recente, para a tela ter o que mostrar.
+    """A aposta encerrada mais recente, para a tela ter o que mostrar.
 
     Mesma lição do mines: resultado que só existe no parâmetro do redirect não
     sobrevive a rede ruim.
@@ -775,19 +902,13 @@ def ultima_rodada_crash(jogador, sessao=None):
     )
 
 
-def segundos_decorridos(rodada, momento=None):
-    """Há quanto tempo a rodada começou, pelo relógio do servidor."""
-    momento = momento or agora()
-    inicio = com_fuso(rodada.iniciada_em)
-    return Decimal(str((momento - inicio).total_seconds()))
+def criar_rodada_crash(jogador, aposta, alvo, sessao=None, momento=None):
+    """Entra na rodada que está correndo. Só durante a janela de aposta.
 
-
-def criar_rodada_crash(jogador, aposta, alvo, sessao=None):
-    """Começa a rodada, sorteia o estouro e cobra a aposta.
-
-    Mesma ordem do mines: tudo que pode recusar é conferido **antes** de o
-    dinheiro sair. O ponto de estouro é sorteado aqui, com ``secrets``, e não
-    vai para o cliente enquanto a rodada viver.
+    Mesma ordem dos outros jogos: tudo que pode recusar é conferido **antes**
+    de o dinheiro sair. O que é próprio daqui é a janela — depois que o avião
+    levanta, a aposta não entra, porque a essa altura o estouro já foi
+    entregue para as telas e apostar sabendo o resultado não é apostar.
     """
     sessao = sessao or db.session
     conta_da_casa = exigir_casa(sessao)
@@ -807,30 +928,41 @@ def criar_rodada_crash(jogador, aposta, alvo, sessao=None):
     if aposta <= ZERO:
         raise ValorInvalido("a aposta precisa ser maior que zero")
 
+    instante = epoch_de(momento)
+    numero = numero_da_rodada(instante)
+    if not da_para_apostar(numero, instante):
+        raise ValorInvalido("a janela desta rodada fechou")
+
+    # Fecha o que já venceu antes de olhar a exposição: sem isto, a aposta da
+    # rodada passada continuaria reservando caixa que já é da casa de novo, e
+    # o limite ficaria menor do que a verdade.
+    liquidar_crash_vencido(sessao=sessao, momento=momento)
+
+    compartilhada = rodada_compartilhada(numero, sessao)
+
     travado = sessao.execute(
         select(Usuario).where(Usuario.id == jogador.id).with_for_update()
     ).scalar_one()
 
     if rodada_crash_ativa(jogador, sessao) is not None:
-        raise RodadaEmAndamento("você já tem uma rodada em andamento")
+        raise RodadaEmAndamento("você já tem uma aposta nesta rodada")
 
     if travado.saldo < aposta:
         raise ValorInvalido(f"você tem {travado.saldo} VVC")
 
-    maximo = limite_de_aposta(sessao)
-    if aposta > maximo:
-        raise ApostaAlta(f"aposta máxima para o caixa de agora: {maximo} VVC")
+    exigir_que_caiba_na_banca(aposta, sessao)
 
-    vantagem_da_rodada = vantagem_vigente("crash", sessao)
     rodada = RodadaCrash(
         jogador_id=jogador.id,
         aposta=aposta,
         reino_id=_reino_do_jogador(jogador, sessao),
-        vantagem=vantagem_da_rodada,
+        # A vantagem que vale é a da RODADA, não a do painel de agora: ela é
+        # quem gerou o estouro, e cobrar a aposta por outra seria pagar por
+        # uma curva diferente da que está na tela.
+        vantagem=compartilhada.vantagem,
+        ponto_de_estouro=compartilhada.ponto_de_estouro,
+        compartilhada_id=compartilhada.id,
         alvo=alvo,
-        ponto_de_estouro=sortear_ponto_de_estouro(
-            fator_de(vantagem_da_rodada), secrets.SystemRandom()
-        ),
         estado=RodadaCrash.ATIVA,
         multiplicador=ZERO,
         premio=ZERO,
@@ -841,14 +973,14 @@ def criar_rodada_crash(jogador, aposta, alvo, sessao=None):
         sessao.flush()
     except IntegrityError as erro:
         sessao.rollback()
-        raise RodadaEmAndamento("você já tem uma rodada em andamento") from erro
+        raise RodadaEmAndamento("você já tem uma aposta nesta rodada") from erro
 
     transacao = mover(
         jogador,
         conta_da_casa,
         aposta,
         tipo=TIPO_APOSTA_CRASH,
-        motivo=f"crash #{rodada.id}",
+        motivo=f"crash #{compartilhada.numero}",
         sessao=sessao,
     )
     rodada.transacao_aposta_id = transacao.id
@@ -857,15 +989,17 @@ def criar_rodada_crash(jogador, aposta, alvo, sessao=None):
 
 
 def _encerrar_crash(rodada, estado, multiplicador, premio, sessao):
-    """Fecha a rodada e paga, se houver o que pagar. Idempotente.
+    """Fecha a aposta e paga, se houver o que pagar. Idempotente.
 
     O estado vira o final **antes** do pagamento, por ``UPDATE`` condicional:
-    duas requisições juntas, só uma passa da trava, e só ela paga.
+    duas requisições juntas, só uma passa da trava, e só ela paga. É o que
+    segura a liquidação preguiçosa sendo chamada por vinte telas ao mesmo
+    tempo quando a rodada acaba.
 
-    ``multiplicador`` e ``premio`` vêm SEPARADOS de propósito. Na rodada
+    ``multiplicador`` e ``premio`` vêm SEPARADOS de propósito. Na aposta
     perdida o multiplicador guardado é o ponto de estouro — é o número que a
     tela mostra e que responde "onde foi que estourou?" —, mas o prêmio é
-    zero. Enquanto o prêmio era derivado do multiplicador, a rodada estourada
+    zero. Enquanto o prêmio era derivado do multiplicador, a aposta estourada
     pagava como se tivesse ganhado.
     """
 
@@ -904,21 +1038,14 @@ def _encerrar_crash(rodada, estado, multiplicador, premio, sessao):
     return rodada
 
 
-def resolver_crash(jogador, sessao=None, momento=None):
-    """Aplica o desfecho de uma rodada cujo prazo já venceu. Não sorteia nada.
+def _aplicar_desfecho(rodada, sessao):
+    """Aplica o que já estava decidido na aposta. Não sorteia nada.
 
-    Chamada na leitura da página. Se a rodada ainda não chegou nem ao alvo nem
-    ao estouro, não faz nada e devolve a rodada como está.
+    ``alvo <= estouro`` foi resolvido no instante em que a aposta entrou; o
+    tempo só decidiu **quando** isto seria escrito. Aplicar tarde dá o mesmo
+    resultado que aplicar na hora, e é por isso que a liquidação preguiçosa
+    não é um sorteio no GET.
     """
-    sessao = sessao or db.session
-    rodada = rodada_crash_ativa(jogador, sessao, travada=True)
-    if rodada is None:
-        return None
-
-    decisivo = min(rodada.alvo, rodada.ponto_de_estouro)
-    if segundos_decorridos(rodada, momento) < segundos_para_multiplicador(decisivo):
-        return rodada
-
     if crash_ganhou(rodada.alvo, rodada.ponto_de_estouro):
         return _encerrar_crash(
             rodada,
@@ -927,57 +1054,72 @@ def resolver_crash(jogador, sessao=None, momento=None):
             quantizar_para_baixo(rodada.aposta * rodada.alvo),
             sessao,
         )
-    # Perdeu: o multiplicador guardado é onde estourou, e o prêmio é zero.
     return _encerrar_crash(
         rodada, RodadaCrash.ESTOURADA, rodada.ponto_de_estouro, ZERO, sessao
     )
 
 
-def sacar_crash(jogador, sessao=None, momento=None):
-    """Saque manual: sair ANTES do alvo, pelo número de agora.
+def _voo_acabou(rodada, momento=None):
+    """O voo da rodada desta aposta já terminou?
 
-    Validado contra o relógio do servidor, nunca contra o do navegador. O
-    cliente só anima; quem diz onde a curva está é este método.
+    Aposta sem rodada compartilhada é das antigas, de quando cada uma tinha a
+    própria curva. Ela responde **sim**: o desfecho dela já estava decidido, e
+    deixá-la aberta seria prender caixa por uma rodada que ninguém mais vai
+    assistir.
+    """
+    if rodada.compartilhada_id is None:
+        return True
+    compartilhada = rodada.compartilhada
+    return voo_terminou(
+        compartilhada.numero, compartilhada.ponto_de_estouro, epoch_de(momento)
+    )
 
-    Três desfechos, e nenhum depende de o POST chegar rápido:
 
-    - a curva já passou do alvo (ou do estouro) → a rodada é resolvida pelo
-      que estava decidido desde a aposta, e o clique não muda nada;
-    - a curva está no meio → paga pelo multiplicador de agora, que é menor que
-      o alvo.
+def liquidar_crash_vencido(sessao=None, momento=None):
+    """Fecha toda aposta cujo voo já acabou — de todo mundo, não só de quem lê.
 
-    É este desenho que tira a rede do caminho: quem declarou alvo e não clica
-    tem risco zero, e quem clica no braço só pode ganhar menos do que o alvo,
-    nunca perder a rodada por causa de 250 ms de atraso.
+    É o mesmo serviço que a expiração da torre presta: o caixa da casa não
+    pode ficar preso porque alguém fechou a aba. A diferença é que aqui não há
+    prazo de inatividade nenhum a cumprir — o voo acabou para todos ao mesmo
+    tempo, porque a rodada é a mesma.
+    """
+    sessao = sessao or db.session
+    encerradas = []
+    for rodada in sessao.execute(
+        select(RodadaCrash).where(RodadaCrash.estado == RodadaCrash.ATIVA)
+    ).scalars():
+        if not _voo_acabou(rodada, momento):
+            continue
+        try:
+            encerradas.append(_aplicar_desfecho(rodada, sessao))
+        except SemRodadaAtiva:
+            # Outra tela fechou esta aposta entre a leitura e o UPDATE. É o
+            # caminho normal quando vinte celulares liquidam a mesma rodada.
+            continue
+    return encerradas
+
+
+def resolver_crash(jogador, sessao=None, momento=None):
+    """Aplica o desfecho da aposta deste jogador, se o voo já tiver acabado.
+
+    Existe separada da liquidação geral porque o interruptor do jogo a chama
+    por jogador, e porque a tela quer saber o que aconteceu com **a sua**
+    aposta sem depender de ter varrido as dos outros.
     """
     sessao = sessao or db.session
     rodada = rodada_crash_ativa(jogador, sessao, travada=True)
     if rodada is None:
-        raise SemRodadaAtiva("nenhuma rodada em andamento")
-
-    decorridos = segundos_decorridos(rodada, momento)
-    decisivo = min(rodada.alvo, rodada.ponto_de_estouro)
-
-    # O prazo da rodada venceu: o desfecho é o de sempre, e o clique chegou
-    # tarde demais para mudar alguma coisa. Não é punição — é o alvo (ou o
-    # estouro) tendo acontecido primeiro.
-    if decorridos >= segundos_para_multiplicador(decisivo):
-        return resolver_crash(jogador, sessao=sessao, momento=momento)
-
-    agora_na_curva = multiplicador_no_tempo(decorridos)
-    if agora_na_curva < MULTIPLICADOR_INICIAL_CRASH:
-        agora_na_curva = MULTIPLICADOR_INICIAL_CRASH
-    return _encerrar_crash(
-        rodada,
-        RodadaCrash.RETIRADA,
-        agora_na_curva,
-        quantizar_para_baixo(rodada.aposta * agora_na_curva),
-        sessao,
-    )
+        return None
+    if not _voo_acabou(rodada, momento):
+        return rodada
+    try:
+        return _aplicar_desfecho(rodada, sessao)
+    except SemRodadaAtiva:
+        return rodada
 
 
 def historico_crash(jogador, limite=15, sessao=None):
-    """Rodadas de crash encerradas, da mais recente para a mais antiga."""
+    """As apostas encerradas do jogador, da mais recente para a mais antiga."""
     sessao = sessao or db.session
     return list(
         sessao.execute(
@@ -992,18 +1134,48 @@ def historico_crash(jogador, limite=15, sessao=None):
     )
 
 
-def visao_da_rodada_crash(rodada, momento=None):
-    """O que a tela pode mostrar.
+def ultimas_rodadas(limite=12, sessao=None, momento=None):
+    """As rodadas compartilhadas que já voaram, da mais recente para trás.
 
-    Enquanto a rodada vive, ``ponto_de_estouro`` é ``None``: é o segredo do
-    servidor, e entregá-lo seria entregar o jogo. O que a tela recebe para
-    animar é há quanto tempo a rodada começou e qual o alvo — com isso o
-    cliente desenha a curva sem saber onde ela para.
+    É o histórico que todo mundo vê igual, e é metade da graça do jogo — a
+    fileira de números que diz se a última hora foi de avião subindo ou de
+    explosão no 1,0×.
+
+    **Só entra rodada cujo voo acabou.** A de agora não aparece: durante a
+    janela de aposta isso entregaria o estouro, que é exatamente o que não
+    pode sair daqui.
+    """
+    sessao = sessao or db.session
+    instante = epoch_de(momento)
+    atual = numero_da_rodada(instante)
+    candidatas = list(
+        sessao.execute(
+            select(RodadaCrashCompartilhada)
+            .where(RodadaCrashCompartilhada.numero <= atual)
+            .order_by(RodadaCrashCompartilhada.numero.desc())
+            .limit(limite + 1)
+        ).scalars()
+    )
+    voadas = [
+        r
+        for r in candidatas
+        if voo_terminou(r.numero, r.ponto_de_estouro, instante)
+    ]
+    return voadas[:limite]
+
+
+def visao_da_rodada_crash(rodada, momento=None):
+    """O que a tela pode mostrar da aposta de uma pessoa.
+
+    Enquanto a aposta vive, ``ponto_de_estouro`` é ``None``: é o segredo do
+    servidor, e entregá-lo seria entregar o jogo.
     """
     if rodada is None:
         return None
+    compartilhada = rodada.compartilhada
     return {
         "id": rodada.id,
+        "numero": compartilhada.numero if compartilhada is not None else None,
         "estado": rodada.estado,
         "encerrada": rodada.encerrada,
         "aposta": rodada.aposta,
@@ -1011,8 +1183,50 @@ def visao_da_rodada_crash(rodada, momento=None):
         "alvo": rodada.alvo,
         "multiplicador": rodada.multiplicador,
         "premio": rodada.premio,
-        "decorridos": segundos_decorridos(rodada, momento),
         "ponto_de_estouro": rodada.ponto_de_estouro if rodada.encerrada else None,
+    }
+
+
+def visao_do_ciclo(sessao=None, momento=None):
+    """O que a tela precisa saber sobre a rodada de agora.
+
+    **O ponto de estouro só entra depois que a janela de aposta fecha.** É a
+    regra de segurança da feature inteira, e ela mora aqui, num lugar só: quem
+    souber onde a rodada explode enquanto ainda dá para apostar aposta apenas
+    quando é favorável e ganha sempre.
+
+    Não existe parâmetro para escolher a rodada, e isso é a metade da tranca
+    que costuma ser esquecida: com um número no caminho, bastaria pedir a
+    seguinte para saber o futuro. Aqui só se responde sobre agora.
+
+    ``agora`` vai junto porque o relógio do navegador não é confiável — ele
+    pode estar minutos fora. O cliente mede o próprio desvio contra este
+    número e anima em cima do relógio do servidor, que é o mesmo que decide o
+    resultado.
+    """
+    sessao = sessao or db.session
+    instante = epoch_de(momento)
+    numero = numero_da_rodada(instante)
+    rodada = rodada_compartilhada(numero, sessao)
+
+    janela_aberta = da_para_apostar(numero, instante)
+    estouro = None if janela_aberta else rodada.ponto_de_estouro
+
+    return {
+        "agora": instante,
+        "numero": numero,
+        "abre_em": inicio_da_rodada(numero),
+        "voa_em": comeco_do_voo(numero),
+        "acaba_em": fim_do_ciclo(numero),
+        "ciclo": DURACAO_DO_CICLO,
+        "janela": JANELA_DE_APOSTA,
+        "dobrar": SEGUNDOS_PARA_DOBRAR,
+        "teto": TETO_CRASH,
+        "vantagem": rodada.vantagem,
+        "da_para_apostar": janela_aberta,
+        "fase": fase_da_rodada(numero, instante, estouro),
+        "estouro": estouro,
+        "decorridos": segundos_de_voo(numero, instante),
     }
 
 
@@ -1116,9 +1330,7 @@ def criar_rodada_torre(jogador, aposta, portas, sessao=None):
     if travado.saldo < aposta:
         raise ValorInvalido(f"você tem {travado.saldo} VVC")
 
-    maximo = limite_de_aposta(sessao)
-    if aposta > maximo:
-        raise ApostaAlta(f"aposta máxima para o caixa de agora: {maximo} VVC")
+    exigir_que_caiba_na_banca(aposta, sessao)
 
     vantagem_da_rodada = vantagem_vigente("torre", sessao)
     sorteio = secrets.SystemRandom()
@@ -1428,9 +1640,7 @@ def jogar_dados(jogador, aposta, sentido, alvo, sessao=None, aleatorio=None):
     if travado.saldo < aposta:
         raise ValorInvalido(f"você tem {travado.saldo} VVC")
 
-    maximo = limite_de_aposta(sessao)
-    if aposta > maximo:
-        raise ApostaAlta(f"aposta máxima para o caixa de agora: {maximo} VVC")
+    exigir_que_caiba_na_banca(aposta, sessao)
 
     fator_pago = multiplicador_pagavel_dados(sentido, alvo, fator)
     premio_possivel = quantizar_para_baixo(aposta * fator_pago)

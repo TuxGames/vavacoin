@@ -688,6 +688,52 @@ class RodadaMines(db.Model):
         return f"<RodadaMines {self.id} {self.estado} aposta={self.aposta}>"
 
 
+class RodadaCrashCompartilhada(db.Model):
+    """A rodada de crash que todo mundo vê — uma por janela do relógio.
+
+    **Ela não é criada por ninguém; ela é o relógio.** O ``numero`` é
+    ``floor(epoch / DURACAO_DO_CICLO)``, então a rodada existe como ideia antes
+    de existir como linha, e qualquer processo sabe qual é sem perguntar.
+
+    A linha existe por dois motivos, e nenhum deles é "guardar a rodada":
+
+    1. **Congelar a vantagem.** O estouro é derivado do fator, que vem da
+       vantagem. Se ela fosse lida do painel a cada consulta, o dono mexendo no
+       número no meio do voo mudaria retroativamente onde o avião explode — e
+       rodada em andamento não pode mudar de resultado, pelo mesmo princípio
+       que congela a vantagem na aposta dos outros jogos.
+    2. **Guardar o estouro já calculado**, para as apostas apontarem para ele e
+       a liquidação não depender de o segredo do servidor ainda ser o mesmo.
+
+    ``ponto_de_estouro`` fica gravado desde que a linha nasce, que é durante a
+    janela de aposta. Isso é seguro pela mesma razão que o tabuleiro do mines é
+    seguro: ele está no banco e **nenhuma rota o entrega** enquanto a janela
+    não fecha. É o ponto exato em que um descuido entregaria o jogo.
+    """
+
+    __tablename__ = "rodada_crash_compartilhada"
+
+    id = db.Column(db.Integer, primary_key=True)
+    #: ``floor(epoch / DURACAO_DO_CICLO)``. Único: é ele que identifica a
+    #: rodada, e duas linhas para a mesma janela seriam duas curvas diferentes
+    #: na mesma hora.
+    numero = db.Column(db.BigInteger, unique=True, nullable=False, index=True)
+    #: A vantagem no instante em que a rodada nasceu, em pontos percentuais.
+    vantagem = db.Column(Dinheiro, nullable=False)
+    #: Onde a curva para. SEGREDO DO SERVIDOR até a janela de aposta fechar.
+    ponto_de_estouro = db.Column(Dinheiro, nullable=False)
+    criada_em = db.Column(db.DateTime(timezone=True), nullable=False, default=agora)
+
+    __table_args__ = (
+        CheckConstraint(
+            "ponto_de_estouro >= 100", name="ck_crash_compartilhada_estouro_minimo"
+        ),
+    )
+
+    def __repr__(self):
+        return f"<RodadaCrashCompartilhada {self.numero} em {self.ponto_de_estouro}>"
+
+
 class RodadaCrash(db.Model):
     """Uma rodada de crash. Como a do mines, é a fonte da verdade do servidor.
 
@@ -741,6 +787,17 @@ class RodadaCrash(db.Model):
     #: Onde o jogador declarou que quer sair. Resolvido pelo servidor sem
     #: depender de clique — é o que zera o risco de rede.
     alvo = db.Column(Dinheiro, nullable=False)
+    #: Em qual rodada compartilhada esta aposta entrou.
+    #:
+    #: Anulável só por causa das apostas antigas, de quando cada uma tinha a
+    #: própria curva. Elas não existem mais em produção (o interruptor do jogo
+    #: liquidou tudo ao desligar o crash), e a liquidação sabe fechar as que
+    #: aparecerem: sem rodada compartilhada, o desfecho é o que já estava
+    #: decidido na aposta, e aplicá-lo na hora é o que solta o caixa.
+    compartilhada_id = db.Column(
+        db.Integer, db.ForeignKey("rodada_crash_compartilhada.id"), nullable=True,
+        index=True,
+    )
 
     estado = db.Column(db.String(12), nullable=False, default=ATIVA, index=True)
     #: Por onde a rodada saiu de fato: o alvo, o número do saque manual, ou o
@@ -763,6 +820,9 @@ class RodadaCrash(db.Model):
     encerrada_em = db.Column(db.DateTime(timezone=True), nullable=True)
 
     jogador = db.relationship("Usuario", foreign_keys=[jogador_id])
+    compartilhada = db.relationship(
+        "RodadaCrashCompartilhada", foreign_keys=[compartilhada_id]
+    )
 
     __table_args__ = (
         CheckConstraint("aposta > 0", name="ck_crash_aposta_positiva"),
@@ -779,6 +839,16 @@ class RodadaCrash(db.Model):
             unique=True,
             sqlite_where=db.text("estado = 'ativa'"),
             postgresql_where=db.text("estado = 'ativa'"),
+        ),
+        # Uma aposta por pessoa em cada rodada compartilhada, mesmo depois de
+        # a rodada ter sido liquidada. O índice acima não cobre isto: ele solta
+        # assim que a aposta deixa de estar ativa, e sem este a pessoa poderia
+        # apostar de novo na mesma janela logo depois de a sua ter resolvido.
+        db.Index(
+            "uq_uma_aposta_por_rodada_compartilhada",
+            "jogador_id",
+            "compartilhada_id",
+            unique=True,
         ),
     )
 

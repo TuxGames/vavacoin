@@ -116,3 +116,79 @@ def conservacao(esperado=None):
         f"massa violada: soma dos saldos é {total}, deveria ser {esperado}"
     )
     return total
+
+
+class RelogioDoCrash:
+    """O relógio do crash, na mão do teste.
+
+    A rodada de crash é o relógio (``floor(epoch / ciclo)``), então quase todo
+    teste deste jogo precisa dizer "estamos na janela de aposta" ou "o avião já
+    explodiu". Sem isto, o resultado dependeria da hora em que a suíte rodou:
+    dois terços do ciclo estão fora da janela, e a aposta seria recusada em
+    dois de cada três dias.
+
+    A costura é uma só — ``caladinho.epoch_de`` —, e isso não é acaso: todo
+    tempo do crash passa por lá justamente para haver um lugar por onde
+    controlá-lo. Se um dia alguém ler o relógio por fora dessa função, é este
+    helper que para de funcionar e denuncia.
+    """
+
+    def __init__(self, epoch):
+        self.epoch = float(epoch)
+
+    @property
+    def numero(self):
+        from vavacoin.crash import DURACAO_DO_CICLO
+
+        return int(self.epoch // DURACAO_DO_CICLO)
+
+    def na_janela(self, segundos=1):
+        """Vai para dentro da janela de aposta da rodada de agora."""
+        from vavacoin.crash import DURACAO_DO_CICLO
+
+        self.epoch = self.numero * DURACAO_DO_CICLO + segundos
+        return self
+
+    def no_voo(self, segundos=0):
+        """Vai para ``segundos`` depois de o avião levantar."""
+        from vavacoin.crash import DURACAO_DO_CICLO, JANELA_DE_APOSTA
+
+        self.epoch = self.numero * DURACAO_DO_CICLO + JANELA_DE_APOSTA + segundos
+        return self
+
+    def depois_do_voo(self):
+        """Vai para depois do voo mais longo possível desta rodada."""
+        from vavacoin.crash import VOO_MAXIMO
+
+        return self.no_voo(VOO_MAXIMO + 1)
+
+    def proxima_rodada(self):
+        """Abre a janela da rodada seguinte."""
+        from vavacoin.crash import DURACAO_DO_CICLO
+
+        self.epoch = (self.numero + 1) * DURACAO_DO_CICLO + 1
+        return self
+
+    @property
+    def momento(self):
+        """O mesmo instante como ``datetime``, para quem recebe ``momento=``."""
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(self.epoch, tz=timezone.utc)
+
+
+@pytest.fixture
+def relogio(monkeypatch):
+    """Congela o relógio do crash numa rodada redonda e devolve o controle."""
+    from vavacoin import caladinho
+    from vavacoin.crash import DURACAO_DO_CICLO
+
+    controle = RelogioDoCrash(1_000_000 * DURACAO_DO_CICLO + 1)
+
+    def epoch_de(momento=None):
+        if momento is not None:
+            return momento.timestamp()
+        return controle.epoch
+
+    monkeypatch.setattr(caladinho, "epoch_de", epoch_de)
+    return controle

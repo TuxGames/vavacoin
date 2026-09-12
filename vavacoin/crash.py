@@ -4,62 +4,94 @@ Como :mod:`vavacoin.mines`, tudo aqui é função pura: dá para conferir a
 distribuição inteira sem subir a aplicação. A parte que encosta no ledger mora
 em :mod:`vavacoin.caladinho`.
 
-## O ponto de estouro
+## Uma rodada para todo mundo, marcada pelo relógio
 
-Sorteado **no instante da aposta**, no servidor, e guardado na rodada. A
-distribuição é a clássica do crash::
+O jogo era individual: cada aposta abria a própria curva e o número subia só
+na sua tela. O dono pediu o contrário — "os usuários querem ver o avião
+subindo e explodindo em tempo real" —, e tempo real com todo mundo junto quer
+dizer **uma curva só, a mesma em todas as telas**.
 
-    M = (1 - vantagem) / u,    u ~ uniforme em (0, 1]
+A rodada não é criada por ninguém: ela é o **relógio**. O número da rodada é
+``floor(epoch / DURACAO_DO_CICLO)``, e disso sai tudo — quando abre a aposta,
+quando o avião levanta, quando o resultado some. Dois celulares que nunca se
+falaram concordam sobre qual rodada está correndo porque os dois olham a hora.
 
-Ela tem uma propriedade que nenhuma outra dá de graça: para **qualquer** alvo
-``t``, o retorno esperado é o mesmo::
+Sem isso seria preciso um processo criando rodada de tempos em tempos, e o
+plano grátis do PythonAnywhere não tem onde rodar esse processo: a tarefa
+agendada é uma por dia.
 
-    P(M >= t) = (1 - vantagem) / t
-    esperado  = P(M >= t) × t = 1 - vantagem
+## O ponto de estouro é derivado, não sorteado
 
-Ou seja: a vantagem da casa é exatamente a vantagem configurada, sair em 1,50×
-ou em 20× dá no mesmo, e não existe alvo "esperto". Isso importa porque o
-alvo é escolhido pelo jogador — se algum alvo fosse melhor que os outros, o
-jogo viraria uma charada de otimização em vez de aposta.
+``HMAC(segredo_do_servidor, número_da_rodada)`` vira o ``u`` uniforme que a
+fórmula de sempre transforma em multiplicador. Duas consequências, e as duas
+importam:
 
-## Por que existe alvo
+- **qualquer processo chega no mesmo número** sem combinar nada com ninguém,
+  então não há estado por jogador para o servidor guardar e a conta por rodada
+  não cresce com o tamanho da turma;
+- **ninguém de fora chega nele**, porque o segredo não sai do servidor.
 
-Não há websocket aqui, e não vai haver. O saque manual é um POST validado
-contra o relógio do servidor, e entre o clique e a chegada do POST passam uns
-250 ms de rede — tempo em que o multiplicador andou. Se o estouro cair nesse
-vão, a pessoa clicou antes e perde assim mesmo, sem ter como saber que foi a
-rede. É a mesma classe de problema do tabuleiro em branco: a tela acusa o
-cassino de roubar.
+O segredo é do servidor e nasce sozinho na primeira rodada — não é a
+``SECRET_KEY``, de propósito: a chave de sessão tem outro dono, outro ciclo de
+troca, e no repositório existe uma de desenvolvimento que é pública.
 
-O alvo fecha esse buraco. Declarado **junto com a aposta**, ele é resolvido no
-servidor sem depender de clique nenhum: quem põe alvo e não toca no botão tem
-risco de rede **zero**. O botão continua existindo e só serve para sair
-**antes** do alvo. Assim o pior que a rede faz é entregar o alvo no lugar do
-número onde a pessoa clicou — nunca transformar vitória em derrota.
+## Só alvo. Não existe botão de sacar durante o voo
 
-Consequência de desenho, e é boa: o resultado da rodada fica inteiramente
-decidido no instante da aposta (``alvo <= estouro`` ganha, senão perde). A
-animação é teatro sobre um resultado que já existe, exatamente como o
-tabuleiro do mines já é sorteado antes do primeiro clique. Resolver a rodada
-mais tarde não é re-sortear nada.
+Esta é a parte contraintuitiva, e ela é o que faz o desenho fechar.
+
+Para desenhar a explosão na hora certa, **o navegador precisa saber onde a
+curva para**. Se ele sabe, e ainda existisse um botão de sacar, o jogo
+acabava: quem vê que estoura em 3× clica em 2,99× e nunca mais perde. A
+vantagem da casa iria a zero, e não por bug — por desenho.
+
+Tirando o clique, saber a curva deixa de valer nada. O alvo é declarado junto
+com a aposta e resolvido pelo servidor; o navegador só desenha. É o mesmo
+princípio do tabuleiro do mines, que também já está decidido antes do primeiro
+clique: a animação é teatro sobre um resultado que já existe.
+
+O efeito colateral é bom o bastante para virar regra: **ninguém mais perde por
+lag de rede.** Era o furo da primeira versão — o saque manual era um POST
+validado contra o relógio do servidor, e os 250 ms de rede podiam cair em cima
+do estouro, transformando vitória em derrota sem a pessoa ter como saber que
+fora a rede. Sem botão, não há clique para chegar tarde.
+
+## O estouro não pode existir para o cliente antes da janela fechar
+
+É o ponto de segurança da feature, e vale escrito: quem souber onde a rodada
+estoura **enquanto ainda dá para apostar** aposta só quando é favorável, e
+ganha sempre. Por isso nenhuma rota entrega o ponto de estouro durante a
+janela de aposta, e **não existe jeito de perguntar pela rodada seguinte** — a
+rota do reveal não aceita número nenhum, ela responde sobre a rodada de agora.
 
 ## A curva
 
-``m(t) = 2^(t / 8)``: dobra a cada oito segundos. Escolhida devagar de
-propósito — quanto mais lenta a curva, menos multiplicador cabe dentro de um
-atraso de rede, e menos a rede importa para quem saca no braço.
+``m(t) = 2^(t / SEGUNDOS_PARA_DOBRAR)``.
+
+Ela era lenta de propósito — quanto mais lenta, menos multiplicador cabe
+dentro de um atraso de rede. **Esse motivo morreu com o botão de sacar**, e a
+curva acelerou: agora o que manda é o ciclo caber num tempo que dê para ficar
+olhando. Com o teto de 25×, o voo mais longo possível é o que define a duração
+do ciclo.
 
 O teto é o mesmo do mines, 25×, e **precisa** ser: a regra de banca do dono
-("25× a aposta tem que ser menor que 50% do caixa") é uma só para o cassino
+("25× a aposta tem que ser menor que 50% do cassino") é uma só para o cassino
 inteiro, e é ela que vira ``aposta_maxima = caixa / 50``.
 """
 
+import hashlib
+import hmac
+import math
 from decimal import Decimal
 
 from .dinheiro import ZERO, para_decimal, quantizar_para_baixo
 
 #: Quantos segundos para o multiplicador dobrar.
-SEGUNDOS_PARA_DOBRAR = Decimal("8")
+#:
+#: Era 8. A lentidão existia para proteger o saque manual do atraso de rede, e
+#: o saque manual não existe mais — o que manda agora é o ciclo caber numa
+#: espera tolerável, porque a rodada é compartilhada e quem perdeu espera a
+#: próxima.
+SEGUNDOS_PARA_DOBRAR = Decimal("3")
 
 #: Onde todo crash começa.
 MULTIPLICADOR_INICIAL = Decimal("1.00")
@@ -158,3 +190,158 @@ def premio_maximo(aposta):
     quem está jogando.
     """
     return quantizar_para_baixo(para_decimal(aposta) * TETO_DO_MULTIPLICADOR)
+
+
+# --- a rodada compartilhada -------------------------------------------------
+#
+# Tudo aqui é aritmética de relógio: não há estado, não há banco e não há
+# jogador. É o que permite o navegador e o servidor chegarem na mesma resposta
+# sem trocarem uma palavra.
+
+
+#: Quanto dura a janela em que dá para apostar, em segundos.
+JANELA_DE_APOSTA = 10
+
+#: Quanto tempo o resultado fica na tela depois do voo mais longo possível.
+MOSTRA_O_RESULTADO = 6
+
+
+def _voo_mais_longo():
+    """Quantos segundos a curva leva para bater no teto, arredondado para cima.
+
+    É o voo mais demorado que pode existir, porque o estouro é limitado ao
+    teto. Derivado da curva em vez de escrito à mão: mexer em
+    ``SEGUNDOS_PARA_DOBRAR`` sem mexer aqui deixaria o ciclo curto demais, e o
+    avião seria cortado no ar.
+    """
+    return int(math.ceil(float(segundos_para_multiplicador(TETO_DO_MULTIPLICADOR))))
+
+
+#: O voo mais longo possível, em segundos.
+VOO_MAXIMO = _voo_mais_longo()
+
+#: O ciclo inteiro: janela de aposta, voo e resultado.
+#:
+#: Somado, e não escolhido: assim o ciclo é sempre grande o bastante para o
+#: voo mais longo caber dentro dele. Com a curva de hoje dá 30 s — dois por
+#: minuto, que é o que faz as contas de relógio caírem em números redondos.
+DURACAO_DO_CICLO = JANELA_DE_APOSTA + VOO_MAXIMO + MOSTRA_O_RESULTADO
+
+#: Os três momentos de uma rodada, na ordem em que acontecem.
+APOSTAS = "apostas"
+VOO = "voo"
+RESULTADO = "resultado"
+
+
+def numero_da_rodada(epoch):
+    """Qual rodada está correndo neste instante.
+
+    ``floor(epoch / ciclo)``, e nada mais. O número é o relógio — por isso
+    dois celulares que nunca se falaram concordam sobre qual rodada é esta.
+    """
+    return int(epoch // DURACAO_DO_CICLO)
+
+
+def inicio_da_rodada(numero):
+    """O epoch em que a janela de aposta desta rodada abriu."""
+    return int(numero) * DURACAO_DO_CICLO
+
+
+def comeco_do_voo(numero):
+    """O epoch do instante zero da curva: quando a janela de aposta fecha."""
+    return inicio_da_rodada(numero) + JANELA_DE_APOSTA
+
+
+def fim_do_ciclo(numero):
+    """O epoch em que esta rodada sai da tela e a seguinte abre."""
+    return inicio_da_rodada(numero) + DURACAO_DO_CICLO
+
+
+def da_para_apostar(numero, epoch):
+    """A janela desta rodada ainda está aberta?
+
+    É a mesma pergunta que decide se a aposta entra **e** se o ponto de
+    estouro pode sair do servidor. Uma função só, chamada dos dois lugares: se
+    fossem duas, um dia elas discordariam e a que discordasse a favor do
+    cliente entregaria o jogo.
+    """
+    return inicio_da_rodada(numero) <= epoch < comeco_do_voo(numero)
+
+
+def segundos_de_voo(numero, epoch):
+    """Há quanto tempo o avião levantou. Negativo antes de levantar."""
+    return Decimal(str(epoch - comeco_do_voo(numero)))
+
+
+def fase_da_rodada(numero, epoch, ponto_de_estouro=None):
+    """Em que momento a rodada está, do ponto de vista de quem olha.
+
+    Com o ``ponto_de_estouro`` em mãos a resposta é exata: o voo acaba quando
+    a curva alcança o estouro, que quase sempre é antes do voo máximo. Sem
+    ele, o melhor que dá para dizer é que o voo ainda pode estar acontecendo.
+    """
+    if da_para_apostar(numero, epoch):
+        return APOSTAS
+    decorridos = segundos_de_voo(numero, epoch)
+    limite = (
+        segundos_para_multiplicador(ponto_de_estouro)
+        if ponto_de_estouro is not None
+        else Decimal(VOO_MAXIMO)
+    )
+    return VOO if decorridos < limite else RESULTADO
+
+
+def voo_terminou(numero, ponto_de_estouro, epoch):
+    """O avião já explodiu? É o gatilho da liquidação preguiçosa."""
+    return segundos_de_voo(numero, epoch) >= segundos_para_multiplicador(
+        ponto_de_estouro
+    )
+
+
+class _SorteioDeterministico:
+    """Um ``random()`` que sempre devolve o mesmo número.
+
+    Existe para o estouro derivado passar pela **mesma**
+    :func:`sortear_ponto_de_estouro` do sorteio de verdade, em vez de uma
+    segunda fórmula escrita ao lado. Duas fórmulas para a mesma distribuição é
+    como a vantagem da casa deixa de ser a que está no painel.
+    """
+
+    def __init__(self, valor):
+        self._valor = valor
+
+    def random(self):
+        return self._valor
+
+
+#: Quantos bits do HMAC viram o ``u`` uniforme. 52 é o que um ``double``
+#: representa exatamente — mais que isso não acrescenta aleatoriedade
+#: perceptível e menos começaria a deixar buraco na distribuição.
+_BITS = 52
+
+
+def uniforme_da_rodada(segredo, numero):
+    """O ``u`` uniforme em (0, 1] desta rodada, a partir do segredo.
+
+    HMAC-SHA256 e não um hash simples: com hash puro, quem descobrisse o
+    formato da entrada poderia testar segredos candidatos contra um estouro
+    conhecido. O ``+1`` tira o zero do intervalo, porque a fórmula divide
+    por ``u``.
+    """
+    if isinstance(segredo, str):
+        segredo = segredo.encode("utf-8")
+    digest = hmac.new(segredo, str(int(numero)).encode("ascii"), hashlib.sha256).digest()
+    bruto = int.from_bytes(digest, "big") >> (256 - _BITS)
+    return (Decimal(bruto) + 1) / Decimal(1 << _BITS)
+
+
+def ponto_de_estouro_da_rodada(segredo, numero, fator):
+    """Onde a rodada ``numero`` para. Determinístico, e igual em toda máquina.
+
+    ``fator`` é ``(100 - vantagem) / 100``, e por isso o resultado depende da
+    vantagem: a rodada **congela a sua** quando nasce, senão o dono mexendo no
+    painel no meio do voo mudaria o estouro de uma rodada em andamento.
+    """
+    return sortear_ponto_de_estouro(
+        fator, _SorteioDeterministico(uniforme_da_rodada(segredo, numero))
+    )

@@ -1,9 +1,10 @@
 """Quais jogos do Caladinho estão no ar.
 
-O dono desligou o crash por decisão de produto — "os usuários querem ver o
-avião subindo e explodindo em tempo real, não do jeito que tá agora" —, e um
-jogo que sai do ar não pode sair apagado: ele volta quando houver tempo real.
-Por isso isto é um **interruptor**, dado no banco, e não código removido.
+O crash já passou por aqui: o dono o desligou porque queria "ver o avião
+subindo e explodindo em tempo real, não do jeito que tá agora". Ele não foi
+apagado, foi desligado — e voltou quando a rodada virou compartilhada. É a
+prova de que o interruptor valeu a pena ser um **dado no banco**, e não código
+removido.
 
 Fica ao lado da vantagem, no painel do dono da casa, pelo mesmo motivo que a
 vantagem foi parar lá: é decisão de quem toca o cassino, e trocar de ideia não
@@ -31,9 +32,9 @@ from .modelos import config_ligada, definir_config, registrar_acao
 #: Os jogos do Caladinho. Lista única do projeto — a vantagem lê daqui.
 JOGOS = ("mines", "crash", "torre", "dados")
 
-#: Como cada jogo nasce. O crash nasce **desligado** por decisão do dono; os
-#: outros já estavam no ar e continuam.
-PADRAO = {"mines": True, "crash": False, "torre": True, "dados": True}
+#: Como cada jogo nasce. Todos no ar: o crash voltou com a rodada
+#: compartilhada, que era a condição que o dono tinha posto para religá-lo.
+PADRAO = {"mines": True, "crash": True, "torre": True, "dados": True}
 
 
 def chave_de(jogo):
@@ -100,10 +101,13 @@ def liquidar_rodadas_abertas(jogo, sessao=None):
     e não um segundo caminho paralelo, que é como duas regras de pagamento
     acabam divergindo.
 
-    O crash não entra: a rodada dele já tem desfecho decidido no instante da
-    aposta e se resolve sozinha na leitura, então liquidar aqui seria
-    antecipar um resultado que o tempo ainda não alcançou. Em vez disso, as
-    rodadas de crash abertas são resolvidas pelo relógio, como sempre.
+    O crash entra pelo mesmo caminho que já fecha as apostas cujo voo acabou,
+    com o relógio empurrado para a frente. Não é antecipar resultado nenhum: o
+    desfecho de cada aposta (``alvo <= estouro``) foi decidido quando ela
+    entrou, e o que o relógio empurrado faz é só dizer que ninguém mais vai
+    assistir ao voo. Sem isso, desligar o crash com aposta em pé prenderia o
+    caixa da casa na exposição, porque a rota que a fecharia é a que acabou de
+    fechar.
     """
     from .extensoes import db
 
@@ -118,20 +122,9 @@ def liquidar_rodadas_abertas(jogo, sessao=None):
 
         return expirar_torres_abandonadas(sessao=sessao, momento=_bem_depois())
     if jogo == "crash":
-        from .caladinho import resolver_crash
-        from .modelos import RodadaCrash, Usuario
+        from .caladinho import liquidar_crash_vencido
 
-        encerradas = []
-        for jogador_id in sessao.execute(
-            db.select(RodadaCrash.jogador_id).where(
-                RodadaCrash.estado == RodadaCrash.ATIVA
-            )
-        ).scalars():
-            jogador = sessao.get(Usuario, jogador_id)
-            rodada = resolver_crash(jogador, sessao=sessao, momento=_bem_depois())
-            if rodada is not None:
-                encerradas.append(rodada)
-        return encerradas
+        return liquidar_crash_vencido(sessao=sessao, momento=_bem_depois())
     # Dados resolve na hora da aposta: nunca há rodada aberta.
     return []
 
